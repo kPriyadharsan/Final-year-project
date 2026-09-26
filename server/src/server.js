@@ -6,6 +6,8 @@ const cors = require('cors')
 const { connectDB, closeDB } = require('./config/db')
 const healthRoutes = require('./routes/health.routes')
 const authRoutes = require('./routes/auth.routes')
+const adminRoutes = require('./routes/admin.routes')
+const teacherRoutes = require('./routes/teacher.routes')
 
 const app = express()
 const PORT = env.PORT
@@ -43,6 +45,8 @@ app.use(express.urlencoded({ extended: true }))
 // Routes
 app.use('/api', healthRoutes)
 app.use('/api/auth', authRoutes)
+app.use('/api/admin', adminRoutes)
+app.use('/api/teacher', teacherRoutes)
 
 // Root fallback route
 app.get('/', (req, res) => {
@@ -53,6 +57,10 @@ app.get('/', (req, res) => {
     authEndpoints: {
       login: 'POST /api/auth/login',
       me: 'GET /api/auth/me',
+    },
+    protectedTestEndpoints: {
+      adminTest: 'GET /api/admin/test (SUPER_ADMIN only)',
+      teacherTest: 'GET /api/teacher/test (TEACHER & SUPER_ADMIN)',
     },
     status: 'Running',
   })
@@ -82,6 +90,8 @@ const server = app.listen(PORT, () => {
   console.log(`📡 Health Check URL : http://localhost:${PORT}/api/health`)
   console.log(`🍃 Database Check   : http://localhost:${PORT}/api/health/db`)
   console.log(`🔑 Auth Endpoints   : http://localhost:${PORT}/api/auth/login & /me`)
+  console.log(`🛡️ Admin Test Route : http://localhost:${PORT}/api/admin/test`)
+  console.log(`📚 Teacher Test Route: http://localhost:${PORT}/api/teacher/test`)
   console.log(`🌐 Allowed Origin   : ${CLIENT_URL}`)
   console.log(`🤖 AI Engine        : Gemini API configured (server-side only)`)
   console.log(`🔌 MQTT Broker      : ${env.MQTT_BROKER_URL}`)
