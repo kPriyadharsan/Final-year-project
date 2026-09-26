@@ -6,7 +6,9 @@
   "scripts": {
     "start": "node src/server.js",
     "dev": "nodemon src/server.js",
-    "test:db": "node scripts/test-db.js"
+    "test:db": "node scripts/test-db.js",
+    "test:password": "node scripts/test-password.js",
+    "test": "node scripts/test-password.js"
   },
   "keywords": [
     "mern",

@@ -1,5 +1,5 @@
 const mongoose = require('mongoose')
-const bcrypt = require('bcryptjs')
+const { hashPassword, comparePassword } = require('../utils/password.util')
 
 /**
  * Controlled Role Enums for Smart Classroom System
@@ -98,28 +98,20 @@ userSchema.virtual('hasDashboardAccess').get(function () {
 })
 
 /**
- * Static Helper: Securely hashes a plain-text password using bcrypt
- * @param {string} plainPassword
- * @param {number} saltRounds
- * @returns {Promise<string>}
+ * Static delegate to reusable password utility
  */
-userSchema.statics.hashPassword = async function (plainPassword, saltRounds = 10) {
-  if (!plainPassword || typeof plainPassword !== 'string') {
-    throw new Error('A valid string password must be provided for hashing.')
-  }
-  return await bcrypt.hash(plainPassword, saltRounds)
-}
+userSchema.statics.hashPassword = hashPassword
 
 /**
- * Instance Method: Compares a candidate plain-text password with the stored hash
+ * Instance Method: Compares a candidate plain-text password using the reusable utility
  * @param {string} candidatePassword
  * @returns {Promise<boolean>}
  */
 userSchema.methods.comparePassword = async function (candidatePassword) {
   if (!this.passwordHash) {
-    throw new Error('Password hash is not loaded. Ensure select("+passwordHash") was used in the query.')
+    throw new Error('Password hash is not loaded on user document. Ensure select("+passwordHash") was used.')
   }
-  return await bcrypt.compare(candidatePassword, this.passwordHash)
+  return await comparePassword(candidatePassword, this.passwordHash)
 }
 
 const User = mongoose.model('User', userSchema)

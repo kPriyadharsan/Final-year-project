@@ -6,6 +6,7 @@
     "dev": "concurrently -n \"SERVER,CLIENT\" -c \"blue,magenta\" \"npm run server:dev\" \"npm run client:dev\"",
     "start": "npm run server:start",
     "test:db": "npm run test:db --prefix server",
+    "test:password": "npm run test:password --prefix server",
     "client:dev": "npm run dev --prefix client",
     "client:build": "npm run build --prefix client",
     "client:install": "npm install --prefix client",
