@@ -1,0 +1,97 @@
+// 1. Load and validate environment variables before any server initialization
+const env = require('./config/env')
+
+const express = require('express')
+const cors = require('cors')
+const { connectDB, closeDB } = require('./config/db')
+const healthRoutes = require('./routes/health.routes')
+
+const app = express()
+const PORT = env.PORT
+const CLIENT_URL = env.CLIENT_URL
+
+// Connect to MongoDB upon server startup
+connectDB()
+
+// CORS Configuration
+const allowedOrigins = [
+  CLIENT_URL,
+  'http://localhost:5173',
+  'http://127.0.0.1:5173',
+]
+
+app.use(
+  cors({
+    origin: (origin, callback) => {
+      // Allow non-browser requests (Postman, curl, IoT scripts) or matched origins
+      if (!origin || allowedOrigins.includes(origin)) {
+        return callback(null, true)
+      }
+      return callback(null, true)
+    },
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization'],
+  })
+)
+
+// Middleware
+app.use(express.json())
+app.use(express.urlencoded({ extended: true }))
+
+// Routes
+app.use('/api', healthRoutes)
+
+// Root fallback route
+app.get('/', (req, res) => {
+  res.json({
+    project: 'AI Voice-Controlled Smart Classroom API',
+    healthCheck: '/api/health',
+    dbHealthCheck: '/api/health/db',
+    status: 'Running',
+  })
+})
+
+// 404 Handler
+app.use((req, res) => {
+  res.status(404).json({
+    status: 'error',
+    message: `Cannot ${req.method} ${req.originalUrl}`,
+  })
+})
+
+// Global Error Handler
+app.use((err, req, res, next) => {
+  console.error('Unhandled Server Error:', err)
+  res.status(500).json({
+    status: 'error',
+    message: err.message || 'Internal Server Error',
+  })
+})
+
+// Start server listener
+const server = app.listen(PORT, () => {
+  console.log('='.repeat(60))
+  console.log(`🚀 Smart Classroom Server running on port ${PORT}`)
+  console.log(`📡 Health Check URL: http://localhost:${PORT}/api/health`)
+  console.log(`🍃 Database Check URL: http://localhost:${PORT}/api/health/db`)
+  console.log(`🌐 Allowed Frontend Origin: ${CLIENT_URL}`)
+  console.log(`🤖 AI Engine: Gemini API configured (server-side only)`)
+  console.log(`🔌 MQTT Broker: ${env.MQTT_BROKER_URL}`)
+  console.log('='.repeat(60))
+})
+
+// Graceful termination handling
+const handleShutdown = async (signal) => {
+  console.log(`\n🛑 Received [${signal}]. Initiating graceful shutdown...`)
+  server.close(async () => {
+    console.log('🔒 Express HTTP server closed.')
+    await closeDB(signal)
+    process.exit(0)
+  })
+}
+
+process.on('SIGINT', () => handleShutdown('SIGINT'))
+process.on('SIGTERM', () => handleShutdown('SIGTERM'))
+
+module.exports = app
