@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "concurrently -n \"SERVER,CLIENT\" -c \"blue,magenta\" \"npm run server:dev\" \"npm run client:dev\"",
     "start": "npm run server:start",
+    "seed:admin": "npm run seed:admin --prefix server",
     "test:db": "npm run test:db --prefix server",
     "test:password": "npm run test:password --prefix server",
     "client:dev": "npm run dev --prefix client",
