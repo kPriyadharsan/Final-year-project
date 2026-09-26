@@ -5,6 +5,7 @@ const express = require('express')
 const cors = require('cors')
 const { connectDB, closeDB } = require('./config/db')
 const healthRoutes = require('./routes/health.routes')
+const authRoutes = require('./routes/auth.routes')
 
 const app = express()
 const PORT = env.PORT
@@ -41,6 +42,7 @@ app.use(express.urlencoded({ extended: true }))
 
 // Routes
 app.use('/api', healthRoutes)
+app.use('/api/auth', authRoutes)
 
 // Root fallback route
 app.get('/', (req, res) => {
@@ -48,6 +50,10 @@ app.get('/', (req, res) => {
     project: 'AI Voice-Controlled Smart Classroom API',
     healthCheck: '/api/health',
     dbHealthCheck: '/api/health/db',
+    authEndpoints: {
+      login: 'POST /api/auth/login',
+      me: 'GET /api/auth/me',
+    },
     status: 'Running',
   })
 })
@@ -73,11 +79,12 @@ app.use((err, req, res, next) => {
 const server = app.listen(PORT, () => {
   console.log('='.repeat(60))
   console.log(`🚀 Smart Classroom Server running on port ${PORT}`)
-  console.log(`📡 Health Check URL: http://localhost:${PORT}/api/health`)
-  console.log(`🍃 Database Check URL: http://localhost:${PORT}/api/health/db`)
-  console.log(`🌐 Allowed Frontend Origin: ${CLIENT_URL}`)
-  console.log(`🤖 AI Engine: Gemini API configured (server-side only)`)
-  console.log(`🔌 MQTT Broker: ${env.MQTT_BROKER_URL}`)
+  console.log(`📡 Health Check URL : http://localhost:${PORT}/api/health`)
+  console.log(`🍃 Database Check   : http://localhost:${PORT}/api/health/db`)
+  console.log(`🔑 Auth Endpoints   : http://localhost:${PORT}/api/auth/login & /me`)
+  console.log(`🌐 Allowed Origin   : ${CLIENT_URL}`)
+  console.log(`🤖 AI Engine        : Gemini API configured (server-side only)`)
+  console.log(`🔌 MQTT Broker      : ${env.MQTT_BROKER_URL}`)
   console.log('='.repeat(60))
 })
 

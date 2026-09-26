@@ -9,7 +9,8 @@
     "seed:admin": "node scripts/seed-admin.js",
     "test:db": "node scripts/test-db.js",
     "test:password": "node scripts/test-password.js",
-    "test": "node scripts/test-password.js"
+    "test:auth": "node scripts/test-auth.js",
+    "test": "node scripts/test-password.js && node scripts/test-auth.js"
   },
   "keywords": [
     "mern",
@@ -24,6 +25,7 @@
     "cors": "^2.8.5",
     "dotenv": "^16.4.7",
     "express": "^4.21.2",
+    "jsonwebtoken": "^9.0.3",
     "mongoose": "^8.9.5"
   },
   "devDependencies": {

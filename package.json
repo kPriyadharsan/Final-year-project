@@ -8,6 +8,7 @@
     "seed:admin": "npm run seed:admin --prefix server",
     "test:db": "npm run test:db --prefix server",
     "test:password": "npm run test:password --prefix server",
+    "test:auth": "npm run test:auth --prefix server",
     "client:dev": "npm run dev --prefix client",
     "client:build": "npm run build --prefix client",
     "client:install": "npm install --prefix client",
