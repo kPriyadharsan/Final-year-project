@@ -1,13 +1,31 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+import { useNavigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 
 export function LoginPage() {
-  const { login, authError, clearError, isLoading } = useAuth()
+  const { login, authError, clearError, isLoading, isAuthenticated, user } = useAuth()
+  const navigate = useNavigate()
+  const location = useLocation()
 
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [fieldErrors, setFieldErrors] = useState({})
+
+  // Helper to determine destination route based on role
+  const getRoleDestination = (role) => {
+    if (role === 'SUPER_ADMIN') return '/admin'
+    if (role === 'TEACHER') return '/teacher'
+    return '/login'
+  }
+
+  // If already authenticated, redirect to destination
+  useEffect(() => {
+    if (isAuthenticated && user) {
+      const destination = location.state?.from?.pathname || getRoleDestination(user.role)
+      navigate(destination, { replace: true })
+    }
+  }, [isAuthenticated, user, navigate, location])
 
   const validate = () => {
     const errors = {}
@@ -32,13 +50,15 @@ export function LoginPage() {
     if (!validate()) return
 
     try {
-      await login(email.trim(), password)
+      const result = await login(email.trim(), password)
+      const destination = location.state?.from?.pathname || getRoleDestination(result.user?.role)
+      navigate(destination, { replace: true })
     } catch {
-      // Error handled and captured in AuthContext authError
+      // Error is captured and rendered via AuthContext authError
     }
   }
 
-  // Helper to quickly populate the initial seeded Super Admin credentials for testing
+  // Quick helper to populate initial seeded Super Admin credentials
   const populateDemoAdmin = () => {
     setEmail('admin@smartclassroom.edu')
     setPassword('SuperAdminSecure2026!')
