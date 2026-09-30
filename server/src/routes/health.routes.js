@@ -1,6 +1,7 @@
 const express = require('express')
 const router = express.Router()
 const { getMongoStatus, pingDatabase } = require('../config/db')
+const { getMQTTStatus } = require('../services/mqtt.service')
 const env = require('../config/env')
 
 /**
@@ -11,6 +12,7 @@ const env = require('../config/env')
 router.get('/health', (req, res) => {
   const mongoStatus = getMongoStatus()
   const diagnostics = env.getDiagnostics()
+  const mqttStatus = getMQTTStatus()
 
   res.status(200).json({
     status: 'ok',
@@ -32,11 +34,7 @@ router.get('/health', (req, res) => {
         keyConfigured: diagnostics.geminiConfigured,
         keyMasked: diagnostics.geminiMasked,
       },
-      iot: {
-        brokerUrl: diagnostics.mqtt.brokerUrl,
-        clientId: diagnostics.mqtt.clientId,
-        hasAuth: diagnostics.mqtt.hasAuth,
-      },
+      mqtt: mqttStatus,
     },
   })
 })

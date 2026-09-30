@@ -3,6 +3,7 @@ const router = express.Router()
 const { requireAuth, requireRole } = require('../middleware/auth.middleware')
 const { User, ROLES } = require('../models/User')
 const { getMongoStatus } = require('../config/db')
+const { getMQTTStatus } = require('../services/mqtt.service')
 const env = require('../config/env')
 
 /**
@@ -53,13 +54,14 @@ router.get(
 
       const mongoStatus = getMongoStatus()
       const diagnostics = env.getDiagnostics()
+      const liveMqtt = getMQTTStatus()
 
       // Module safe defaults where database collections are not yet created
       const totalClasses = 8
       const connectedDevices = 24
 
       // Derived service statuses
-      const mqttStatus = diagnostics.mqtt?.brokerUrl ? 'connected' : 'offline'
+      const mqttStatus = liveMqtt.connected ? 'connected' : (liveMqtt.status || 'offline')
       const geminiStatus = diagnostics.geminiConfigured ? 'active' : 'unconfigured'
       const systemStatus = mongoStatus === 'connected' ? 'operational' : 'degraded'
 
@@ -84,11 +86,7 @@ router.get(
             status: mongoStatus,
             provider: 'MongoDB Atlas',
           },
-          mqtt: {
-            status: mqttStatus,
-            brokerUrl: diagnostics.mqtt?.brokerUrl || 'broker.hivemq.com',
-            clientId: diagnostics.mqtt?.clientId || 'smart-classroom-client',
-          },
+          mqtt: liveMqtt,
           gemini: {
             status: geminiStatus,
             model: 'Gemini 2.5 Flash / Pro',

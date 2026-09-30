@@ -4,6 +4,7 @@ const env = require('./config/env')
 const express = require('express')
 const cors = require('cors')
 const { connectDB, closeDB } = require('./config/db')
+const { connectMQTT, disconnectMQTT } = require('./services/mqtt.service')
 const healthRoutes = require('./routes/health.routes')
 const authRoutes = require('./routes/auth.routes')
 const adminRoutes = require('./routes/admin.routes')
@@ -16,6 +17,9 @@ const CLIENT_URL = env.CLIENT_URL
 
 // Connect to MongoDB upon server startup
 connectDB()
+
+// Connect to MQTT Broker upon server startup (non-fatal if broker is offline)
+connectMQTT()
 
 // CORS Configuration
 const allowedOrigins = [
@@ -103,6 +107,7 @@ const server = app.listen(PORT, () => {
 // Graceful termination handling
 const handleShutdown = async (signal) => {
   console.log(`\n🛑 Received [${signal}]. Initiating graceful shutdown...`)
+  await disconnectMQTT()
   server.close(async () => {
     console.log('🔒 Express HTTP server closed.')
     await closeDB(signal)
