@@ -13,6 +13,7 @@ const authRoutes = require('./routes/auth.routes')
 const adminRoutes = require('./routes/admin.routes')
 const teacherRoutes = require('./routes/teacher.routes')
 const deviceRoutes = require('./routes/device.routes')
+const aiRoutes = require('./routes/ai.routes')
 
 const app = express()
 const PORT = env.PORT
@@ -56,6 +57,7 @@ app.use('/api/auth', authRoutes)
 app.use('/api/admin', adminRoutes)
 app.use('/api/teacher', teacherRoutes)
 app.use('/api/devices', deviceRoutes)
+app.use('/api/ai', aiRoutes)
 
 // Root fallback route
 app.get('/', (req, res) => {
@@ -66,6 +68,10 @@ app.get('/', (req, res) => {
     authEndpoints: {
       login: 'POST /api/auth/login',
       me: 'GET /api/auth/me',
+    },
+    aiEndpoints: {
+      test: 'POST /api/ai/test',
+      status: 'GET /api/ai/status',
     },
     protectedTestEndpoints: {
       adminTest: 'GET /api/admin/test (SUPER_ADMIN only)',

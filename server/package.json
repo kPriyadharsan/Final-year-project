@@ -15,7 +15,8 @@
     "test:mqtt": "node scripts/test-mqtt.js",
     "test:control": "node scripts/test-device-control.js",
     "test:realtime": "node scripts/test-realtime.js",
-    "test": "node scripts/test-password.js && node scripts/test-auth.js && node scripts/test-roles.js && node scripts/test-devices.js && node scripts/test-mqtt.js && node scripts/test-device-control.js && node scripts/test-realtime.js"
+    "test:gemini": "node scripts/test-gemini.js",
+    "test": "node scripts/test-password.js && node scripts/test-auth.js && node scripts/test-roles.js && node scripts/test-devices.js && node scripts/test-mqtt.js && node scripts/test-device-control.js && node scripts/test-realtime.js && node scripts/test-gemini.js"
   },
   "keywords": [
     "mern",
@@ -26,6 +27,7 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "@google/genai": "^2.24.0",
     "bcryptjs": "^3.0.3",
     "cors": "^2.8.5",
     "dotenv": "^16.4.7",
