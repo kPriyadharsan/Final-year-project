@@ -16,80 +16,108 @@ import {
 import { useAuth } from '../../context/AuthContext'
 import { Badge } from '../ui/Badge'
 
-export function Sidebar({ isOpen, setIsOpen, isMobileOpen, setIsMobileOpen }) {
+export function Sidebar({
+  isOpen,
+  setIsOpen,
+  isMobileOpen,
+  setIsMobileOpen,
+  activeTab,
+  onTabChange,
+}) {
   const { user, logout } = useAuth()
   const location = useLocation()
 
-  // Dynamic navigation items based on authenticated role
   const isSuperAdmin = user?.role === 'SUPER_ADMIN'
 
+  // Navigation items matching specification
   const navItems = isSuperAdmin
     ? [
         {
-          label: 'Admin Overview',
-          href: '/admin',
+          id: 'overview',
+          label: 'Overview',
+          href: '/admin#overview',
           icon: <LayoutDashboard className="w-4 h-4" />,
         },
         {
-          label: 'Classrooms',
-          href: '/admin#classrooms',
-          icon: <School className="w-4 h-4" />,
-          tag: '14 Active',
+          id: 'teachers',
+          label: 'Teachers',
+          href: '/admin#teachers',
+          icon: <Users className="w-4 h-4" />,
+          tag: 'Faculty',
         },
         {
-          label: 'Smart Devices & IoT',
+          id: 'classes',
+          label: 'Classes',
+          href: '/admin#classes',
+          icon: <School className="w-4 h-4" />,
+          tag: '8 Rooms',
+        },
+        {
+          id: 'devices',
+          label: 'Devices',
           href: '/admin#devices',
           icon: <Cpu className="w-4 h-4" />,
+          tag: '24 IoT',
         },
         {
-          label: 'Voice Engine',
-          href: '/admin#voice',
-          icon: <Mic className="w-4 h-4" />,
-          tag: 'Gemini AI',
+          id: 'ai-system',
+          label: 'AI / System',
+          href: '/admin#ai-system',
+          icon: <Sparkles className="w-4 h-4" />,
+          tag: 'Gemini',
         },
         {
-          label: 'User Directory',
-          href: '/admin#users',
-          icon: <Users className="w-4 h-4" />,
-        },
-        {
-          label: 'System Config',
+          id: 'settings',
+          label: 'Settings',
           href: '/admin#settings',
           icon: <Settings className="w-4 h-4" />,
         },
       ]
     : [
         {
+          id: 'overview',
           label: 'Teacher Portal',
           href: '/teacher',
           icon: <LayoutDashboard className="w-4 h-4" />,
         },
         {
+          id: 'classes',
           label: 'Assigned Classes',
           href: '/teacher#classes',
           icon: <School className="w-4 h-4" />,
         },
         {
+          id: 'devices',
           label: 'Classroom Relays',
           href: '/teacher#relays',
           icon: <Cpu className="w-4 h-4" />,
         },
         {
+          id: 'schedule',
           label: 'Class Schedule',
           href: '/teacher#schedule',
           icon: <Calendar className="w-4 h-4" />,
         },
         {
+          id: 'voice',
           label: 'Voice Control',
           href: '/teacher#voice',
           icon: <Mic className="w-4 h-4" />,
         },
         {
+          id: 'settings',
           label: 'Preferences',
           href: '/teacher#settings',
           icon: <Settings className="w-4 h-4" />,
         },
       ]
+
+  const handleNavClick = (item) => {
+    if (onTabChange) {
+      onTabChange(item.id)
+    }
+    setIsMobileOpen(false)
+  }
 
   return (
     <>
@@ -141,13 +169,17 @@ export function Sidebar({ isOpen, setIsOpen, isMobileOpen, setIsMobileOpen }) {
         {/* Navigation List */}
         <div className="flex-1 overflow-y-auto px-3 py-4 space-y-1">
           {navItems.map((item) => {
-            const isActive = location.pathname === item.href || (location.pathname + location.hash) === item.href
+            const isActive = activeTab
+              ? activeTab === item.id
+              : location.pathname === item.href ||
+                location.pathname + location.hash === item.href ||
+                (item.id === 'overview' && !location.hash)
 
             return (
               <Link
                 key={item.label}
                 to={item.href}
-                onClick={() => setIsMobileOpen(false)}
+                onClick={() => handleNavClick(item)}
                 className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-medium transition-all group ${
                   isActive
                     ? 'bg-indigo-600 text-white shadow-sm shadow-indigo-600/20'
@@ -155,7 +187,11 @@ export function Sidebar({ isOpen, setIsOpen, isMobileOpen, setIsMobileOpen }) {
                 }`}
                 title={!isOpen ? item.label : undefined}
               >
-                <span className={`shrink-0 ${isActive ? 'text-white' : 'text-slate-400 group-hover:text-indigo-400'}`}>
+                <span
+                  className={`shrink-0 ${
+                    isActive ? 'text-white' : 'text-slate-400 group-hover:text-indigo-400'
+                  }`}
+                >
                   {item.icon}
                 </span>
 
@@ -178,20 +214,17 @@ export function Sidebar({ isOpen, setIsOpen, isMobileOpen, setIsMobileOpen }) {
         <div className="p-3 border-t border-slate-800/80 bg-slate-950/40">
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 rounded-xl bg-slate-800 border border-slate-700/80 flex items-center justify-center text-xs font-bold text-slate-200 shrink-0">
-              {user?.name ? user.name.charAt(0).toUpperCase() : 'U'}
+              {user?.name ? user.name.slice(0, 2).toUpperCase() : 'AD'}
             </div>
 
             {isOpen && (
               <div className="flex-1 min-w-0">
-                <div className="text-xs font-semibold text-white truncate">{user?.name}</div>
+                <p className="text-xs font-semibold text-white truncate leading-tight">
+                  {user?.name || 'Administrator'}
+                </p>
                 <div className="flex items-center gap-1.5 mt-0.5">
-                  <Badge
-                    variant={isSuperAdmin ? 'purple' : 'info'}
-                    size="sm"
-                    className="text-[10px] py-0 px-1.5"
-                  >
-                    {user?.role}
-                  </Badge>
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0"></span>
+                  <p className="text-[10px] text-slate-400 font-mono truncate">{user?.role}</p>
                 </div>
               </div>
             )}
@@ -200,8 +233,8 @@ export function Sidebar({ isOpen, setIsOpen, isMobileOpen, setIsMobileOpen }) {
               <button
                 type="button"
                 onClick={logout}
-                className="p-1.5 text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 rounded-lg transition-colors cursor-pointer shrink-0"
-                title="Log Out"
+                className="p-1.5 rounded-lg text-slate-400 hover:text-rose-400 hover:bg-slate-800/80 transition-colors cursor-pointer"
+                title="Sign out"
               >
                 <LogOut className="w-4 h-4" />
               </button>

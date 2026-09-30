@@ -2,7 +2,12 @@ import { useState } from 'react'
 import { Sidebar } from './Sidebar'
 import { TopNav } from './TopNav'
 
-export function DashboardLayout({ children, pageTitle = 'Dashboard' }) {
+export function DashboardLayout({
+  children,
+  pageTitle = 'Dashboard',
+  activeTab,
+  onTabChange,
+}) {
   // Desktop sidebar expanded vs collapsed
   const [isSidebarOpen, setIsSidebarOpen] = useState(true)
   // Mobile drawer sidebar open vs closed
@@ -16,6 +21,8 @@ export function DashboardLayout({ children, pageTitle = 'Dashboard' }) {
         setIsOpen={setIsSidebarOpen}
         isMobileOpen={isMobileOpen}
         setIsMobileOpen={setIsMobileOpen}
+        activeTab={activeTab}
+        onTabChange={onTabChange}
       />
 
       {/* Main Content Area: dynamically offsets margin according to sidebar state */}
