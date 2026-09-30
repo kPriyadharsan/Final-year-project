@@ -11,7 +11,8 @@
     "test:password": "node scripts/test-password.js",
     "test:auth": "node scripts/test-auth.js",
     "test:roles": "node scripts/test-roles.js",
-    "test": "node scripts/test-password.js && node scripts/test-auth.js && node scripts/test-roles.js"
+    "test:devices": "node scripts/test-devices.js",
+    "test": "node scripts/test-password.js && node scripts/test-auth.js && node scripts/test-roles.js && node scripts/test-devices.js"
   },
   "keywords": [
     "mern",

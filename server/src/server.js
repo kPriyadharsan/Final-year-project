@@ -8,6 +8,7 @@ const healthRoutes = require('./routes/health.routes')
 const authRoutes = require('./routes/auth.routes')
 const adminRoutes = require('./routes/admin.routes')
 const teacherRoutes = require('./routes/teacher.routes')
+const deviceRoutes = require('./routes/device.routes')
 
 const app = express()
 const PORT = env.PORT
@@ -47,6 +48,7 @@ app.use('/api', healthRoutes)
 app.use('/api/auth', authRoutes)
 app.use('/api/admin', adminRoutes)
 app.use('/api/teacher', teacherRoutes)
+app.use('/api/devices', deviceRoutes)
 
 // Root fallback route
 app.get('/', (req, res) => {
