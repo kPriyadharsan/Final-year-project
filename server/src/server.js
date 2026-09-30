@@ -1,10 +1,13 @@
 // 1. Load and validate environment variables before any server initialization
 const env = require('./config/env')
 
+const http = require('http')
 const express = require('express')
 const cors = require('cors')
 const { connectDB, closeDB } = require('./config/db')
 const { connectMQTT, disconnectMQTT } = require('./services/mqtt.service')
+const { initSocket } = require('./services/socket.service')
+const { initDeviceSync } = require('./services/deviceSync.service')
 const healthRoutes = require('./routes/health.routes')
 const authRoutes = require('./routes/auth.routes')
 const adminRoutes = require('./routes/admin.routes')
@@ -89,8 +92,17 @@ app.use((err, req, res, next) => {
   })
 })
 
+// Create Node HTTP server wrapping Express app
+const server = http.createServer(app)
+
+// Initialize Socket.IO real-time server
+initSocket(server)
+
+// Initialize device MQTT-to-database-to-Socket.IO sync
+initDeviceSync()
+
 // Start server listener
-const server = app.listen(PORT, () => {
+server.listen(PORT, () => {
   console.log('='.repeat(60))
   console.log(`🚀 Smart Classroom Server running on port ${PORT}`)
   console.log(`📡 Health Check URL : http://localhost:${PORT}/api/health`)
@@ -101,6 +113,7 @@ const server = app.listen(PORT, () => {
   console.log(`🌐 Allowed Origin   : ${CLIENT_URL}`)
   console.log(`🤖 AI Engine        : Gemini API configured (server-side only)`)
   console.log(`🔌 MQTT Broker      : ${env.MQTT_BROKER_URL}`)
+  console.log(`⚡ Real-Time Engine : Socket.IO initialized`)
   console.log('='.repeat(60))
 })
 

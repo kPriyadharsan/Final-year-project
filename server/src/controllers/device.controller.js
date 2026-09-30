@@ -2,6 +2,8 @@ const mongoose = require('mongoose')
 const { Device, DEVICE_TYPES, DEVICE_STATES } = require('../models/Device')
 const { DeviceLog, LOG_ACTIONS, MQTT_DELIVERY_STATUS } = require('../models/DeviceLog')
 const { publish } = require('../services/mqtt.service')
+const { emitDeviceStatus } = require('../services/socket.service')
+const { processDeviceStatusMessage } = require('../services/deviceSync.service')
 
 /**
  * @desc    Get all devices (with optional filters)
@@ -226,6 +228,9 @@ async function sendDeviceCommand(req, res) {
     device.state = newState
     await device.save()
 
+    // Real-time broadcast to connected React dashboards
+    emitDeviceStatus(device)
+
     // 8. Record the command in DeviceLog model
     const log = await DeviceLog.create({
       device: device._id,
@@ -281,8 +286,58 @@ async function sendDeviceCommand(req, res) {
   }
 }
 
+/**
+ * @desc    Simulate incoming MQTT device status message for testing/dev
+ * @route   POST /api/devices/:id/simulate-status
+ * @access  Private (SUPER_ADMIN, TEACHER)
+ */
+async function simulateDeviceStatus(req, res) {
+  try {
+    const { id } = req.params
+    const { state, isOnline } = req.body
+
+    let device = null
+    if (mongoose.Types.ObjectId.isValid(id)) {
+      device = await Device.findById(id)
+    }
+    if (!device) {
+      device = await Device.findOne({ deviceId: id.trim().toUpperCase() })
+    }
+
+    if (!device) {
+      return res.status(404).json({
+        status: 'error',
+        code: 'DEVICE_NOT_FOUND',
+        message: `Device with identifier "${id}" was not found.`,
+      })
+    }
+
+    const payload = {
+      deviceId: device.deviceId,
+      state: state || device.state,
+      isOnline: typeof isOnline === 'boolean' ? isOnline : true,
+      timestamp: new Date().toISOString(),
+    }
+
+    const updated = await processDeviceStatusMessage(device.mqttStatusTopic, payload)
+
+    res.status(200).json({
+      status: 'success',
+      message: `Simulated status message processed for "${device.name}".`,
+      device: updated,
+    })
+  } catch (err) {
+    console.error('Error simulating device status:', err)
+    res.status(500).json({
+      status: 'error',
+      message: 'Failed to simulate device status.',
+    })
+  }
+}
+
 module.exports = {
   getDevices,
   getDeviceById,
   sendDeviceCommand,
+  simulateDeviceStatus,
 }

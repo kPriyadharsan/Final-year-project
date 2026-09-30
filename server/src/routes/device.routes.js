@@ -6,6 +6,7 @@ const {
   getDevices,
   getDeviceById,
   sendDeviceCommand,
+  simulateDeviceStatus,
 } = require('../controllers/device.controller')
 
 // Restrict all device endpoints to authenticated SUPER_ADMIN and TEACHER users
@@ -32,5 +33,12 @@ router.get('/:id', getDeviceById)
  * @access  Private (SUPER_ADMIN, TEACHER)
  */
 router.post('/:id/command', sendDeviceCommand)
+
+/**
+ * @route   POST /api/devices/:id/simulate-status
+ * @desc    Simulate incoming MQTT status message to update DB and emit real-time Socket.IO event
+ * @access  Private (SUPER_ADMIN, TEACHER)
+ */
+router.post('/:id/simulate-status', simulateDeviceStatus)
 
 module.exports = router

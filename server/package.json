@@ -14,7 +14,8 @@
     "test:devices": "node scripts/test-devices.js",
     "test:mqtt": "node scripts/test-mqtt.js",
     "test:control": "node scripts/test-device-control.js",
-    "test": "node scripts/test-password.js && node scripts/test-auth.js && node scripts/test-roles.js && node scripts/test-devices.js && node scripts/test-mqtt.js && node scripts/test-device-control.js"
+    "test:realtime": "node scripts/test-realtime.js",
+    "test": "node scripts/test-password.js && node scripts/test-auth.js && node scripts/test-roles.js && node scripts/test-devices.js && node scripts/test-mqtt.js && node scripts/test-device-control.js && node scripts/test-realtime.js"
   },
   "keywords": [
     "mern",
@@ -31,9 +32,11 @@
     "express": "^4.21.2",
     "jsonwebtoken": "^9.0.3",
     "mongoose": "^8.9.5",
-    "mqtt": "^5.16.0"
+    "mqtt": "^5.16.0",
+    "socket.io": "^4.8.4"
   },
   "devDependencies": {
-    "nodemon": "^3.1.9"
+    "nodemon": "^3.1.9",
+    "socket.io-client": "^4.8.4"
   }
 }

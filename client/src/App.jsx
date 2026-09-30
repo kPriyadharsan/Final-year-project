@@ -1,5 +1,6 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { AuthProvider, useAuth } from './context/AuthContext'
+import { SocketProvider } from './context/SocketContext'
 import { ProtectedRoute } from './components/ProtectedRoute'
 import { LoginPage } from './components/LoginPage'
 import { AdminPage } from './pages/AdminPage'
@@ -66,50 +67,52 @@ function App() {
   return (
     <BrowserRouter>
       <AuthProvider>
-        <Routes>
-          {/* Root index route: Smart role-based redirect */}
-          <Route path="/" element={<HomeRedirect />} />
+        <SocketProvider>
+          <Routes>
+            {/* Root index route: Smart role-based redirect */}
+            <Route path="/" element={<HomeRedirect />} />
 
-          {/* Public route: /login */}
-          <Route
-            path="/login"
-            element={
-              <PublicLayout>
-                <LoginPage />
-              </PublicLayout>
-            }
-          />
+            {/* Public route: /login */}
+            <Route
+              path="/login"
+              element={
+                <PublicLayout>
+                  <LoginPage />
+                </PublicLayout>
+              }
+            />
 
-          {/* Protected route: /admin (SUPER_ADMIN only) */}
-          <Route
-            path="/admin"
-            element={
-              <ProtectedRoute allowedRoles={['SUPER_ADMIN']}>
-                <AdminPage />
-              </ProtectedRoute>
-            }
-          />
+            {/* Protected route: /admin (SUPER_ADMIN only) */}
+            <Route
+              path="/admin"
+              element={
+                <ProtectedRoute allowedRoles={['SUPER_ADMIN']}>
+                  <AdminPage />
+                </ProtectedRoute>
+              }
+            />
 
-          {/* Protected route: /teacher (TEACHER only) */}
-          <Route
-            path="/teacher"
-            element={
-              <ProtectedRoute allowedRoles={['TEACHER']}>
-                <TeacherPage />
-              </ProtectedRoute>
-            }
-          />
+            {/* Protected route: /teacher (TEACHER only) */}
+            <Route
+              path="/teacher"
+              element={
+                <ProtectedRoute allowedRoles={['TEACHER']}>
+                  <TeacherPage />
+                </ProtectedRoute>
+              }
+            />
 
-          {/* 404 Catch-All Route */}
-          <Route
-            path="*"
-            element={
-              <PublicLayout>
-                <NotFoundPage />
-              </PublicLayout>
-            }
-          />
-        </Routes>
+            {/* 404 Catch-All Route */}
+            <Route
+              path="*"
+              element={
+                <PublicLayout>
+                  <NotFoundPage />
+                </PublicLayout>
+              }
+            />
+          </Routes>
+        </SocketProvider>
       </AuthProvider>
     </BrowserRouter>
   )

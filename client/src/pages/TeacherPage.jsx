@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import {
   School,
   MonitorPlay,
@@ -33,6 +33,7 @@ import {
   RotateCcw,
 } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
+import { useSocket } from '../context/SocketContext'
 import { testProtectedRoute } from '../services/auth.service'
 import { DashboardLayout, PageContainer } from '../components/layout'
 import {
@@ -54,6 +55,9 @@ import {
 
 export function TeacherPage() {
   const { user, token } = useAuth()
+  const { socket, isConnected } = useSocket()
+
+  const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000'
 
   // API Verification State
   const [testResult, setTestResult] = useState(null)
@@ -62,14 +66,15 @@ export function TeacherPage() {
   // Feedback Notification Banner
   const [actionAlert, setActionAlert] = useState(null)
 
-  // 1. MOCK STATE: Classroom Devices (Light, Fan, Projector)
+  // 1. Classroom Devices (Light, Fan, Projector)
   const [devices, setDevices] = useState([
     {
       id: 'light',
+      deviceId: 'ESP32-RM302-LIGHT-01',
       name: 'Classroom Lights',
-      type: 'Lighting Relay',
+      type: 'LIGHT',
       icon: Lightbulb,
-      room: 'Lab 302',
+      room: 'Room 302',
       isOn: true,
       isOnline: true,
       details: '80% Daylight Spectrum',
@@ -77,10 +82,11 @@ export function TeacherPage() {
     },
     {
       id: 'fan',
+      deviceId: 'ESP32-RM302-FAN-01',
       name: 'Ceiling Fans',
-      type: 'Ventilation Relay',
+      type: 'FAN',
       icon: Fan,
-      room: 'Lab 302',
+      room: 'Room 302',
       isOn: false,
       isOnline: true,
       details: 'Speed 3 (Medium)',
@@ -88,10 +94,11 @@ export function TeacherPage() {
     },
     {
       id: 'projector',
+      deviceId: 'ESP32-RM302-PROJ-01',
       name: 'Smart Projector',
-      type: 'Presentation & Cast',
+      type: 'PROJECTOR',
       icon: Projector,
-      room: 'Lab 302',
+      room: 'Room 302',
       isOn: true,
       isOnline: true,
       details: 'HDMI 1 (Wireless Cast Ready)',
@@ -99,24 +106,157 @@ export function TeacherPage() {
     },
   ])
 
-  // Toggle single device ON/OFF
-  const handleToggleDevice = (deviceId) => {
-    setDevices((prev) =>
-      prev.map((dev) => {
-        if (dev.id === deviceId) {
-          const nextState = !dev.isOn
-          setActionAlert({
-            type: 'info',
-            message: `${dev.name} turned ${nextState ? 'ON' : 'OFF'} in Room 302.`,
-          })
-          return { ...dev, isOn: nextState }
+  // Fetch initial devices from MongoDB backend
+  useEffect(() => {
+    async function loadBackendDevices() {
+      try {
+        const res = await fetch(`${apiBaseUrl}/api/devices?classroom=Room 302`, {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            Accept: 'application/json',
+          },
+        })
+        if (res.ok) {
+          const data = await res.json()
+          if (data.devices && data.devices.length > 0) {
+            setDevices((prev) =>
+              prev.map((mockDev) => {
+                const matched = data.devices.find(
+                  (d) =>
+                    d.deviceId === mockDev.deviceId ||
+                    d.type === mockDev.type ||
+                    d.name.toLowerCase().includes(mockDev.type.toLowerCase())
+                )
+                if (matched) {
+                  return {
+                    ...mockDev,
+                    id: matched._id,
+                    deviceId: matched.deviceId,
+                    name: matched.name,
+                    isOn: matched.state === 'ON',
+                    isOnline: typeof matched.isOnline === 'boolean' ? matched.isOnline : true,
+                    relayChannel: `GPIO ${matched.gpioPin || 'N/A'} (ESP32)`,
+                  }
+                }
+                return mockDev
+              })
+            )
+          }
         }
-        return dev
+      } catch (err) {
+        console.warn('Initial device fetch note (using defaults):', err.message)
+      }
+    }
+
+    if (token) {
+      loadBackendDevices()
+    }
+  }, [token, apiBaseUrl])
+
+  // Real-Time Socket.IO Listener: Listen for "device:status"
+  useEffect(() => {
+    if (!socket) return
+
+    const handleDeviceStatus = (incoming) => {
+      console.log('[Socket.IO UI] ⚡ Received live device:status event:', incoming)
+
+      setDevices((prev) =>
+        prev.map((dev) => {
+          const isMatch =
+            dev.deviceId === incoming.deviceId ||
+            dev.id === incoming.id ||
+            dev.id === incoming.deviceId ||
+            (dev.type && incoming.type && dev.type.toUpperCase() === incoming.type.toUpperCase())
+
+          if (isMatch) {
+            return {
+              ...dev,
+              isOn: incoming.state === 'ON',
+              isOnline: typeof incoming.isOnline === 'boolean' ? incoming.isOnline : dev.isOnline,
+            }
+          }
+          return dev
+        })
+      )
+
+      setActionAlert({
+        type: 'info',
+        message: `Real-time update: ${incoming.name || incoming.deviceId} is now ${incoming.state} (${
+          incoming.isOnline ? 'Online' : 'Offline'
+        }).`,
       })
+    }
+
+    socket.on('device:status', handleDeviceStatus)
+
+    return () => {
+      socket.off('device:status', handleDeviceStatus)
+    }
+  }, [socket])
+
+  // Dispatch device control command via Backend POST /api/devices/:id/command
+  const handleToggleDevice = async (device) => {
+    const nextState = !device.isOn
+    const targetAction = nextState ? 'ON' : 'OFF'
+
+    // Optimistic UI update
+    setDevices((prev) =>
+      prev.map((dev) => (dev.id === device.id ? { ...dev, isOn: nextState } : dev))
     )
+
+    try {
+      const identifier = device.deviceId || device.id
+      const res = await fetch(`${apiBaseUrl}/api/devices/${identifier}/command`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ action: targetAction }),
+      })
+
+      const data = await res.json()
+      if (res.ok && data.status === 'success') {
+        setActionAlert({
+          type: 'success',
+          message: `${device.name} commanded to ${targetAction}. Real-time Socket.IO event dispatched.`,
+        })
+      } else {
+        console.warn('Device command response notice:', data)
+      }
+    } catch (err) {
+      console.error('Command dispatch error:', err)
+    }
   }
 
-  // Toggle online/offline state for simulation
+  // Simulate incoming status update (Flow: Simulation -> DB update -> Socket.IO -> UI)
+  const handleSimulateStatus = async (device) => {
+    const nextState = device.isOn ? 'OFF' : 'ON'
+    try {
+      const identifier = device.deviceId || device.id
+      const res = await fetch(`${apiBaseUrl}/api/devices/${identifier}/simulate-status`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          state: nextState,
+          isOnline: device.isOnline,
+        }),
+      })
+      if (res.ok) {
+        setActionAlert({
+          type: 'info',
+          message: `Simulated MQTT status dispatched for ${device.name}. Processing real-time update...`,
+        })
+      }
+    } catch (err) {
+      console.warn('Status simulation notice:', err.message)
+    }
+  }
+
+  // Toggle online/offline state simulation
   const handleToggleOnline = (deviceId) => {
     setDevices((prev) =>
       prev.map((dev) => {
@@ -543,8 +683,18 @@ export function TeacherPage() {
               </p>
             </div>
 
-            {/* Master Batch Buttons */}
-            <div className="flex items-center gap-2">
+            {/* Master Batch & Socket Status */}
+            <div className="flex items-center gap-2 flex-wrap">
+              <Badge
+                variant={isConnected ? 'success' : 'warning'}
+                dot
+                pulse={isConnected}
+                size="sm"
+                title={`Socket.IO Real-Time Engine (${transport})`}
+              >
+                {isConnected ? 'Socket.IO Live' : 'Connecting...'}
+              </Badge>
+
               <Button
                 variant="outline"
                 size="sm"
@@ -641,7 +791,7 @@ export function TeacherPage() {
                     </div>
                   </div>
 
-                  {/* Control Button (ON/OFF Toggle) */}
+                  {/* Control Button (ON/OFF Toggle) & Real-time Simulation */}
                   <div className="pt-2 border-t border-slate-800/60 flex items-center justify-between gap-3">
                     <div className="flex items-center gap-1.5">
                       <span
@@ -654,14 +804,25 @@ export function TeacherPage() {
                       </span>
                     </div>
 
-                    <Button
-                      variant={device.isOn ? 'danger' : 'primary'}
-                      size="sm"
-                      leftIcon={<Power className="w-3.5 h-3.5" />}
-                      onClick={() => handleToggleDevice(device.id)}
-                    >
-                      {device.isOn ? 'Turn OFF' : 'Turn ON'}
-                    </Button>
+                    <div className="flex items-center gap-1.5">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="text-[11px] h-8 px-2 text-slate-400 hover:text-indigo-300"
+                        title="Simulate incoming MQTT status message from ESP32"
+                        onClick={() => handleSimulateStatus(device)}
+                      >
+                        Simulate MQTT
+                      </Button>
+                      <Button
+                        variant={device.isOn ? 'danger' : 'primary'}
+                        size="sm"
+                        leftIcon={<Power className="w-3.5 h-3.5" />}
+                        onClick={() => handleToggleDevice(device)}
+                      >
+                        {device.isOn ? 'Turn OFF' : 'Turn ON'}
+                      </Button>
+                    </div>
                   </div>
                 </Card>
               )
