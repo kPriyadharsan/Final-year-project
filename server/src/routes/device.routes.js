@@ -2,7 +2,11 @@ const express = require('express')
 const router = express.Router()
 const { requireAuth, requireRole } = require('../middleware/auth.middleware')
 const { ROLES } = require('../models/User')
-const { getDevices, getDeviceById } = require('../controllers/device.controller')
+const {
+  getDevices,
+  getDeviceById,
+  sendDeviceCommand,
+} = require('../controllers/device.controller')
 
 // Restrict all device endpoints to authenticated SUPER_ADMIN and TEACHER users
 router.use(requireAuth)
@@ -21,5 +25,12 @@ router.get('/', getDevices)
  * @access  Private (SUPER_ADMIN, TEACHER)
  */
 router.get('/:id', getDeviceById)
+
+/**
+ * @route   POST /api/devices/:id/command
+ * @desc    Send control command (ON/OFF) to a device, publish MQTT topic, and record DeviceLog
+ * @access  Private (SUPER_ADMIN, TEACHER)
+ */
+router.post('/:id/command', sendDeviceCommand)
 
 module.exports = router

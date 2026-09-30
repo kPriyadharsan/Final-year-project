@@ -13,7 +13,8 @@
     "test:roles": "node scripts/test-roles.js",
     "test:devices": "node scripts/test-devices.js",
     "test:mqtt": "node scripts/test-mqtt.js",
-    "test": "node scripts/test-password.js && node scripts/test-auth.js && node scripts/test-roles.js && node scripts/test-devices.js && node scripts/test-mqtt.js"
+    "test:control": "node scripts/test-device-control.js",
+    "test": "node scripts/test-password.js && node scripts/test-auth.js && node scripts/test-roles.js && node scripts/test-devices.js && node scripts/test-mqtt.js && node scripts/test-device-control.js"
   },
   "keywords": [
     "mern",
