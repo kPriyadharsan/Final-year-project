@@ -60,9 +60,17 @@ async function processDeviceStatusMessage(topic, payload) {
       })
     }
 
-    // Fallback: search by mqttStatusTopic if deviceId was not in topic/payload
+    // Fallback 1: search by mqttStatusTopic if deviceId was not in topic/payload
     if (!device && topic) {
       device = await Device.findOne({ mqttStatusTopic: topic })
+    }
+
+    // Fallback 2: search by device type (e.g. topic "classroom/device/light/status" -> type "LIGHT")
+    if (!device && targetDeviceId) {
+      const upperType = targetDeviceId.trim().toUpperCase()
+      if (['LIGHT', 'FAN', 'PROJECTOR'].includes(upperType)) {
+        device = await Device.findOne({ type: upperType, isActive: true })
+      }
     }
 
     if (!device) {

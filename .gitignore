@@ -43,3 +43,10 @@ desktop.ini
 
 # Testing & Coverage
 coverage/
+
+# Firmware & Hardware Credentials
+secrets.h
+firmware/**/secrets.h
+*.bin
+*.elf
+*.hex
