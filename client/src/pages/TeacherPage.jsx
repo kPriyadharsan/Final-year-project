@@ -77,6 +77,10 @@ export function TeacherPage() {
   const [healthLoading, setHealthLoading] = useState(false)
   const [lastHealthCheck, setLastHealthCheck] = useState(null)
 
+  // Live Recent Activity Audit Feed (Voice & Hardware Commands)
+  const [recentActivities, setRecentActivities] = useState([])
+  const [activitiesLoading, setActivitiesLoading] = useState(false)
+
   // 1. Classroom Devices (Light, Fan, Projector)
   const [devices, setDevices] = useState([
     {
@@ -252,6 +256,34 @@ export function TeacherPage() {
     return () => clearInterval(interval)
   }, [fetchSystemStatus])
 
+  // Fetch recent voice and device activity from backend
+  const fetchRecentActivity = useCallback(async () => {
+    if (!token) return
+    setActivitiesLoading(true)
+    try {
+      const res = await fetch(`${apiBaseUrl}/api/voice/history?limit=5`, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          Accept: 'application/json',
+        },
+      })
+      if (res.ok) {
+        const data = await res.json()
+        if (data.status === 'success' && data.data) {
+          setRecentActivities(data.data)
+        }
+      }
+    } catch (err) {
+      console.warn('Recent activity fetch note:', err.message)
+    } finally {
+      setActivitiesLoading(false)
+    }
+  }, [apiBaseUrl, token])
+
+  useEffect(() => {
+    fetchRecentActivity()
+  }, [fetchRecentActivity])
+
   // Dispatch device control command via Backend POST /api/devices/:id/command
   const handleToggleDevice = async (device) => {
     const nextState = !device.isOn
@@ -287,6 +319,7 @@ export function TeacherPage() {
           type: 'success',
           message: data.message || `${device.name} ${targetAction} command sent.`,
         })
+        fetchRecentActivity()
       } else {
         // Hardware or broker offline - do not fake successful hardware status
         setActionAlert({
@@ -1134,8 +1167,78 @@ export function TeacherPage() {
             </Card>
           </div>
 
-          {/* Recent Notes Placeholder (Right Column) */}
+          {/* Right Column: Live Recent Activity & Lesson Notes */}
           <div className="space-y-4">
+            {/* Card 1: Live Voice & IoT Recent Activity */}
+            <Card>
+              <CardHeader className="flex items-center justify-between">
+                <div>
+                  <CardTitle className="text-sm flex items-center gap-2">
+                    <Clock className="w-4 h-4 text-cyan-400" />
+                    <span>Recent Activity</span>
+                  </CardTitle>
+                  <CardDescription>Live voice commands & relay dispatch audit.</CardDescription>
+                </div>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={fetchRecentActivity}
+                  isLoading={activitiesLoading}
+                  className="h-7 px-2 text-xs text-slate-400 hover:text-white"
+                  title="Refresh activity logs"
+                >
+                  <RefreshCw className={`w-3 h-3 ${activitiesLoading ? 'animate-spin' : ''}`} />
+                </Button>
+              </CardHeader>
+
+              <CardContent className="space-y-3">
+                {recentActivities.length > 0 ? (
+                  <div className="space-y-2">
+                    {recentActivities.map((act) => (
+                      <div
+                        key={act._id}
+                        className="p-3 rounded-xl bg-slate-950/60 border border-slate-800/80 space-y-1.5 hover:border-slate-700 transition-colors"
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <span className="text-xs font-semibold text-white font-mono truncate max-w-[150px]">
+                            "{act.transcript}"
+                          </span>
+                          <Badge
+                            variant={
+                              act.result?.executionStatus === 'EXECUTED'
+                                ? 'success'
+                                : act.result?.executionStatus === 'FAILED'
+                                ? 'danger'
+                                : 'info'
+                            }
+                            size="sm"
+                          >
+                            {act.result?.executionStatus || act.intent}
+                          </Badge>
+                        </div>
+                        <div className="flex items-center justify-between text-[11px] text-slate-400 font-mono">
+                          <span className="text-cyan-300">
+                            {act.device ? `${act.device.toUpperCase()} → ${act.action}` : act.intent}
+                          </span>
+                          <span className="text-[10px] text-slate-500">
+                            {new Date(act.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="p-4 rounded-xl bg-slate-950/40 border border-slate-800/60 text-center space-y-1">
+                    <p className="text-xs text-slate-400">No voice activity recorded yet.</p>
+                    <p className="text-[11px] text-slate-500">
+                      Use the Voice Assistant or buttons to command devices.
+                    </p>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Card 2: Classroom Notes & Teaching Materials */}
             <Card>
               <CardHeader className="flex items-center justify-between">
                 <div>
@@ -1208,6 +1311,7 @@ export function TeacherPage() {
             classroom="Room 302"
             onClose={() => setActiveModal(null)}
             onCommandExecuted={(cmdData) => {
+              fetchRecentActivity()
               if (cmdData.executionStatus === 'EXECUTED') {
                 setActionAlert({
                   type: 'success',
