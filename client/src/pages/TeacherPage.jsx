@@ -52,6 +52,7 @@ import {
   EmptyState,
   AlertBanner,
 } from '../components/ui'
+import { VoiceAssistant } from '../components/voice'
 
 export function TeacherPage() {
   const { user, token } = useAuth()
@@ -343,11 +344,6 @@ export function TeacherPage() {
   // Modals Management for Quick Actions
   const [activeModal, setActiveModal] = useState(null) // 'voice' | 'notes' | 'quiz' | 'image' | 'ppt' | 'devices'
 
-  // Voice Assistant Simulation State
-  const [voiceInput, setVoiceInput] = useState('')
-  const [isVoiceProcessing, setIsVoiceProcessing] = useState(false)
-  const [voiceResult, setVoiceResult] = useState(null)
-
   // AI Generation Mock States
   const [newNoteTitle, setNewNoteTitle] = useState('')
   const [newNoteContent, setNewNoteContent] = useState('')
@@ -379,56 +375,6 @@ export function TeacherPage() {
     } finally {
       setIsTesting(false)
     }
-  }
-
-  // Process Simulated Voice Command
-  const handleProcessVoice = (inputCommand) => {
-    const text = inputCommand || voiceInput
-    if (!text.trim()) return
-
-    setIsVoiceProcessing(true)
-    setVoiceResult(null)
-
-    setTimeout(() => {
-      const lower = text.toLowerCase()
-      let affectedDevice = null
-      let targetState = true
-      let actionLabel = 'DEVICE_COMMAND'
-
-      if (lower.includes('light') || lower.includes('விளக்கு')) {
-        affectedDevice = 'light'
-        targetState = !lower.includes('off') && !lower.includes('அணை')
-        actionLabel = targetState ? 'TURN_LIGHTS_ON' : 'TURN_LIGHTS_OFF'
-      } else if (lower.includes('fan') || lower.includes('மின்விசிறி') || lower.includes('காற்றாடி')) {
-        affectedDevice = 'fan'
-        targetState = !lower.includes('off') && !lower.includes('அணை')
-        actionLabel = targetState ? 'TURN_FANS_ON' : 'TURN_FANS_OFF'
-      } else if (lower.includes('projector') || lower.includes('ப்ராஜெக்டர்')) {
-        affectedDevice = 'projector'
-        targetState = !lower.includes('off') && !lower.includes('அணை')
-        actionLabel = targetState ? 'PROJECTOR_ON' : 'PROJECTOR_OFF'
-      } else if (lower.includes('all off') || lower.includes('எல்லாம் அணை')) {
-        handleAllDevices(false)
-        actionLabel = 'ALL_RELAYS_OFF'
-      }
-
-      if (affectedDevice) {
-        setDevices((prev) =>
-          prev.map((d) => (d.id === affectedDevice ? { ...d, isOn: targetState } : d))
-        )
-      }
-
-      setVoiceResult({
-        command: text,
-        language: /[\u0B80-\u0BFF]/.test(text) ? 'Tamil (தமிழ்)' : 'English',
-        intent: actionLabel,
-        targetRoom: 'Lab 302',
-        status: 'Dispatched to Classroom Relay Hub',
-        confidence: '99.1%',
-      })
-
-      setIsVoiceProcessing(false)
-    }, 700)
   }
 
   // Create new note
@@ -1038,123 +984,19 @@ export function TeacherPage() {
           isOpen={activeModal === 'voice'}
           onClose={() => setActiveModal(null)}
           title="Classroom Voice Assistant"
-          description="Bilingual voice engine for Room 302 IoT relays and presentation triggers."
+          description="English voice engine for Room 302 IoT appliances and educational AI triggers."
           size="lg"
-          footer={
-            <>
-              <Button variant="outline" size="sm" onClick={() => setActiveModal(null)}>
-                Close
-              </Button>
-              <Button
-                variant="primary"
-                size="sm"
-                onClick={() => handleProcessVoice()}
-                isLoading={isVoiceProcessing}
-              >
-                Send Voice Command
-              </Button>
-            </>
-          }
         >
-          <div className="space-y-5">
-            {/* Animated Mic Wave Area */}
-            <div className="p-6 rounded-2xl bg-gradient-to-b from-purple-500/10 to-slate-950 border border-purple-500/20 text-center space-y-3">
-              <div className="w-14 h-14 mx-auto rounded-full bg-purple-600 flex items-center justify-center text-white shadow-xl shadow-purple-600/30 animate-pulse">
-                <Mic className="w-7 h-7" />
-              </div>
-              <div>
-                <p className="text-sm font-bold text-white">Voice Command Listener Active</p>
-                <p className="text-xs text-slate-400 mt-0.5">
-                  Listening on ESP32 Room 302 Microphone Relay
-                </p>
-              </div>
-            </div>
-
-            {/* Input & Simulated Phrases */}
-            <div className="space-y-2">
-              <label className="text-xs font-semibold text-slate-300 block">
-                Type or select voice command:
-              </label>
-              <div className="flex gap-2">
-                <input
-                  type="text"
-                  value={voiceInput}
-                  onChange={(e) => setVoiceInput(e.target.value)}
-                  placeholder="e.g. Turn on projector or விளக்குகளை இயக்கு"
-                  className="flex-1 px-3.5 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white focus:outline-none focus:border-purple-500"
-                />
-                <Button
-                  variant="primary"
-                  size="md"
-                  onClick={() => handleProcessVoice()}
-                  isLoading={isVoiceProcessing}
-                >
-                  Execute
-                </Button>
-              </div>
-
-              {/* Sample Voice Prompts */}
-              <div className="flex flex-wrap gap-2 pt-1">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setVoiceInput('Turn on classroom lights')
-                    handleProcessVoice('Turn on classroom lights')
-                  }}
-                  className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-mono cursor-pointer"
-                >
-                  "Turn on classroom lights"
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setVoiceInput('Turn off the fan')
-                    handleProcessVoice('Turn off the fan')
-                  }}
-                  className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-mono cursor-pointer"
-                >
-                  "Turn off the fan"
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setVoiceInput('விளக்குகளை இயக்கு')
-                    handleProcessVoice('விளக்குகளை இயக்கு')
-                  }}
-                  className="px-2.5 py-1 rounded-lg bg-purple-500/10 hover:bg-purple-500/20 text-purple-300 border border-purple-500/30 text-xs cursor-pointer"
-                >
-                  "விளக்குகளை இயக்கு (Tamil)"
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setVoiceInput('Turn off all devices')
-                    handleProcessVoice('Turn off all devices')
-                  }}
-                  className="px-2.5 py-1 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 border border-rose-500/30 text-xs cursor-pointer"
-                >
-                  "Turn off all devices"
-                </button>
-              </div>
-            </div>
-
-            {/* Voice Result Breakdown */}
-            {voiceResult && (
-              <div className="p-4 rounded-xl bg-slate-950 border border-purple-500/30 space-y-2 text-xs font-mono">
-                <div className="flex justify-between text-purple-300 font-bold border-b border-slate-800 pb-2">
-                  <span>Intent: {voiceResult.intent}</span>
-                  <span className="text-emerald-400">{voiceResult.confidence}</span>
-                </div>
-                <div className="grid grid-cols-2 gap-2 text-slate-400 text-[11px]">
-                  <div>Language: <span className="text-white">{voiceResult.language}</span></div>
-                  <div>Room: <span className="text-white">{voiceResult.targetRoom}</span></div>
-                </div>
-                <p className="text-emerald-400 text-[11px] pt-1">
-                  ✓ Mock MQTT Relay packet dispatched to ESP32-RM302.
-                </p>
-              </div>
-            )}
-          </div>
+          <VoiceAssistant
+            classroom="Room 302"
+            onClose={() => setActiveModal(null)}
+            onCommandExecuted={(cmdData) => {
+              setActionAlert({
+                type: cmdData.executionStatus === 'EXECUTED' ? 'success' : 'info',
+                message: `Voice command: ${cmdData.message || cmdData.transcript}`,
+              })
+            }}
+          />
         </Modal>
 
         {/* Modal 2: Create Notes */}
