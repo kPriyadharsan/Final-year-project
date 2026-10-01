@@ -24,7 +24,12 @@ const clientId =
   `smart_classroom_backend_${Math.random().toString(16).slice(2, 8)}`
 
 // Default topics to automatically subscribe to
-const DEFAULT_TOPICS = ['classroom/device/+/status']
+const DEFAULT_TOPICS = [
+  'classroom/device/+/status',
+  'classroom/device/availability',
+  'classroom/esp32/status',
+  'smartclassroom/+/relay/+/state',
+]
 
 // Internal state tracking
 let client = null

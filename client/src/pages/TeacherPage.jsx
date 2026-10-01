@@ -704,22 +704,15 @@ export function TeacherPage() {
                       </div>
                     </div>
 
-                    {/* Online / Offline State Badge */}
-                    <button
-                      type="button"
-                      onClick={() => handleToggleOnline(device.id)}
-                      title="Click to toggle simulated online/offline status"
-                      className="cursor-pointer"
+                    {/* Actual Hardware Online / Offline State Badge */}
+                    <Badge
+                      variant={device.isOnline ? 'success' : 'danger'}
+                      dot={device.isOnline}
+                      pulse={device.isOnline && device.isOn}
+                      size="sm"
                     >
-                      <Badge
-                        variant={device.isOnline ? 'success' : 'danger'}
-                        dot={device.isOnline}
-                        pulse={device.isOnline && device.isOn}
-                        size="sm"
-                      >
-                        {device.isOnline ? 'Online' : 'Offline'}
-                      </Badge>
-                    </button>
+                      {device.isOnline ? 'Online' : 'Offline'}
+                    </Badge>
                   </div>
 
                   {/* Device Telemetry Specs */}

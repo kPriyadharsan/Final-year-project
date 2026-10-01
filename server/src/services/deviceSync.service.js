@@ -122,6 +122,39 @@ function initDeviceSync() {
     console.log(`[DeviceSync] 📩 Received MQTT relay state on [${topic}]`)
     processDeviceStatusMessage(topic, payload)
   })
+
+  // Listen for board availability and Last Will & Testament (LWT)
+  const handleAvailability = async (topic, payload) => {
+    try {
+      let statusText = ''
+      if (typeof payload === 'string') {
+        try {
+          const parsed = JSON.parse(payload)
+          statusText = parsed.status || ''
+        } catch {
+          statusText = payload.trim().toLowerCase()
+        }
+      } else if (payload && typeof payload === 'object') {
+        statusText = (payload.status || '').toLowerCase()
+      }
+
+      const isOnline = statusText === 'online'
+      console.log(`[DeviceSync] 📡 Board availability event on [${topic}]: "${statusText}" (isOnline=${isOnline})`)
+
+      const devices = await Device.find({ classroom: 'Room 302', isActive: true })
+      for (const dev of devices) {
+        dev.isOnline = isOnline
+        await dev.save()
+        emitDeviceStatus(dev)
+      }
+      console.log(`[DeviceSync] 🔄 Updated ${devices.length} Room 302 devices to isOnline=${isOnline} and dispatched real-time Socket.IO events.`)
+    } catch (err) {
+      console.error(`[DeviceSync] Error handling availability event on [${topic}]:`, err)
+    }
+  }
+
+  onMessage('classroom/device/availability', handleAvailability)
+  onMessage('classroom/esp32/status', handleAvailability)
 }
 
 module.exports = {

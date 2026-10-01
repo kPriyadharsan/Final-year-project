@@ -91,28 +91,43 @@ void printBanner() {
 void publishDeviceStatus(const char* appliance, const char* statusTopic, bool state) {
   const char* stateStr = state ? "ON" : "OFF";
 
-  // 1. Publish plain text status payload (e.g. "ON" or "OFF")
-  mqttClient.publish(statusTopic, stateStr, false);
+  // Map appliance name to exact MongoDB hardware deviceId
+  const char* devId = "ESP32-RM302-LIGHT-01";
+  const char* fallbackTopic = "smartclassroom/room302/relay/light/state";
 
-  // 2. Publish structured JSON payload for backend deviceSync & Socket.IO
+  if (strcmp(appliance, "FAN") == 0) {
+    devId = "ESP32-RM302-FAN-01";
+    fallbackTopic = "smartclassroom/room302/relay/fan/state";
+  } else if (strcmp(appliance, "PROJECTOR") == 0) {
+    devId = "ESP32-RM302-PROJ-01";
+    fallbackTopic = "smartclassroom/room302/relay/projector/state";
+  }
+
+  // 1. Build structured JSON payload with true online status and telemetry
   char jsonBuffer[256];
   snprintf(
     jsonBuffer,
     sizeof(jsonBuffer),
-    "{\"deviceId\":\"ESP32-RM302-%s-01\",\"type\":\"%s\",\"state\":\"%s\",\"isOnline\":true,\"rssi\":%d,\"uptime\":%lu}",
-    appliance,
+    "{\"deviceId\":\"%s\",\"type\":\"%s\",\"state\":\"%s\",\"isOnline\":true,\"rssi\":%d,\"uptime\":%lu}",
+    devId,
     appliance,
     stateStr,
     WiFi.RSSI(),
     millis() / 1000
   );
 
-  // Also publish to device-specific status topic if desired
-  char deviceTopic[64];
-  snprintf(deviceTopic, sizeof(deviceTopic), "classroom/device/%s/status", appliance);
-  mqttClient.publish(deviceTopic, jsonBuffer, false);
+  // 2. Publish to primary status topic (e.g. classroom/device/light/status)
+  mqttClient.publish(statusTopic, jsonBuffer, false);
 
-  Serial.printf("[MQTT OUT] 📤 Published [%s] -> %s (JSON: %s)\n", statusTopic, stateStr, jsonBuffer);
+  // 3. Publish to backward-compatible relay topic (e.g. smartclassroom/room302/relay/light/state)
+  mqttClient.publish(fallbackTopic, jsonBuffer, false);
+
+  // 4. Also publish plain text "ON" / "OFF" for simple third-party subscribers
+  char rawTopic[64];
+  snprintf(rawTopic, sizeof(rawTopic), "%s/raw", statusTopic);
+  mqttClient.publish(rawTopic, stateStr, false);
+
+  Serial.printf("[MQTT OUT] 📤 Published [%s] -> State: %s (DeviceId: %s)\n", statusTopic, stateStr, devId);
 }
 
 // ----------------------------------------------------------------------------
