@@ -138,9 +138,46 @@ function requireRole(...allowedRoles) {
   }
 }
 
+/**
+ * Optional Authentication Middleware: optionalAuth
+ * Attaches user to req.user if valid token provided; does not reject if absent
+ */
+async function optionalAuth(req, res, next) {
+  try {
+    const authHeader = req.headers.authorization
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      req.user = null
+      return next()
+    }
+
+    const token = authHeader.split(' ')[1]
+    if (!token || token.trim() === '') {
+      req.user = null
+      return next()
+    }
+
+    try {
+      const decoded = verifyToken(token)
+      if (decoded && decoded.id) {
+        const user = await User.findById(decoded.id)
+        if (user && user.isActive) {
+          req.user = user
+        }
+      }
+    } catch {
+      req.user = null
+    }
+    next()
+  } catch {
+    req.user = null
+    next()
+  }
+}
+
 module.exports = {
   requireAuth,
   requireRole,
+  optionalAuth,
   // Aliases for backwards compatibility
   authenticate: requireAuth,
   authorizeRoles: requireRole,
