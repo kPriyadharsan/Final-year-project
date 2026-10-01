@@ -65,7 +65,7 @@ async function connectDB() {
   setupConnectionListeners()
 
   const options = {
-    serverSelectionTimeoutMS: 5000, // Do not hang indefinitely if host is down
+    serverSelectionTimeoutMS: 15000, // Generous timeout for cloud MongoDB Atlas connectivity
     socketTimeoutMS: 45000,
     autoIndex: true, // Build indexes in development
   }

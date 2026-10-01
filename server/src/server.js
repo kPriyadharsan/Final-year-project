@@ -71,6 +71,7 @@ app.get('/', (req, res) => {
     },
     aiEndpoints: {
       test: 'POST /api/ai/test',
+      parseCommand: 'POST /api/ai/parse-command',
       status: 'GET /api/ai/status',
     },
     protectedTestEndpoints: {

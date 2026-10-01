@@ -1,6 +1,6 @@
 const express = require('express')
 const router = express.Router()
-const { testGeminiPrompt, getAIStatus } = require('../controllers/ai.controller')
+const { testGeminiPrompt, parseCommand, getAIStatus } = require('../controllers/ai.controller')
 
 /**
  * @route   POST /api/ai/test
@@ -10,8 +10,16 @@ const { testGeminiPrompt, getAIStatus } = require('../controllers/ai.controller'
 router.post('/test', testGeminiPrompt)
 
 /**
+ * @route   POST /api/ai/parse-command
+ * @desc    Parse natural language classroom command into validated structured JSON
+ * @access  Public / Testing
+ */
+router.post('/parse-command', parseCommand)
+router.post('/command', parseCommand) // Convenient alias
+
+/**
  * @route   GET /api/ai/status
- * @desc    Check Gemini AI service status, configured model, and key readiness
+ * @desc    Check Gemini AI service status, configured model, and allowlists
  * @access  Public
  */
 router.get('/status', getAIStatus)

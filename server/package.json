@@ -16,7 +16,8 @@
     "test:control": "node scripts/test-device-control.js",
     "test:realtime": "node scripts/test-realtime.js",
     "test:gemini": "node scripts/test-gemini.js",
-    "test": "node scripts/test-password.js && node scripts/test-auth.js && node scripts/test-roles.js && node scripts/test-devices.js && node scripts/test-mqtt.js && node scripts/test-device-control.js && node scripts/test-realtime.js && node scripts/test-gemini.js"
+    "test:parser": "node scripts/test-command-parser.js",
+    "test": "node scripts/test-password.js && node scripts/test-auth.js && node scripts/test-roles.js && node scripts/test-devices.js && node scripts/test-mqtt.js && node scripts/test-device-control.js && node scripts/test-realtime.js && node scripts/test-gemini.js && node scripts/test-command-parser.js"
   },
   "keywords": [
     "mern",

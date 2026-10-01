@@ -1,4 +1,5 @@
 const geminiService = require('../services/gemini.service')
+const commandParserService = require('../services/commandParser.service')
 
 /**
  * @desc    Test prompt generation endpoint using Gemini AI
@@ -65,6 +66,59 @@ async function testGeminiPrompt(req, res) {
 }
 
 /**
+ * @desc    Parse natural language classroom command into structured JSON
+ * @route   POST /api/ai/parse-command
+ * @access  Public / Authenticated
+ */
+async function parseCommand(req, res) {
+  try {
+    // Accepts text, command, or prompt
+    const rawInput = req.body.text || req.body.command || req.body.prompt
+
+    if (!rawInput || typeof rawInput !== 'string' || rawInput.trim() === '') {
+      return res.status(400).json({
+        status: 'error',
+        code: 'COMMAND_REQUIRED',
+        message: 'A valid text command string ("text", "command", or "prompt") is required.',
+        example: {
+          text: 'Please turn on the fan.',
+        },
+      })
+    }
+
+    const { model } = req.body
+    const options = model ? { model } : {}
+
+    // Parse with Gemini SDK and strict backend allowlist validation
+    const parsed = await commandParserService.parseClassroomCommand(rawInput, options)
+
+    // Return the required structured JSON format
+    return res.status(200).json({
+      status: 'success',
+      data: {
+        intent: parsed.intent,
+        device: parsed.device,
+        action: parsed.action,
+        confidence: parsed.confidence,
+        rawInput: parsed.rawInput,
+        isValid: parsed.isValid,
+        reason: parsed.reason,
+        source: parsed.source,
+      },
+    })
+  } catch (err) {
+    const statusCode = err.status && typeof err.status === 'number' ? err.status : 500
+
+    return res.status(statusCode).json({
+      status: 'error',
+      code: err.code || 'COMMAND_PARSING_FAILED',
+      message: err.message || 'Failed to parse classroom command.',
+      timestamp: new Date().toISOString(),
+    })
+  }
+}
+
+/**
  * @desc    Check Gemini AI service readiness and configuration status
  * @route   GET /api/ai/status
  * @access  Public
@@ -74,12 +128,18 @@ function getAIStatus(req, res) {
 
   return res.status(200).json({
     status: 'success',
-    ai: status,
+    ai: {
+      ...status,
+      supportedDevices: commandParserService.SUPPORTED_DEVICES,
+      supportedActions: commandParserService.SUPPORTED_ACTIONS,
+      supportedIntents: commandParserService.SUPPORTED_INTENTS,
+    },
     timestamp: new Date().toISOString(),
   })
 }
 
 module.exports = {
   testGeminiPrompt,
+  parseCommand,
   getAIStatus,
 }
