@@ -50,9 +50,9 @@ async function handleVoiceCommand(req, res) {
           source: 'VOICE_COMMAND',
         })
 
-        if (cmdResult.success) {
+        if (cmdResult.success && cmdResult.delivered) {
           executionStatus = EXECUTION_STATUSES.EXECUTED
-          humanReadableMessage = cmdResult.message || `Successfully turned ${parsed.action} the ${parsed.device}.`
+          humanReadableMessage = cmdResult.message
           executionDetails = {
             device: cmdResult.device,
             mqtt: cmdResult.mqtt,
@@ -60,10 +60,11 @@ async function handleVoiceCommand(req, res) {
           }
         } else {
           executionStatus = EXECUTION_STATUSES.FAILED
-          humanReadableMessage = cmdResult.message || `Could not turn ${parsed.action} ${parsed.device}.`
+          humanReadableMessage = cmdResult.message || 'Command could not be delivered.'
           executionDetails = {
-            code: cmdResult.code,
-            reason: cmdResult.message,
+            code: cmdResult.code || 'DELIVERY_FAILED',
+            reason: cmdResult.message || 'Command could not be delivered.',
+            device: cmdResult.device,
           }
         }
       } else {

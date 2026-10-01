@@ -6,6 +6,7 @@ const express = require('express')
 const cors = require('cors')
 const { connectDB, closeDB } = require('./config/db')
 const { connectMQTT, disconnectMQTT } = require('./services/mqtt.service')
+const { startEmbeddedBroker, stopEmbeddedBroker } = require('./services/embeddedBroker.service')
 const { initSocket } = require('./services/socket.service')
 const { initDeviceSync } = require('./services/deviceSync.service')
 const healthRoutes = require('./routes/health.routes')
@@ -23,8 +24,10 @@ const CLIENT_URL = env.CLIENT_URL
 // Connect to MongoDB upon server startup
 connectDB()
 
-// Connect to MQTT Broker upon server startup (non-fatal if broker is offline)
-connectMQTT()
+// Start embedded MQTT broker if local URL is used, then connect MQTT client
+startEmbeddedBroker().finally(() => {
+  connectMQTT()
+})
 
 // CORS Configuration
 const allowedOrigins = [
@@ -134,6 +137,7 @@ server.listen(PORT, () => {
 const handleShutdown = async (signal) => {
   console.log(`\n🛑 Received [${signal}]. Initiating graceful shutdown...`)
   await disconnectMQTT()
+  await stopEmbeddedBroker()
   server.close(async () => {
     console.log('🔒 Express HTTP server closed.')
     await closeDB(signal)

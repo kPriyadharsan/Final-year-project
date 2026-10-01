@@ -200,11 +200,6 @@ export function TeacherPage() {
     const nextState = !device.isOn
     const targetAction = nextState ? 'ON' : 'OFF'
 
-    // Optimistic UI update
-    setDevices((prev) =>
-      prev.map((dev) => (dev.id === device.id ? { ...dev, isOn: nextState } : dev))
-    )
-
     try {
       const identifier = device.deviceId || device.id
       const res = await fetch(`${apiBaseUrl}/api/devices/${identifier}/command`, {
@@ -218,15 +213,31 @@ export function TeacherPage() {
 
       const data = await res.json()
       if (res.ok && data.status === 'success') {
+        // Device commanded successfully; update state and display execution message
+        setDevices((prev) =>
+          prev.map((dev) =>
+            dev.id === device.id || dev.deviceId === device.deviceId
+              ? { ...dev, isOn: nextState }
+              : dev
+          )
+        )
         setActionAlert({
           type: 'success',
-          message: `${device.name} commanded to ${targetAction}. Real-time Socket.IO event dispatched.`,
+          message: data.message || `${device.name} ${targetAction} command sent.`,
         })
       } else {
-        console.warn('Device command response notice:', data)
+        // Hardware or broker offline - do not fake successful hardware status
+        setActionAlert({
+          type: 'danger',
+          message: data?.message || 'Command could not be delivered.',
+        })
       }
     } catch (err) {
       console.error('Command dispatch error:', err)
+      setActionAlert({
+        type: 'danger',
+        message: 'Command could not be delivered.',
+      })
     }
   }
 
@@ -991,10 +1002,22 @@ export function TeacherPage() {
             classroom="Room 302"
             onClose={() => setActiveModal(null)}
             onCommandExecuted={(cmdData) => {
-              setActionAlert({
-                type: cmdData.executionStatus === 'EXECUTED' ? 'success' : 'info',
-                message: `Voice command: ${cmdData.message || cmdData.transcript}`,
-              })
+              if (cmdData.executionStatus === 'EXECUTED') {
+                setActionAlert({
+                  type: 'success',
+                  message: cmdData.message,
+                })
+              } else if (cmdData.executionStatus === 'FAILED') {
+                setActionAlert({
+                  type: 'danger',
+                  message: cmdData.message || 'Command could not be delivered.',
+                })
+              } else {
+                setActionAlert({
+                  type: 'info',
+                  message: cmdData.message || `Voice command: ${cmdData.transcript}`,
+                })
+              }
             }}
           />
         </Modal>

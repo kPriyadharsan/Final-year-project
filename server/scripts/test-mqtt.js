@@ -12,6 +12,9 @@ const path = require('path')
 const dotenv = require('dotenv')
 dotenv.config({ path: path.resolve(__dirname, '../.env') })
 
+// Use unique client ID for test runner so it doesn't conflict with dev server broker connection
+process.env.MQTT_CLIENT_ID = `smart_classroom_test_runner_${Date.now()}`
+
 const {
   connectMQTT,
   disconnectMQTT,

@@ -1,12 +1,31 @@
 const mongoose = require('mongoose')
 const { Device, DEVICE_TYPES, DEVICE_STATES } = require('../models/Device')
-const { DeviceLog, LOG_ACTIONS, MQTT_DELIVERY_STATUS } = require('../models/DeviceLog')
-const { publish } = require('./mqtt.service')
+const { DeviceLog, MQTT_DELIVERY_STATUS } = require('../models/DeviceLog')
+const { publish, getMQTTStatus } = require('./mqtt.service')
 const { emitDeviceStatus } = require('./socket.service')
 
 /**
+ * Returns a human-friendly device label for execution messages.
+ * Matches user requirements: "Fan ON command sent.", "Light OFF command sent.", etc.
+ *
+ * @param {Object} device
+ * @returns {string}
+ */
+function getDeviceLabel(device) {
+  if (device.type === DEVICE_TYPES.FAN) return 'Fan'
+  if (device.type === DEVICE_TYPES.LIGHT) return 'Light'
+  if (device.type === DEVICE_TYPES.PROJECTOR) return 'Projector'
+  return device.name || 'Device'
+}
+
+/**
  * Executes a device control command with strict backend validation,
- * database updates, MQTT publication, Socket.IO broadcast, and audit logging.
+ * MQTT delivery verification, database state updates, Socket.IO broadcast, and audit logging.
+ *
+ * IMPORTANT REQUIREMENTS:
+ * - Real execution message: "Fan ON command sent." (or "${deviceLabel} ${newState} command sent.")
+ * - Do not fake successful hardware status. If ESP32/MQTT is offline, returns "Command could not be delivered."
+ * - Shared backend device-command service for both dashboard buttons and voice assistant.
  *
  * @param {Object} params
  * @param {string} [params.deviceId] - Specific device hardware ID or MongoDB ObjectId
@@ -14,8 +33,8 @@ const { emitDeviceStatus } = require('./socket.service')
  * @param {string} [params.classroom] - Target classroom (defaults to "Room 302")
  * @param {'ON'|'OFF'} params.action - Action to perform
  * @param {Object} [params.user] - User object initiating the action
- * @param {string} [params.source] - Origin of command (e.g. 'REST_API', 'VOICE_COMMAND')
- * @returns {Promise<{ success: boolean, code?: string, message: string, device?: Object, mqtt?: Object, logId?: any }>}
+ * @param {string} [params.source] - Origin of command ('REST_API' | 'VOICE_COMMAND')
+ * @returns {Promise<{ success: boolean, delivered: boolean, code?: string, executionStatus: string, message: string, device?: Object, mqtt?: Object, logId?: any, timestamp: string }>}
  */
 async function executeDeviceCommand({
   deviceId,
@@ -26,12 +45,26 @@ async function executeDeviceCommand({
   source = 'VOICE_COMMAND',
 }) {
   // 1. Validate action against strict allowlist
-  const normalizedAction = action ? action.trim().toUpperCase() : null
-  if (!normalizedAction || !Object.values(DEVICE_STATES).includes(normalizedAction)) {
+  if (!action || typeof action !== 'string' || action.trim() === '') {
     return {
       success: false,
+      delivered: false,
+      code: 'ACTION_REQUIRED',
+      executionStatus: 'FAILED',
+      message: 'Command action is required in request body (e.g. { "action": "ON" }).',
+      timestamp: new Date().toISOString(),
+    }
+  }
+
+  const normalizedAction = action.trim().toUpperCase()
+  if (!Object.values(DEVICE_STATES).includes(normalizedAction)) {
+    return {
+      success: false,
+      delivered: false,
       code: 'INVALID_ACTION',
-      message: `Invalid action "${action}". Allowed actions are: "ON", "OFF".`,
+      executionStatus: 'FAILED',
+      message: `Invalid action. Allowed actions are: "ON", "OFF".`,
+      timestamp: new Date().toISOString(),
     }
   }
 
@@ -74,8 +107,11 @@ async function executeDeviceCommand({
   if (!device) {
     return {
       success: false,
+      delivered: false,
       code: 'DEVICE_NOT_FOUND',
-      message: `No active classroom device found matching "${deviceId || deviceType}" in ${classroom}.`,
+      executionStatus: 'FAILED',
+      message: `Device with identifier "${deviceId || deviceType}" was not found.`,
+      timestamp: new Date().toISOString(),
     }
   }
 
@@ -83,8 +119,11 @@ async function executeDeviceCommand({
   if (!device.isActive) {
     return {
       success: false,
+      delivered: false,
       code: 'DEVICE_INACTIVE',
+      executionStatus: 'FAILED',
       message: `Device "${device.name}" (${device.deviceId}) is deactivated and cannot receive commands.`,
+      timestamp: new Date().toISOString(),
     }
   }
 
@@ -96,12 +135,79 @@ async function executeDeviceCommand({
   if (!mqttTopic || mqttTopic.trim() === '') {
     return {
       success: false,
+      delivered: false,
       code: 'INVALID_DEVICE_CONFIGURATION',
+      executionStatus: 'FAILED',
       message: `Device "${device.name}" lacks a configured MQTT command topic.`,
+      timestamp: new Date().toISOString(),
     }
   }
 
-  // 6. Build standardized MQTT payload
+  // 6. Connectivity & Hardware Online verification (Do NOT fake successful hardware status!)
+  const mqttStatus = getMQTTStatus()
+  const isMqttConnected = Boolean(mqttStatus && mqttStatus.connected)
+  const isDeviceOnline = device.isOnline !== false
+
+  if (!isMqttConnected || !isDeviceOnline) {
+    const failureReason = !isMqttConnected
+      ? 'MQTT broker is offline'
+      : `ESP32 hardware for device "${device.name}" (${device.deviceId}) is offline`
+
+    console.warn(`[DeviceCommandService] ⚠️ Delivery failed: ${failureReason}`)
+
+    // Record failure in DeviceLog without updating device state in database
+    let logRecord = null
+    try {
+      logRecord = await DeviceLog.create({
+        device: device._id,
+        deviceId: device.deviceId,
+        deviceName: device.name,
+        classroom: device.classroom,
+        action: newState,
+        previousState: device.state,
+        newState: device.state, // State remains unchanged
+        topic: mqttTopic,
+        payload: null,
+        mqttStatus: MQTT_DELIVERY_STATUS.FAILED,
+        user: user?._id || user?.id || null,
+        userName: user?.name || (source === 'VOICE_COMMAND' ? 'Voice Assistant' : 'Teacher'),
+        userRole: user?.role || 'TEACHER',
+        source,
+        errorMessage: failureReason,
+      })
+    } catch (logErr) {
+      console.warn(`[DeviceCommandService] Notice: Could not record DeviceLog: ${logErr.message}`)
+    }
+
+    return {
+      success: false,
+      delivered: false,
+      code: 'DELIVERY_FAILED',
+      executionStatus: 'FAILED',
+      message: 'Command could not be delivered.',
+      device: {
+        id: device._id,
+        deviceId: device.deviceId,
+        name: device.name,
+        classroom: device.classroom,
+        type: device.type,
+        state: device.state,
+        previousState: device.state,
+        isOnline: device.isOnline,
+        gpioPin: device.gpioPin,
+      },
+      mqtt: {
+        topic: mqttTopic,
+        status: MQTT_DELIVERY_STATUS.FAILED,
+        published: false,
+        error: failureReason,
+      },
+      logId: logRecord?._id || null,
+      timestamp: new Date().toISOString(),
+    }
+  }
+
+  // 7. Build standardized MQTT payload
   const mqttPayload = {
     deviceId: device.deviceId,
     name: device.name,
@@ -112,32 +218,77 @@ async function executeDeviceCommand({
     gpioPin: device.gpioPin,
     initiatedBy: {
       userId: user?._id || user?.id || null,
-      name: user?.name || 'Voice Assistant',
-      role: user?.role || 'SYSTEM',
+      name: user?.name || (source === 'VOICE_COMMAND' ? 'Voice Assistant' : 'Teacher'),
+      role: user?.role || 'TEACHER',
     },
     timestamp: new Date().toISOString(),
   }
 
-  // 7. Publish to MQTT (resilient to offline broker)
-  let mqttDeliveryStatus = MQTT_DELIVERY_STATUS.PUBLISHED
-  let mqttDeliveryError = null
-
+  // 8. Publish to MQTT command topic (QoS 1)
   try {
     await publish(mqttTopic, mqttPayload, { qos: 1 })
-  } catch (mqttErr) {
-    console.warn(`[MQTT] Notice: Publish queued or broker offline for [${mqttTopic}]: ${mqttErr.message}`)
-    mqttDeliveryStatus = MQTT_DELIVERY_STATUS.OFFLINE_QUEUED
-    mqttDeliveryError = mqttErr.message
+  } catch (publishErr) {
+    console.error(`[DeviceCommandService] Failed to publish MQTT command: ${publishErr.message}`)
+
+    let logRecord = null
+    try {
+      logRecord = await DeviceLog.create({
+        device: device._id,
+        deviceId: device.deviceId,
+        deviceName: device.name,
+        classroom: device.classroom,
+        action: newState,
+        previousState: device.state,
+        newState: device.state,
+        topic: mqttTopic,
+        payload: mqttPayload,
+        mqttStatus: MQTT_DELIVERY_STATUS.FAILED,
+        user: user?._id || user?.id || null,
+        userName: user?.name || (source === 'VOICE_COMMAND' ? 'Voice Assistant' : 'Teacher'),
+        userRole: user?.role || 'TEACHER',
+        source,
+        errorMessage: publishErr.message,
+      })
+    } catch {
+      // Non-fatal logging error
+    }
+
+    return {
+      success: false,
+      delivered: false,
+      code: 'DELIVERY_FAILED',
+      executionStatus: 'FAILED',
+      message: 'Command could not be delivered.',
+      device: {
+        id: device._id,
+        deviceId: device.deviceId,
+        name: device.name,
+        classroom: device.classroom,
+        type: device.type,
+        state: device.state,
+        previousState: device.state,
+        isOnline: device.isOnline,
+        gpioPin: device.gpioPin,
+      },
+      mqtt: {
+        topic: mqttTopic,
+        status: MQTT_DELIVERY_STATUS.FAILED,
+        published: false,
+        error: publishErr.message,
+      },
+      logId: logRecord?._id || null,
+      timestamp: new Date().toISOString(),
+    }
   }
 
-  // 8. Update device state in MongoDB
+  // 9. Update device state in MongoDB
   device.state = newState
   await device.save()
 
-  // 9. Real-time broadcast via Socket.IO
+  // 10. Real-time broadcast via Socket.IO to connected dashboards
   emitDeviceStatus(device)
 
-  // 10. Record in DeviceLog
+  // 11. Record in DeviceLog
   const log = await DeviceLog.create({
     device: device._id,
     deviceId: device.deviceId,
@@ -148,19 +299,25 @@ async function executeDeviceCommand({
     newState,
     topic: mqttTopic,
     payload: mqttPayload,
-    mqttStatus: mqttDeliveryStatus,
+    mqttStatus: MQTT_DELIVERY_STATUS.PUBLISHED,
     user: user?._id || user?.id || null,
-    userName: user?.name || 'Voice Assistant',
-    userRole: user?.role || 'SYSTEM',
+    userName: user?.name || (source === 'VOICE_COMMAND' ? 'Voice Assistant' : 'Teacher'),
+    userRole: user?.role || 'TEACHER',
     source,
-    errorMessage: mqttDeliveryError,
+    errorMessage: null,
   })
 
-  console.log(`[DeviceCommandService] ✅ Successfully commanded "${device.name}" (${device.deviceId}) to ${newState} via ${source}`)
+  // Format execution message: "Fan ON command sent.", "Light OFF command sent.", etc.
+  const deviceLabel = getDeviceLabel(device)
+  const executionMessage = `${deviceLabel} ${newState} command sent.`
+
+  console.log(`[DeviceCommandService] ✅ Successfully commanded "${device.name}" (${device.deviceId}) to ${newState} via ${source} -> "${executionMessage}"`)
 
   return {
     success: true,
-    message: `Successfully turned ${newState} ${device.name}.`,
+    delivered: true,
+    executionStatus: 'EXECUTED',
+    message: executionMessage,
     device: {
       id: device._id,
       deviceId: device.deviceId,
@@ -174,13 +331,16 @@ async function executeDeviceCommand({
     },
     mqtt: {
       topic: mqttTopic,
-      status: mqttDeliveryStatus,
-      published: mqttDeliveryStatus === MQTT_DELIVERY_STATUS.PUBLISHED,
+      status: MQTT_DELIVERY_STATUS.PUBLISHED,
+      published: true,
+      payload: mqttPayload,
     },
     logId: log._id,
+    timestamp: new Date().toISOString(),
   }
 }
 
 module.exports = {
   executeDeviceCommand,
+  getDeviceLabel,
 }

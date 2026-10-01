@@ -234,6 +234,41 @@ async function runVoiceCommandTests() {
   console.log(`✓ Most recent voice command in history: "${historyBody.commands[0].transcript}" (${historyBody.commands[0].intent})`)
   console.log('✅ PASS: GET /api/voice/history retrieves audit log correctly')
 
+  // 9. Test Offline Hardware Protection: Do not fake successful hardware status
+  console.log('\n--- 9. Testing Offline Hardware Protection ("Command could not be delivered.") ---')
+  await Device.updateOne({ deviceId: 'ESP32-RM302-FAN-01' }, { isOnline: false, state: DEVICE_STATES.OFF })
+  const offlineVoiceRes = await fetch(`${API_BASE}/api/voice/command`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${teacherToken}`,
+    },
+    body: JSON.stringify({
+      transcript: 'Turn on the fan',
+      classroom: 'Room 302',
+    }),
+  })
+  const offlineVoiceBody = await offlineVoiceRes.json()
+  console.log(`POST /api/voice/command (Offline ESP32) -> HTTP ${offlineVoiceRes.status}`)
+  console.log('Execution Status:', offlineVoiceBody.data.executionStatus)
+  console.log('Message:', offlineVoiceBody.data.message)
+
+  if (offlineVoiceBody.data.executionStatus !== EXECUTION_STATUSES.FAILED) {
+    throw new Error(`Expected executionStatus FAILED, got ${offlineVoiceBody.data.executionStatus}`)
+  }
+  if (offlineVoiceBody.data.message !== 'Command could not be delivered.') {
+    throw new Error(`Expected "Command could not be delivered.", got "${offlineVoiceBody.data.message}"`)
+  }
+
+  const fanStillOffline = await Device.findOne({ deviceId: 'ESP32-RM302-FAN-01' })
+  if (fanStillOffline.state !== DEVICE_STATES.OFF) {
+    throw new Error(`State was faked to ${fanStillOffline.state} instead of staying OFF!`)
+  }
+  console.log('✅ PASS: Offline ESP32 does not fake success and returns "Command could not be delivered."')
+
+  // Restore online state
+  await Device.updateOne({ deviceId: 'ESP32-RM302-FAN-01' }, { isOnline: true })
+
   await mongoose.disconnect()
   console.log('✅ Disconnected from MongoDB')
 

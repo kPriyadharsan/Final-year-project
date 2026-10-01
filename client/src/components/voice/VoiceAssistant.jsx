@@ -405,8 +405,20 @@ export function VoiceAssistant({
           <div className="space-y-4 py-2 text-left">
             <div className="flex items-center justify-between pb-2 border-b border-slate-800">
               <div className="flex items-center gap-2">
-                <CheckCircle2 className="w-5 h-5 text-emerald-400" />
-                <span className="text-sm font-bold text-white">Command Executed</span>
+                {resultData.executionStatus === 'FAILED' ? (
+                  <AlertTriangle className="w-5 h-5 text-rose-400" />
+                ) : resultData.executionStatus === 'EXECUTED' ? (
+                  <CheckCircle2 className="w-5 h-5 text-emerald-400" />
+                ) : (
+                  <CheckCircle2 className="w-5 h-5 text-cyan-400" />
+                )}
+                <span className="text-sm font-bold text-white">
+                  {resultData.executionStatus === 'FAILED'
+                    ? 'Delivery Notice'
+                    : resultData.executionStatus === 'EXECUTED'
+                    ? 'Command Executed'
+                    : 'Intent Detected'}
+                </span>
               </div>
               <Badge
                 variant={
@@ -414,7 +426,7 @@ export function VoiceAssistant({
                     ? 'success'
                     : resultData.executionStatus === 'DETECTED'
                     ? 'info'
-                    : 'warning'
+                    : 'danger'
                 }
               >
                 {resultData.executionStatus}
@@ -446,7 +458,15 @@ export function VoiceAssistant({
             </div>
 
             {/* Human Readable Message from Backend */}
-            <div className="p-3.5 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-xs font-medium">
+            <div
+              className={`p-3.5 rounded-xl border text-xs font-medium ${
+                resultData.executionStatus === 'FAILED'
+                  ? 'bg-rose-500/10 border-rose-500/30 text-rose-300'
+                  : resultData.executionStatus === 'EXECUTED'
+                  ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'
+                  : 'bg-cyan-500/10 border-cyan-500/30 text-cyan-300'
+              }`}
+            >
               {resultData.message}
             </div>
 

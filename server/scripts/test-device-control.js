@@ -248,6 +248,37 @@ async function runTests() {
     console.error('❌ FAIL: Expected at least 2 logs')
   }
 
+  // 11. Test Offline Hardware Protection: Do not fake successful hardware status
+  console.log('\n--- 11. Testing Offline Hardware Protection ("Command could not be delivered.") ---')
+  await Device.updateOne({ deviceId: testDevice.deviceId }, { isOnline: false, state: DEVICE_STATES.OFF })
+  const offlineBtnRes = await fetch(`${API_BASE}/api/devices/${testDevice.deviceId}/command`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${teacherToken}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ action: 'ON' }),
+  })
+  const offlineBtnData = await offlineBtnRes.json()
+  console.log(`POST /command (Offline ESP32) -> HTTP ${offlineBtnRes.status}`)
+  console.log('Message:', offlineBtnData.message)
+
+  if (offlineBtnRes.status !== 503) {
+    throw new Error(`Expected HTTP 503 for offline hardware delivery failure, got ${offlineBtnRes.status}`)
+  }
+  if (offlineBtnData.message !== 'Command could not be delivered.') {
+    throw new Error(`Expected "Command could not be delivered.", got "${offlineBtnData.message}"`)
+  }
+
+  const lightStillOffline = await Device.findOne({ deviceId: testDevice.deviceId })
+  if (lightStillOffline.state !== DEVICE_STATES.OFF) {
+    throw new Error(`State was faked to ${lightStillOffline.state} instead of staying OFF!`)
+  }
+  console.log('✅ PASS: Offline ESP32 does not fake hardware status and returns "Command could not be delivered."')
+
+  // Restore online state
+  await Device.updateOne({ deviceId: testDevice.deviceId }, { isOnline: true })
+
   await mongoose.disconnect()
   console.log('\n======================================================')
   console.log('🎉 ALL DEVICE CONTROL & LOGGING TESTS PASSED!')
