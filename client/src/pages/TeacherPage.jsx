@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import {
   School,
   MonitorPlay,
@@ -31,6 +31,11 @@ import {
   AlertTriangle,
   Play,
   RotateCcw,
+  Activity,
+  Server,
+  Database,
+  Cpu,
+  Wifi,
 } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import { useSocket } from '../context/SocketContext'
@@ -66,6 +71,11 @@ export function TeacherPage() {
 
   // Feedback Notification Banner
   const [actionAlert, setActionAlert] = useState(null)
+
+  // System Infrastructure Health (Backend, MongoDB, MQTT, Gemini, ESP32)
+  const [systemHealth, setSystemHealth] = useState(null)
+  const [healthLoading, setHealthLoading] = useState(false)
+  const [lastHealthCheck, setLastHealthCheck] = useState(null)
 
   // 1. Classroom Devices (Light, Fan, Projector)
   const [devices, setDevices] = useState([
@@ -195,10 +205,60 @@ export function TeacherPage() {
     }
   }, [socket])
 
+  // Fetch system status (Backend, MongoDB, MQTT, Gemini, ESP32)
+  const fetchSystemStatus = useCallback(async () => {
+    setHealthLoading(true)
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), 6000)
+
+    try {
+      const res = await fetch(`${apiBaseUrl}/api/system/status`, {
+        signal: controller.signal,
+      })
+      clearTimeout(timeoutId)
+      if (res.ok) {
+        const data = await res.json()
+        if (data.services) {
+          setSystemHealth(data.services)
+          setLastHealthCheck(new Date())
+        }
+      } else {
+        setSystemHealth({
+          backend: { name: 'Backend API', status: 'degraded', details: `HTTP ${res.status}` },
+          mongodb: { name: 'MongoDB', status: 'offline', details: 'Status unreachable' },
+          mqtt: { name: 'MQTT Broker', status: 'offline', details: 'Status unreachable' },
+          gemini: { name: 'Gemini AI', status: 'offline', details: 'Status unreachable' },
+          esp32: { name: 'ESP32 Hardware', status: 'offline', details: 'Status unreachable' },
+        })
+      }
+    } catch (err) {
+      clearTimeout(timeoutId)
+      console.warn('[SystemStatus] Backend unreachable:', err.message)
+      setSystemHealth({
+        backend: { name: 'Backend API', status: 'offline', details: 'Unreachable / Server Down' },
+        mongodb: { name: 'MongoDB', status: 'offline', details: 'Backend Down' },
+        mqtt: { name: 'MQTT Broker', status: 'offline', details: 'Backend Down' },
+        gemini: { name: 'Gemini AI', status: 'offline', details: 'Backend Down' },
+        esp32: { name: 'ESP32 Hardware', status: 'offline', details: 'Backend Down' },
+      })
+    } finally {
+      setHealthLoading(false)
+    }
+  }, [apiBaseUrl])
+
+  useEffect(() => {
+    fetchSystemStatus()
+    const interval = setInterval(fetchSystemStatus, 20000)
+    return () => clearInterval(interval)
+  }, [fetchSystemStatus])
+
   // Dispatch device control command via Backend POST /api/devices/:id/command
   const handleToggleDevice = async (device) => {
     const nextState = !device.isOn
     const targetAction = nextState ? 'ON' : 'OFF'
+
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), 8000)
 
     try {
       const identifier = device.deviceId || device.id
@@ -209,7 +269,9 @@ export function TeacherPage() {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({ action: targetAction }),
+        signal: controller.signal,
       })
+      clearTimeout(timeoutId)
 
       const data = await res.json()
       if (res.ok && data.status === 'success') {
@@ -229,14 +291,19 @@ export function TeacherPage() {
         // Hardware or broker offline - do not fake successful hardware status
         setActionAlert({
           type: 'danger',
-          message: data?.message || 'Command could not be delivered.',
+          message: data?.message || 'Command could not be delivered. Hardware or broker may be offline.',
         })
       }
     } catch (err) {
+      clearTimeout(timeoutId)
       console.error('Command dispatch error:', err)
+      const msg =
+        err.name === 'AbortError'
+          ? 'Command timed out after 8s. Backend or IoT broker did not respond.'
+          : 'Backend server is unavailable. Could not send device command.'
       setActionAlert({
         type: 'danger',
-        message: 'Command could not be delivered.',
+        message: msg,
       })
     }
   }
@@ -623,7 +690,153 @@ export function TeacherPage() {
           </div>
         </div>
 
-        {/* ---------------- 2. CLASSROOM DEVICE STATUS (Light, Fan, Projector) ---------------- */}
+        {/* ---------------- 2. SYSTEM INFRASTRUCTURE STATUS ---------------- */}
+        <section className="space-y-3">
+          <div className="flex items-center justify-between">
+            <h2 className="text-xs font-semibold text-slate-300 uppercase tracking-wider flex items-center gap-2">
+              <Activity className="w-3.5 h-3.5 text-cyan-400" />
+              <span>System Infrastructure Status</span>
+            </h2>
+            <div className="flex items-center gap-2">
+              {lastHealthCheck && (
+                <span className="text-[11px] text-slate-500 font-mono hidden sm:inline">
+                  Checked: {lastHealthCheck.toLocaleTimeString()}
+                </span>
+              )}
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={fetchSystemStatus}
+                isLoading={healthLoading}
+                className="h-7 px-2 text-xs text-slate-400 hover:text-white"
+                title="Refresh system status"
+              >
+                <RefreshCw className={`w-3 h-3 mr-1.5 ${healthLoading ? 'animate-spin' : ''}`} />
+                Refresh
+              </Button>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+            {/* 1. Backend */}
+            <div className="p-3.5 rounded-xl bg-slate-900/80 border border-slate-800/90 flex flex-col justify-between">
+              <div className="flex items-center justify-between">
+                <div className="w-8 h-8 rounded-lg bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 flex items-center justify-center">
+                  <Server className="w-4 h-4" />
+                </div>
+                <Badge
+                  variant={systemHealth?.backend?.status === 'online' ? 'success' : 'danger'}
+                  dot
+                  pulse={systemHealth?.backend?.status === 'online'}
+                  size="sm"
+                >
+                  {systemHealth?.backend?.status === 'online' ? 'Online' : 'Offline'}
+                </Badge>
+              </div>
+              <div className="mt-2.5">
+                <div className="text-xs font-bold text-white">Backend</div>
+                <div className="text-[10px] text-slate-400 font-mono truncate">
+                  {systemHealth?.backend?.uptimeFormatted ? `Up ${systemHealth.backend.uptimeFormatted}` : (systemHealth?.backend?.details || 'Node.js Express')}
+                </div>
+              </div>
+            </div>
+
+            {/* 2. MongoDB */}
+            <div className="p-3.5 rounded-xl bg-slate-900/80 border border-slate-800/90 flex flex-col justify-between">
+              <div className="flex items-center justify-between">
+                <div className="w-8 h-8 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 flex items-center justify-center">
+                  <Database className="w-4 h-4" />
+                </div>
+                <Badge
+                  variant={systemHealth?.mongodb?.connected ? 'success' : 'danger'}
+                  dot
+                  pulse={systemHealth?.mongodb?.connected}
+                  size="sm"
+                >
+                  {systemHealth?.mongodb?.connected ? 'Connected' : 'Offline'}
+                </Badge>
+              </div>
+              <div className="mt-2.5">
+                <div className="text-xs font-bold text-white">MongoDB</div>
+                <div className="text-[10px] text-slate-400 font-mono truncate">
+                  {systemHealth?.mongodb?.details || (systemHealth?.mongodb?.connected ? 'Atlas Active' : 'Disconnected')}
+                </div>
+              </div>
+            </div>
+
+            {/* 3. MQTT */}
+            <div className="p-3.5 rounded-xl bg-slate-900/80 border border-slate-800/90 flex flex-col justify-between">
+              <div className="flex items-center justify-between">
+                <div className="w-8 h-8 rounded-lg bg-cyan-500/10 border border-cyan-500/20 text-cyan-400 flex items-center justify-center">
+                  <Wifi className="w-4 h-4" />
+                </div>
+                <Badge
+                  variant={systemHealth?.mqtt?.connected ? 'success' : 'danger'}
+                  dot
+                  pulse={systemHealth?.mqtt?.connected}
+                  size="sm"
+                >
+                  {systemHealth?.mqtt?.connected ? 'Broker Live' : 'Offline'}
+                </Badge>
+              </div>
+              <div className="mt-2.5">
+                <div className="text-xs font-bold text-white">MQTT</div>
+                <div className="text-[10px] text-slate-400 font-mono truncate">
+                  {systemHealth?.mqtt?.brokerUrl || (systemHealth?.mqtt?.connected ? 'Active Broker' : 'Broker Down')}
+                </div>
+              </div>
+            </div>
+
+            {/* 4. Gemini */}
+            <div className="p-3.5 rounded-xl bg-slate-900/80 border border-slate-800/90 flex flex-col justify-between">
+              <div className="flex items-center justify-between">
+                <div className="w-8 h-8 rounded-lg bg-purple-500/10 border border-purple-500/20 text-purple-400 flex items-center justify-center">
+                  <Sparkles className="w-4 h-4" />
+                </div>
+                <Badge
+                  variant={systemHealth?.gemini?.status === 'online' ? 'purple' : systemHealth?.gemini?.status === 'degraded' ? 'warning' : 'danger'}
+                  dot
+                  size="sm"
+                >
+                  {systemHealth?.gemini?.status === 'online' ? 'Online' : systemHealth?.gemini?.status === 'degraded' ? 'Fallback' : 'Offline'}
+                </Badge>
+              </div>
+              <div className="mt-2.5">
+                <div className="text-xs font-bold text-white">Gemini</div>
+                <div className="text-[10px] text-slate-400 font-mono truncate">
+                  {systemHealth?.gemini?.model || (systemHealth?.gemini?.configured ? 'gemini-2.5-flash' : 'Rule Fallback')}
+                </div>
+              </div>
+            </div>
+
+            {/* 5. ESP32 */}
+            <div className="p-3.5 rounded-xl bg-slate-900/80 border border-slate-800/90 flex flex-col justify-between">
+              <div className="flex items-center justify-between">
+                <div className="w-8 h-8 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-400 flex items-center justify-center">
+                  <Cpu className="w-4 h-4" />
+                </div>
+                <Badge
+                  variant={systemHealth?.esp32?.connected ? 'success' : 'danger'}
+                  dot
+                  pulse={systemHealth?.esp32?.connected}
+                  size="sm"
+                >
+                  {systemHealth?.esp32?.connected ? 'Hardware Up' : 'Offline'}
+                </Badge>
+              </div>
+              <div className="mt-2.5">
+                <div className="text-xs font-bold text-white">ESP32</div>
+                <div className="text-[10px] text-slate-400 font-mono truncate">
+                  {systemHealth?.esp32?.connected
+                    ? `${systemHealth.esp32.onlineDevices || 3}/${systemHealth.esp32.totalDevices || 3} Relays Sync`
+                    : 'LWT Disconnected'}
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {/* ---------------- 3. CLASSROOM DEVICE STATUS (Light, Fan, Projector) ---------------- */}
         <section id="device-controls-section" className="space-y-4">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div>

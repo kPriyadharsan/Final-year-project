@@ -185,6 +185,9 @@ export function VoiceAssistant({
       setErrorMessage('')
       console.log(`[VoiceAssistant] 🚀 Sending transcript to backend: "${commandText}"`)
 
+      const controller = new AbortController()
+      const timeoutId = setTimeout(() => controller.abort(), 10000)
+
       try {
         const response = await fetch(`${apiBaseUrl}/api/voice/command`, {
           method: 'POST',
@@ -196,7 +199,9 @@ export function VoiceAssistant({
             transcript: commandText,
             classroom,
           }),
+          signal: controller.signal,
         })
+        clearTimeout(timeoutId)
 
         const result = await response.json()
 
@@ -212,8 +217,15 @@ export function VoiceAssistant({
           throw new Error(result.message || 'Failed to process voice command.')
         }
       } catch (err) {
+        clearTimeout(timeoutId)
         console.error('[VoiceAssistant] Backend dispatch error:', err)
-        setErrorMessage(err.message || 'Communication failure with voice command server.')
+        let friendlyMsg = err.message
+        if (err.name === 'AbortError') {
+          friendlyMsg = 'Voice command processing timed out after 10 seconds. AI engine or backend did not respond in time.'
+        } else if (err.message && err.message.includes('Failed to fetch')) {
+          friendlyMsg = 'Backend server is unavailable or offline. Please verify that the API server is running.'
+        }
+        setErrorMessage(friendlyMsg)
         setCurrentState(VOICE_STATES.ERROR)
       }
     },
@@ -310,6 +322,11 @@ export function VoiceAssistant({
         {/* ================= STATE 1: IDLE ================= */}
         {currentState === VOICE_STATES.IDLE && (
           <div className="space-y-4 py-2">
+            {!isSupported && (
+              <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 text-xs text-amber-300">
+                Speech recognition is unavailable in this browser. You can enter commands using the text input below.
+              </div>
+            )}
             <button
               type="button"
               onClick={handleStartListening}

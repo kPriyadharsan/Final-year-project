@@ -366,7 +366,7 @@ async function parseClassroomCommand(text, options = {}) {
     const client = geminiService.getClient()
     const targetModel = options.model || geminiService.getDefaultModel()
 
-    const response = await client.models.generateContent({
+    const geminiCall = client.models.generateContent({
       model: targetModel,
       contents: sanitizedText,
       config: {
@@ -377,11 +377,17 @@ async function parseClassroomCommand(text, options = {}) {
       },
     })
 
+    const timeoutPromise = new Promise((_, reject) =>
+      setTimeout(() => reject(new Error('Gemini API call timed out after 8000ms')), 8000)
+    )
+
+    const response = await Promise.race([geminiCall, timeoutPromise])
+
     const rawText = response.text || '{}'
     aiRawResult = JSON.parse(rawText)
     console.log(`[CommandParser] 🤖 Gemini structured output:`, aiRawResult)
   } catch (error) {
-    console.warn(`[CommandParser] ⚠️ Gemini API call note: ${error.message}. Engaging rule-based allowlist fallback.`)
+    console.warn(`[CommandParser] ⚠️ Gemini API note (${error.message}). Engaging rule-based allowlist fallback.`)
     // Use rule-based fallback in dev / offline mode
     const fallbackResult = parseWithRuleFallback(sanitizedText)
     return fallbackResult

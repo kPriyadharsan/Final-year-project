@@ -44,6 +44,19 @@ async function executeDeviceCommand({
   user = null,
   source = 'VOICE_COMMAND',
 }) {
+  // 0. Verify Database Connectivity (Handle MongoDB unavailable without crashing or hanging)
+  if (mongoose.connection.readyState !== 1) {
+    console.warn('[DeviceCommandService] ⚠️ Database is unavailable (readyState:', mongoose.connection.readyState, ')')
+    return {
+      success: false,
+      delivered: false,
+      code: 'DATABASE_UNAVAILABLE',
+      executionStatus: 'FAILED',
+      message: 'Database service is currently unavailable. Command cannot be delivered.',
+      timestamp: new Date().toISOString(),
+    }
+  }
+
   // 1. Validate action against strict allowlist
   if (!action || typeof action !== 'string' || action.trim() === '') {
     return {

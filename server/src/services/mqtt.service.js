@@ -265,7 +265,20 @@ function publish(topic, message, options = { qos: 1, retain: false }) {
       payload = String(message)
     }
 
+    let isSettled = false
+    const timeoutTimer = setTimeout(() => {
+      if (!isSettled) {
+        isSettled = true
+        console.warn(`[MQTT] ⚠️ Publish timeout on [${topic}] after 5000ms`)
+        reject(new Error(`MQTT publication to [${topic}] timed out after 5000ms.`))
+      }
+    }, 5000)
+
     client.publish(topic, payload, options, (err) => {
+      clearTimeout(timeoutTimer)
+      if (isSettled) return
+      isSettled = true
+
       if (err) {
         console.error(`[MQTT] Publish error on topic [${topic}]:`, err)
         return reject(err)
