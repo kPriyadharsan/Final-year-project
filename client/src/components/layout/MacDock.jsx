@@ -14,6 +14,7 @@ import {
   Radio,
   BookOpen,
   Volume2,
+  Zap,
 } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
 
@@ -37,6 +38,14 @@ export function MacDock({ activeTab, onTabChange, onTriggerVoice }) {
           icon: LayoutDashboard,
           gradient: 'from-blue-500 to-indigo-600',
           shadow: 'shadow-blue-500/25',
+        },
+        {
+          id: 'device-control',
+          label: 'Device Control',
+          href: '/admin/device-control',
+          icon: Zap,
+          gradient: 'from-amber-500 to-rose-600',
+          shadow: 'shadow-amber-500/25',
         },
         {
           id: 'teachers',
@@ -87,6 +96,14 @@ export function MacDock({ activeTab, onTabChange, onTriggerVoice }) {
           icon: LayoutDashboard,
           gradient: 'from-blue-500 to-indigo-600',
           shadow: 'shadow-blue-500/25',
+        },
+        {
+          id: 'device-control',
+          label: 'Device Control',
+          href: '/admin/device-control',
+          icon: Zap,
+          gradient: 'from-amber-500 to-rose-600',
+          shadow: 'shadow-amber-500/25',
         },
         {
           id: 'classes',

@@ -182,15 +182,32 @@ async function executeDeviceCommand({
   }
 
   // 6. Connectivity & Hardware Online verification (Do NOT fake successful hardware status!)
+  // Channel availability is based strictly on the controller/node being connected
+  let isNodeOnline = true
+  if (device.nodeId) {
+    const parentNode = await Device.findOne({ deviceId: device.nodeId }).lean()
+    if (parentNode) {
+      isNodeOnline = parentNode.isOnline === true
+    }
+  } else if (device.classroom) {
+    const roomNode = await Device.findOne({
+      classroom: device.classroom,
+      $or: [{ entityType: 'NODE' }, { deviceCategory: 'NODE' }, { type: DEVICE_TYPES.OTHER }],
+    }).lean()
+    if (roomNode) {
+      isNodeOnline = roomNode.isOnline === true
+    }
+  }
+
   const mqttStatus = getMQTTStatus()
   const isMqttConnected = Boolean(mqttStatus && mqttStatus.connected)
-  const isDeviceOnline = device.isOnline !== false
+  const isDeviceOnline = isNodeOnline
 
   if (!isMqttConnected || !isDeviceOnline) {
     const failureCode = !isMqttConnected ? 'MQTT_DISCONNECTED' : 'DEVICE_OFFLINE'
     const failureReason = !isMqttConnected
       ? 'MQTT broker is offline'
-      : `ESP32 hardware for device "${device.name}" (${device.deviceId}) is offline`
+      : `ESP32 controller node for device "${device.name}" (${device.deviceId}) is offline`
 
     console.warn(`[DeviceCommandService] ⚠️ Delivery failed: ${failureReason}`)
 

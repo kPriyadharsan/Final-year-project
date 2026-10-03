@@ -575,6 +575,15 @@ export function AdminPage() {
               <Button
                 variant="primary"
                 size="sm"
+                leftIcon={<Zap className="w-3.5 h-3.5 text-amber-200" />}
+                onClick={() => navigate('/admin/device-control')}
+                className="bg-gradient-to-r from-amber-500 via-orange-500 to-rose-500 hover:from-amber-400 hover:to-rose-400 shadow-md shadow-amber-500/20 text-white font-semibold rounded-xl h-8 px-3 text-xs"
+              >
+                Device Control
+              </Button>
+              <Button
+                variant="primary"
+                size="sm"
                 leftIcon={<Sparkles className="w-3.5 h-3.5 text-purple-200 animate-pulse" />}
                 onClick={() => handleTabChange('ai-system')}
                 className="bg-gradient-to-r from-purple-600 via-indigo-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 shadow-md shadow-purple-500/20 text-white font-semibold rounded-xl h-8 px-3 text-xs"
@@ -1250,6 +1259,15 @@ export function AdminPage() {
                   </CardDescription>
                 </div>
                 <div className="flex items-center gap-2">
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    leftIcon={<Zap className="w-3.5 h-3.5 text-amber-200" />}
+                    onClick={() => navigate('/admin/device-control')}
+                    className="bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-white rounded-xl h-8 px-3 text-xs font-semibold shadow-xs"
+                  >
+                    Digital Device Control
+                  </Button>
                   <Badge
                     variant={systemHealth?.esp32?.connected ? 'success' : 'danger'}
                     dot

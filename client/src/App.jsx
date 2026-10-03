@@ -6,6 +6,7 @@ import { LoginPage } from './components/LoginPage'
 import { AdminPage } from './pages/AdminPage'
 import { TeacherPage } from './pages/TeacherPage'
 import { StudentPage } from './pages/StudentPage'
+import { DeviceControlPage } from './pages/DeviceControlPage'
 import { NotFoundPage } from './pages/NotFoundPage'
 
 /**
@@ -93,6 +94,24 @@ function App() {
               element={
                 <ProtectedRoute allowedRoles={['SUPER_ADMIN']}>
                   <AdminPage />
+                </ProtectedRoute>
+              }
+            />
+
+            {/* Dedicated Hardware Console: /admin/device-control (SUPER_ADMIN, TEACHER) */}
+            <Route
+              path="/admin/device-control"
+              element={
+                <ProtectedRoute allowedRoles={['SUPER_ADMIN', 'TEACHER']}>
+                  <DeviceControlPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/device-control"
+              element={
+                <ProtectedRoute allowedRoles={['SUPER_ADMIN', 'TEACHER']}>
+                  <DeviceControlPage />
                 </ProtectedRoute>
               }
             />
