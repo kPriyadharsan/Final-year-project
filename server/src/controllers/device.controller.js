@@ -10,7 +10,7 @@ const deviceCommandService = require('../services/deviceCommand.service')
  */
 async function getDevices(req, res) {
   try {
-    const { classroom, type, state, isOnline, isActive } = req.query
+    const { classroom, type, state, isOnline, isActive, category, entityType, deviceCategory, nodeId } = req.query
 
     const filter = {}
 
@@ -49,14 +49,48 @@ async function getDevices(req, res) {
       filter.isActive = true
     }
 
+    // Filter by category / entityType (NODE or CHANNEL)
+    const targetCat = (category || entityType || deviceCategory || '').trim().toUpperCase()
+    if (targetCat === 'NODE') {
+      filter.$or = [
+        { entityType: 'NODE' },
+        { deviceCategory: 'NODE' },
+        { type: DEVICE_TYPES.OTHER },
+      ]
+    } else if (targetCat === 'CHANNEL') {
+      filter.$or = [
+        { entityType: 'CHANNEL' },
+        { deviceCategory: 'CHANNEL' },
+        { type: { $ne: DEVICE_TYPES.OTHER } },
+      ]
+    }
+
+    // Filter by parent nodeId
+    if (nodeId && typeof nodeId === 'string' && nodeId.trim() !== '') {
+      filter.nodeId = nodeId.trim().toUpperCase()
+    }
+
     const devices = await Device.find(filter)
       .sort({ classroom: 1, type: 1, name: 1 })
       .lean()
 
+    // Cleanly separate physical IoT nodes from relay channels
+    const isNode = (d) =>
+      d.entityType === 'NODE' || d.deviceCategory === 'NODE' || d.type === DEVICE_TYPES.OTHER
+    const isChannel = (d) =>
+      d.entityType === 'CHANNEL' || d.deviceCategory === 'CHANNEL' || (d.type !== DEVICE_TYPES.OTHER && ['LIGHT', 'FAN', 'PROJECTOR'].includes(d.type))
+
+    const nodes = devices.filter(isNode)
+    const channels = devices.filter(isChannel)
+
     res.status(200).json({
       status: 'success',
       count: devices.length,
+      nodeCount: nodes.length,
+      channelCount: channels.length,
       devices,
+      nodes,
+      channels,
     })
   } catch (err) {
     console.error('Error fetching devices:', err)

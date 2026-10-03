@@ -81,7 +81,7 @@ export function TeacherPage() {
     setDevicesError(null)
 
     try {
-      const res = await fetch(`${apiBaseUrl}/api/devices?classroom=Room 302`, {
+      const res = await fetch(`${apiBaseUrl}/api/devices?classroom=Room 302&category=CHANNEL`, {
         headers: {
           Authorization: `Bearer ${token}`,
           Accept: 'application/json',
@@ -89,13 +89,17 @@ export function TeacherPage() {
       })
       if (res.ok) {
         const data = await res.json()
-        if (data.devices && data.devices.length > 0) {
+        const sourceChannels = (data.channels && data.channels.length > 0)
+          ? data.channels
+          : (data.devices || []).filter((d) => d.entityType === 'CHANNEL' || (d.type !== 'OTHER' && ['LIGHT', 'FAN', 'PROJECTOR'].includes(d.type)))
+
+        if (sourceChannels.length > 0) {
           const iconMap = {
             LIGHT: Lightbulb,
             FAN: Fan,
             PROJECTOR: Projector,
           }
-          const mappedDevices = data.devices.map((d) => ({
+          const mappedDevices = sourceChannels.map((d) => ({
             id: d._id || d.id,
             deviceId: d.deviceId,
             name: d.name,
@@ -108,6 +112,7 @@ export function TeacherPage() {
             confirmedState: d.confirmedState || null,
             details: d.description || `GPIO ${d.gpioPin ?? 'N/A'} (ESP32)`,
             relayChannel: `GPIO ${d.gpioPin ?? 'N/A'} (ESP32)`,
+            nodeId: d.nodeId || 'ESP32-RM302-01',
           }))
           setDevices(mappedDevices)
         } else {
@@ -139,6 +144,11 @@ export function TeacherPage() {
   // Real-Time Socket.IO Listener: Listen for "device:status" safely without duplicate listeners
   useSocketEvent('device:status', (incoming) => {
     console.log('[Socket.IO UI] ⚡ Received live device:status event:', incoming)
+
+    // Ignore controller node heartbeats in the appliance relay switch view
+    if (incoming.type === 'OTHER' || incoming.entityType === 'NODE') {
+      return
+    }
 
     setDevices((prev) =>
       prev.map((dev) => {

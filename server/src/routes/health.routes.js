@@ -75,8 +75,10 @@ router.get('/system/status', async (req, res) => {
     const diagnostics = env.getDiagnostics()
 
     let esp32Online = false
-    let onlineDevices = 0
-    let totalDevices = 0
+    let totalNodes = 0
+    let onlineNodes = 0
+    let totalChannels = 0
+    let onlineChannels = 0
 
     if (mongoose.connection.readyState === 1) {
       try {
@@ -85,12 +87,24 @@ router.get('/system/status', async (req, res) => {
           : { isActive: true }
 
         const devices = await Device.find(classroomFilter)
-          .select('deviceId name isOnline type state classroom')
+          .select('deviceId name isOnline type state classroom entityType deviceCategory')
           .lean()
 
-        totalDevices = devices.length
-        onlineDevices = devices.filter((d) => d.isOnline === true).length
-        esp32Online = onlineDevices > 0
+        const nodes = devices.filter(
+          (d) => d.entityType === 'NODE' || d.deviceCategory === 'NODE' || d.type === 'OTHER'
+        )
+        const channels = devices.filter(
+          (d) =>
+            d.entityType === 'CHANNEL' ||
+            d.deviceCategory === 'CHANNEL' ||
+            (d.type !== 'OTHER' && ['LIGHT', 'FAN', 'PROJECTOR'].includes(d.type))
+        )
+
+        totalNodes = nodes.length
+        onlineNodes = nodes.filter((d) => d.isOnline === true).length
+        totalChannels = channels.length
+        onlineChannels = channels.filter((d) => d.isOnline === true).length
+        esp32Online = onlineNodes > 0
       } catch (dbErr) {
         console.warn('[SystemStatus] Could not query devices for ESP32 status:', dbErr.message)
       }
@@ -136,8 +150,12 @@ router.get('/system/status', async (req, res) => {
         name: 'ESP32 Hardware',
         status: esp32Online ? 'online' : 'offline',
         connected: esp32Online,
-        onlineDevices,
-        totalDevices,
+        totalNodes,
+        onlineNodes,
+        totalChannels,
+        onlineChannels,
+        totalDevices: totalNodes,
+        onlineDevices: onlineNodes,
         classroom: 'Room 302',
       },
     }

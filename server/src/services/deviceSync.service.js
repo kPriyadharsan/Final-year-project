@@ -105,9 +105,13 @@ async function processDeviceStatusMessage(topic, payload) {
 
     if (typeof data.isOnline === 'boolean') {
       device.isOnline = data.isOnline
+      if (data.isOnline) {
+        device.lastSeenAt = new Date()
+      }
     } else {
       // Message arrival indicates device is online
       device.isOnline = true
+      device.lastSeenAt = new Date()
     }
 
     // 3. Save to database
@@ -125,80 +129,167 @@ async function processDeviceStatusMessage(topic, payload) {
 }
 
 /**
+ * Availability handler (Processes ESP32 Online / Offline / LWT / Heartbeat events)
+ *
+ * Topic: smartclassroom/+/availability (e.g. smartclassroom/room302/availability)
+ * Expected payload:
+ *   { "deviceId": "ESP32-RM302-01", "status": "online" }
+ *   { "deviceId": "ESP32-RM302-01", "status": "offline" }
+ *
+ * @param {string} topic
+ * @param {Object|string} payload
+ * @param {string} [rawPayload]
+ * @returns {Promise<Object|null>}
+ */
+async function handleAvailability(topic, payload, rawPayload) {
+  try {
+    let data = payload
+
+    // If payload is a string or Buffer, parse JSON safely
+    if (typeof payload === 'string' || Buffer.isBuffer(payload)) {
+      const str = payload.toString().trim()
+      try {
+        data = JSON.parse(str)
+      } catch (parseErr) {
+        console.error(`[DeviceSync] ❌ Invalid JSON payload received on availability topic [${topic}]: "${str}". Error: ${parseErr.message}`)
+        return null
+      }
+    }
+
+    if (!data || typeof data !== 'object' || Array.isArray(data)) {
+      console.error(`[DeviceSync] ❌ Expected JSON object payload on availability topic [${topic}], received:`, data)
+      return null
+    }
+
+    // Extract status / state
+    const rawStatus = (data.status || data.state || '').toString().trim().toLowerCase()
+    const isOnline = rawStatus === 'online' || rawStatus === '1' || rawStatus === 'true'
+    const isOffline = rawStatus === 'offline' || rawStatus === '0' || rawStatus === 'false'
+
+    if (!isOnline && !isOffline) {
+      console.warn(`[DeviceSync] ⚠️ Unrecognized availability status "${data.status || data.state}" on topic [${topic}]`)
+      return null
+    }
+
+    // Handle primary case: payload includes deviceId (e.g. { deviceId: "ESP32-RM302-01", status: "online" })
+    if (data.deviceId && typeof data.deviceId === 'string' && data.deviceId.trim() !== '') {
+      const targetDeviceId = data.deviceId.trim()
+      let device = await Device.findOne({ deviceId: targetDeviceId.toUpperCase() })
+      if (!device) {
+        // Case-insensitive regex fallback
+        device = await Device.findOne({
+          deviceId: { $regex: new RegExp(`^${targetDeviceId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') },
+        })
+      }
+
+      if (!device) {
+        console.warn(`[DeviceSync] ⚠️ Device with deviceId "${data.deviceId}" does not exist in MongoDB. Availability update skipped.`)
+        return null
+      }
+
+      if (isOnline) {
+        device.isOnline = true
+        device.lastSeenAt = new Date()
+        console.log(`[DeviceSync] 🟢 Device [${device.deviceId}] status: ONLINE (Heartbeat/lastSeenAt: ${device.lastSeenAt.toISOString()})`)
+      } else {
+        device.isOnline = false
+        // Keep lastSeenAt value as the last known heartbeat/online time (do NOT overwrite with current time or null)
+        console.log(`[DeviceSync] 🔴 Device [${device.deviceId}] status: OFFLINE (Preserved lastSeenAt: ${device.lastSeenAt ? device.lastSeenAt.toISOString() : 'never'})`)
+      }
+
+      await device.save()
+      emitDeviceStatus(device)
+
+      // If this is a controller node, cascade availability to all associated relay channels
+      if (device.entityType === 'NODE' || device.deviceCategory === 'NODE' || device.type === 'OTHER') {
+        const childChannels = await Device.find({
+          isActive: true,
+          $or: [{ nodeId: device.deviceId }, { classroom: device.classroom, type: { $ne: 'OTHER' } }],
+        })
+        for (const ch of childChannels) {
+          ch.isOnline = isOnline
+          if (isOnline) ch.lastSeenAt = new Date()
+          await ch.save()
+          emitDeviceStatus(ch)
+        }
+      }
+
+      return device
+    }
+
+    // Backward-compatibility fallback: legacy payload without deviceId (e.g. { classroom: "Room 302", status: "offline" })
+    let targetClassroom = null
+    if (data.classroom && typeof data.classroom === 'string') {
+      targetClassroom = data.classroom
+    } else if (topic) {
+      const parsed = parseMqttTopic(topic)
+      if (parsed.isSmartClassroom && parsed.classroom) {
+        targetClassroom = parsed.classroom
+      }
+    }
+
+    if (targetClassroom) {
+      const roomRegex = classroomSlugToRegex(targetClassroom)
+      const query = {
+        isActive: true,
+        ...(roomRegex ? { classroom: { $regex: roomRegex } } : {}),
+      }
+      const devices = await Device.find(query)
+      for (const dev of devices) {
+        dev.isOnline = isOnline
+        if (isOnline) {
+          dev.lastSeenAt = new Date()
+        }
+        await dev.save()
+        emitDeviceStatus(dev)
+      }
+      console.log(`[DeviceSync] 🔄 Updated ${devices.length} device(s) in ${targetClassroom} to isOnline=${isOnline} (legacy topic format)`)
+      return devices
+    }
+
+    console.warn(`[DeviceSync] ⚠️ Availability payload on [${topic}] missing both deviceId and classroom:`, data)
+    return null
+  } catch (err) {
+    console.error(`[DeviceSync] Error handling availability event on [${topic}]:`, err)
+    return null
+  }
+}
+
+/**
  * Initializes listeners on MQTT status and availability topics
  */
 function initDeviceSync() {
   console.log('[DeviceSync] 🔄 Registering real-time device status MQTT consumers...')
 
   // 1. Standardized state topics: smartclassroom/+/relay/+/state
-  onMessage(TOPIC_PATTERNS.ALL_STATES, (topic, payload) => {
+  onMessage(TOPIC_PATTERNS.ALL_STATES, (topic, payload, rawPayload) => {
     console.log(`[DeviceSync] 📩 Received MQTT relay state on [${topic}]`)
     processDeviceStatusMessage(topic, payload)
   })
 
   // 2. Legacy status topics: classroom/device/+/status
-  onMessage(TOPIC_PATTERNS.LEGACY_DEVICE_STATUS, (topic, payload) => {
+  onMessage(TOPIC_PATTERNS.LEGACY_DEVICE_STATUS, (topic, payload, rawPayload) => {
     console.log(`[DeviceSync] 📩 Received legacy MQTT status message on [${topic}]`)
     processDeviceStatusMessage(topic, payload)
   })
 
-  // 3. Availability handler (LWT / board online events)
-  const handleAvailability = async (topic, payload) => {
-    try {
-      let statusText = ''
-      if (typeof payload === 'string') {
-        try {
-          const parsed = JSON.parse(payload)
-          statusText = parsed.status || parsed.state || ''
-        } catch {
-          statusText = payload.trim().toLowerCase()
-        }
-      } else if (payload && typeof payload === 'object') {
-        statusText = (payload.status || payload.state || '').toLowerCase()
-      }
+  // 3. Availability handler: smartclassroom/+/availability (ESP32 online / offline / LWT / heartbeat)
+  onMessage(TOPIC_PATTERNS.ALL_AVAILABILITY, (topic, payload, rawPayload) => {
+    handleAvailability(topic, payload, rawPayload)
+  })
 
-      const isOnline = statusText === 'online' || statusText === '1' || statusText === 'true'
-      console.log(`[DeviceSync] 📡 Board availability event on [${topic}]: "${statusText}" (isOnline=${isOnline})`)
-
-      // Extract optional classroom filter from parsed topic or payload
-      let targetClassroom = null
-      if (payload && typeof payload === 'object' && payload.classroom) {
-        targetClassroom = payload.classroom
-      } else if (topic) {
-        const parsed = parseMqttTopic(topic)
-        if (parsed.isSmartClassroom && parsed.classroom) {
-          targetClassroom = parsed.classroom
-        }
-      }
-
-      const query = { isActive: true }
-      if (targetClassroom) {
-        const roomRegex = classroomSlugToRegex(targetClassroom)
-        if (roomRegex) {
-          query.classroom = { $regex: roomRegex }
-        }
-      }
-
-      const devices = await Device.find(query)
-      for (const dev of devices) {
-        dev.isOnline = isOnline
-        await dev.save()
-        emitDeviceStatus(dev)
-      }
-      console.log(`[DeviceSync] 🔄 Updated ${devices.length} device(s) ${targetClassroom ? `in ${targetClassroom} ` : ''}to isOnline=${isOnline} and dispatched real-time Socket.IO events.`)
-    } catch (err) {
-      console.error(`[DeviceSync] Error handling availability event on [${topic}]:`, err)
-    }
-  }
-
-  // Subscribe to availability topics
-  onMessage(TOPIC_PATTERNS.ALL_AVAILABILITY, handleAvailability)
-  onMessage(TOPIC_PATTERNS.LEGACY_AVAILABILITY, handleAvailability)
-  onMessage(TOPIC_PATTERNS.LEGACY_ESP32_STATUS, handleAvailability)
+  // 4. Legacy availability topics
+  onMessage(TOPIC_PATTERNS.LEGACY_AVAILABILITY, (topic, payload, rawPayload) => {
+    handleAvailability(topic, payload, rawPayload)
+  })
+  onMessage(TOPIC_PATTERNS.LEGACY_ESP32_STATUS, (topic, payload, rawPayload) => {
+    handleAvailability(topic, payload, rawPayload)
+  })
 }
 
 module.exports = {
   initDeviceSync,
   processDeviceStatusMessage,
+  handleAvailability,
   normalizeState,
 }

@@ -184,6 +184,7 @@ function emitDeviceStatus(device) {
     lastCommandedAt: device.lastCommandedAt ? new Date(device.lastCommandedAt).toISOString() : null,
     lastConfirmedAt: device.lastConfirmedAt ? new Date(device.lastConfirmedAt).toISOString() : null,
     isOnline: typeof device.isOnline === 'boolean' ? device.isOnline : true,
+    lastSeenAt: device.lastSeenAt ? new Date(device.lastSeenAt).toISOString() : null,
     gpioPin: device.gpioPin,
     updatedAt: device.updatedAt ? new Date(device.updatedAt).toISOString() : new Date().toISOString(),
   }

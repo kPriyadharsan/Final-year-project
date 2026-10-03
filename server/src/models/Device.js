@@ -11,6 +11,16 @@ const DEVICE_TYPES = Object.freeze({
 })
 
 /**
+ * Entity Hierarchy Distinction:
+ * NODE: Physical ESP32 microcontroller board (e.g. ESP32-RM302-01)
+ * CHANNEL: Controllable relay channel output belonging to a controller node (e.g. LIGHT, FAN, PROJECTOR)
+ */
+const DEVICE_CATEGORIES = Object.freeze({
+  NODE: 'NODE',
+  CHANNEL: 'CHANNEL',
+})
+
+/**
  * Controlled Operating States
  */
 const DEVICE_STATES = Object.freeze({
@@ -36,6 +46,39 @@ const deviceSchema = new mongoose.Schema(
       },
       uppercase: true,
       trim: true,
+    },
+    deviceCategory: {
+      type: String,
+      enum: {
+        values: Object.values(DEVICE_CATEGORIES),
+        message: 'Invalid device category. Allowed: NODE, CHANNEL',
+      },
+      default: function () {
+        return this.type === DEVICE_TYPES.OTHER ? DEVICE_CATEGORIES.NODE : DEVICE_CATEGORIES.CHANNEL
+      },
+      uppercase: true,
+      trim: true,
+      index: true,
+    },
+    entityType: {
+      type: String,
+      enum: {
+        values: Object.values(DEVICE_CATEGORIES),
+        message: 'Invalid entity type. Allowed: NODE, CHANNEL',
+      },
+      default: function () {
+        return this.type === DEVICE_TYPES.OTHER ? DEVICE_CATEGORIES.NODE : DEVICE_CATEGORIES.CHANNEL
+      },
+      uppercase: true,
+      trim: true,
+      index: true,
+    },
+    nodeId: {
+      type: String,
+      trim: true,
+      uppercase: true,
+      default: null,
+      index: true,
     },
     classroom: {
       type: String,
@@ -99,6 +142,10 @@ const deviceSchema = new mongoose.Schema(
       default: false,
       index: true,
     },
+    lastSeenAt: {
+      type: Date,
+      default: null,
+    },
     gpioPin: {
       type: Number,
       min: [0, 'GPIO pin cannot be negative'],
@@ -139,18 +186,41 @@ const deviceSchema = new mongoose.Schema(
 // Compound and lookup indexes for fast queries
 deviceSchema.index({ classroom: 1, type: 1 })
 deviceSchema.index({ classroom: 1, isActive: 1 })
+deviceSchema.index({ classroom: 1, entityType: 1 })
 deviceSchema.index({ mqttStatusTopic: 1 })
 deviceSchema.index({ mqttCommandTopic: 1 })
 
 // Auto-populate standardized MQTT topics if not provided
-const { getCommandTopic, getStateTopic } = require('../utils/mqttTopics')
+const { getCommandTopic, getStateTopic, getAvailabilityTopic } = require('../utils/mqttTopics')
 deviceSchema.pre('validate', function (next) {
-  if (this.classroom && this.type) {
-    if (!this.mqttCommandTopic || this.mqttCommandTopic.trim() === '') {
-      this.mqttCommandTopic = getCommandTopic(this.classroom, this.type)
-    }
-    if (!this.mqttStatusTopic || this.mqttStatusTopic.trim() === '') {
-      this.mqttStatusTopic = getStateTopic(this.classroom, this.type)
+  // Synchronize entityType and deviceCategory
+  if (this.deviceCategory && !this.entityType) {
+    this.entityType = this.deviceCategory
+  } else if (this.entityType && !this.deviceCategory) {
+    this.deviceCategory = this.entityType
+  } else if (!this.deviceCategory && !this.entityType) {
+    const isNode = this.type === DEVICE_TYPES.OTHER
+    this.deviceCategory = isNode ? DEVICE_CATEGORIES.NODE : DEVICE_CATEGORIES.CHANNEL
+    this.entityType = this.deviceCategory
+  }
+
+  // Populate MQTT topics if missing
+  if (this.classroom) {
+    const isNode = this.entityType === DEVICE_CATEGORIES.NODE || this.type === DEVICE_TYPES.OTHER
+    if (isNode) {
+      if (!this.mqttCommandTopic || this.mqttCommandTopic.trim() === '') {
+        this.mqttCommandTopic = getAvailabilityTopic(this.classroom)
+      }
+      if (!this.mqttStatusTopic || this.mqttStatusTopic.trim() === '') {
+        this.mqttStatusTopic = getAvailabilityTopic(this.classroom)
+      }
+    } else if (this.type) {
+      if (!this.mqttCommandTopic || this.mqttCommandTopic.trim() === '') {
+        this.mqttCommandTopic = getCommandTopic(this.classroom, this.type)
+      }
+      if (!this.mqttStatusTopic || this.mqttStatusTopic.trim() === '') {
+        this.mqttStatusTopic = getStateTopic(this.classroom, this.type)
+      }
     }
   }
   next()
@@ -161,5 +231,6 @@ const Device = mongoose.model('Device', deviceSchema)
 module.exports = {
   Device,
   DEVICE_TYPES,
+  DEVICE_CATEGORIES,
   DEVICE_STATES,
 }

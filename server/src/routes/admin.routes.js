@@ -46,13 +46,17 @@ router.get(
   requireRole(ROLES.SUPER_ADMIN),
   async (req, res) => {
     try {
+      const nodeFilter = { isActive: true, $or: [{ entityType: 'NODE' }, { deviceCategory: 'NODE' }, { type: 'OTHER' }] }
+      const channelFilter = { isActive: true, $or: [{ entityType: 'CHANNEL' }, { deviceCategory: 'CHANNEL' }, { type: { $in: ['LIGHT', 'FAN', 'PROJECTOR'] } }] }
+
       const [
         teachersCount,
         studentsCount,
         teachersList,
-        totalActiveDevices,
-        onlineDevicesCount,
-        offlineDevicesCount,
+        totalActiveNodes,
+        onlineNodesCount,
+        totalActiveChannels,
+        onlineChannelsCount,
         classroomAgg,
         recentLogs,
       ] = await Promise.all([
@@ -63,19 +67,70 @@ router.get(
           .sort({ createdAt: -1 })
           .limit(20)
           .lean(),
-        Device.countDocuments({ isActive: true }),
-        Device.countDocuments({ isActive: true, isOnline: true }),
-        Device.countDocuments({ isActive: true, isOnline: false }),
+        Device.countDocuments(nodeFilter),
+        Device.countDocuments({ ...nodeFilter, isOnline: true }),
+        Device.countDocuments(channelFilter),
+        Device.countDocuments({ ...channelFilter, isOnline: true }),
         Device.aggregate([
           { $match: { isActive: true } },
           {
             $group: {
               _id: '$classroom',
-              totalDevices: { $sum: 1 },
-              onlineDevices: {
-                $sum: { $cond: [{ $eq: ['$isOnline', true] }, 1, 0] },
+              totalRecords: { $sum: 1 },
+              totalNodes: {
+                $sum: { $cond: [{ $or: [{ $eq: ['$entityType', 'NODE'] }, { $eq: ['$type', 'OTHER'] }] }, 1, 0] },
               },
-              deviceTypes: { $addToSet: '$type' },
+              onlineNodes: {
+                $sum: {
+                  $cond: [
+                    {
+                      $and: [
+                        { $eq: ['$isOnline', true] },
+                        { $or: [{ $eq: ['$entityType', 'NODE'] }, { $eq: ['$type', 'OTHER'] }] },
+                      ],
+                    },
+                    1,
+                    0,
+                  ],
+                },
+              },
+              totalChannels: {
+                $sum: {
+                  $cond: [
+                    { $or: [{ $eq: ['$entityType', 'CHANNEL'] }, { $in: ['$type', ['LIGHT', 'FAN', 'PROJECTOR']] }] },
+                    1,
+                    0,
+                  ],
+                },
+              },
+              onlineChannels: {
+                $sum: {
+                  $cond: [
+                    {
+                      $and: [
+                        { $eq: ['$isOnline', true] },
+                        {
+                          $or: [
+                            { $eq: ['$entityType', 'CHANNEL'] },
+                            { $in: ['$type', ['LIGHT', 'FAN', 'PROJECTOR']] },
+                          ],
+                        },
+                      ],
+                    },
+                    1,
+                    0,
+                  ],
+                },
+              },
+              deviceTypes: {
+                $addToSet: {
+                  $cond: [
+                    { $in: ['$type', ['LIGHT', 'FAN', 'PROJECTOR']] },
+                    '$type',
+                    '$$REMOVE',
+                  ],
+                },
+              },
             },
           },
           { $sort: { _id: 1 } },
@@ -96,11 +151,15 @@ router.get(
         .map((c) => ({
           id: c._id.toLowerCase().replace(/[^a-z0-9]/g, '-'),
           name: c._id,
-          relays: c.totalDevices,
-          totalDevices: c.totalDevices,
-          onlineDevices: c.onlineDevices,
-          status: c.onlineDevices > 0 ? 'Active' : 'Offline',
-          deviceTypes: c.deviceTypes,
+          nodes: c.totalNodes,
+          onlineNodes: c.onlineNodes,
+          relays: c.totalChannels,
+          totalChannels: c.totalChannels,
+          onlineChannels: c.onlineChannels,
+          totalDevices: c.totalNodes,
+          onlineDevices: c.onlineNodes,
+          status: c.onlineNodes > 0 ? 'Active' : 'Offline',
+          deviceTypes: c.deviceTypes || [],
         }))
 
       const totalClasses = classrooms.length
@@ -115,10 +174,20 @@ router.get(
         metrics: {
           totalTeachers: teachersCount,
           totalStudents: studentsCount,
-          totalDevices: totalActiveDevices,
-          connectedDevices: onlineDevicesCount,
-          onlineDevices: onlineDevicesCount,
-          offlineDevices: offlineDevicesCount,
+          // Accurate Physical Node metrics
+          totalNodes: totalActiveNodes,
+          onlineNodes: onlineNodesCount,
+          offlineNodes: Math.max(0, totalActiveNodes - onlineNodesCount),
+          // Accurate Relay Channel metrics
+          totalChannels: totalActiveChannels,
+          onlineChannels: onlineChannelsCount,
+          offlineChannels: Math.max(0, totalActiveChannels - onlineChannelsCount),
+          // Backward-compatible metrics mapping (totalDevices refers to physical nodes)
+          totalDevices: totalActiveNodes,
+          connectedDevices: onlineNodesCount,
+          onlineDevices: onlineNodesCount,
+          offlineDevices: Math.max(0, totalActiveNodes - onlineNodesCount),
+          totalAppliances: totalActiveChannels,
           totalClasses,
           activeClassrooms: classrooms.map((c) => c.name),
           systemStatus,

@@ -153,6 +153,18 @@ async function executeDeviceCommand({
     }
   }
 
+  // 4b. Controller Node Guard: A physical controller node cannot be directly toggled via relay command
+  if (device.entityType === 'NODE' || device.deviceCategory === 'NODE' || device.type === DEVICE_TYPES.OTHER) {
+    return {
+      success: false,
+      delivered: false,
+      code: 'CANNOT_COMMAND_NODE',
+      executionStatus: 'FAILED',
+      message: `Device "${device.name}" (${device.deviceId}) is a physical controller node, not a controllable channel. Please command a relay channel (LIGHT, FAN, PROJECTOR).`,
+      timestamp: new Date().toISOString(),
+    }
+  }
+
   const previousState = device.state
   const newState = normalizedAction
 

@@ -249,10 +249,14 @@ export function AdminPage() {
     totalTeachers: dashboardData?.metrics?.totalTeachers ?? 0,
     totalClasses: dashboardData?.metrics?.totalClasses ?? (dashboardData?.classrooms?.length || 0),
     totalStudents: dashboardData?.metrics?.totalStudents ?? 0,
-    totalDevices: dashboardData?.metrics?.totalDevices ?? dbDevices.length,
-    connectedDevices: dashboardData?.metrics?.onlineDevices ?? dbDevices.filter((d) => d.isOnline === true).length,
-    onlineDevices: dashboardData?.metrics?.onlineDevices ?? dbDevices.filter((d) => d.isOnline === true).length,
-    offlineDevices: dashboardData?.metrics?.offlineDevices ?? dbDevices.filter((d) => d.isOnline === false).length,
+    totalNodes: dashboardData?.metrics?.totalNodes ?? dbDevices.filter((d) => d.entityType === 'NODE' || d.type === 'OTHER').length,
+    onlineNodes: dashboardData?.metrics?.onlineNodes ?? dbDevices.filter((d) => (d.entityType === 'NODE' || d.type === 'OTHER') && d.isOnline === true).length,
+    totalChannels: dashboardData?.metrics?.totalChannels ?? dbDevices.filter((d) => d.entityType === 'CHANNEL' || d.type !== 'OTHER').length,
+    onlineChannels: dashboardData?.metrics?.onlineChannels ?? dbDevices.filter((d) => (d.entityType === 'CHANNEL' || d.type !== 'OTHER') && d.isOnline === true).length,
+    totalDevices: dashboardData?.metrics?.totalNodes ?? (dashboardData?.metrics?.totalDevices ?? dbDevices.filter((d) => d.entityType === 'NODE' || d.type === 'OTHER').length),
+    connectedDevices: dashboardData?.metrics?.onlineNodes ?? (dashboardData?.metrics?.onlineDevices ?? dbDevices.filter((d) => (d.entityType === 'NODE' || d.type === 'OTHER') && d.isOnline === true).length),
+    onlineDevices: dashboardData?.metrics?.onlineNodes ?? (dashboardData?.metrics?.onlineDevices ?? dbDevices.filter((d) => (d.entityType === 'NODE' || d.type === 'OTHER') && d.isOnline === true).length),
+    offlineDevices: dashboardData?.metrics?.offlineNodes ?? 0,
     systemStatus: systemHealth?.backend?.status || 'offline',
     mqttStatus: systemHealth?.mqtt?.connected ? 'connected' : 'offline',
     geminiStatus: systemHealth?.gemini?.status || 'offline',
@@ -291,15 +295,17 @@ export function AdminPage() {
       ? dashboardData.classrooms
       : Array.from(new Set(dbDevices.map((d) => d.classroom).filter(Boolean))).map((room) => {
           const roomDevices = dbDevices.filter((d) => d.classroom === room)
+          const roomChannels = roomDevices.filter((d) => d.entityType === 'CHANNEL' || d.type !== 'OTHER')
           const onlineCount = roomDevices.filter((d) => d.isOnline === true).length
           return {
             id: room.toLowerCase().replace(/[^a-z0-9]/g, '-'),
             name: room,
             department: 'Smart Classroom Facility',
-            relays: roomDevices.length,
-            totalDevices: roomDevices.length,
-            onlineDevices: onlineCount,
-            devices: `${roomDevices.length} Connected Relays`,
+            relays: roomChannels.length,
+            totalChannels: roomChannels.length,
+            totalDevices: 1,
+            onlineDevices: onlineCount > 0 ? 1 : 0,
+            devices: `${roomChannels.length} Relay Channels`,
             status: onlineCount > 0 ? 'Active' : 'Offline',
           }
         })
@@ -307,8 +313,8 @@ export function AdminPage() {
     id: c.id || c.name,
     name: c.name,
     department: c.department || 'Smart Classroom Facility',
-    relays: c.relays ?? c.totalDevices ?? 0,
-    devices: c.devices || `${c.totalDevices ?? 0} Relay Devices`,
+    relays: c.relays ?? c.totalChannels ?? 3,
+    devices: c.devices || `${c.relays ?? c.totalChannels ?? 3} Relay Channels`,
     status: c.status || (c.onlineDevices > 0 ? 'Active' : 'Offline'),
     currentTopic: c.onlineDevices > 0 ? `${c.onlineDevices} Online` : 'Standby',
   }))
@@ -321,8 +327,11 @@ export function AdminPage() {
     )
   })
 
-  // Devices filtering
+  // Devices filtering - strictly controllable relay channels (Light, Fan, Projector)
   const filteredDbDevices = dbDevices.filter((d) => {
+    // Exclude physical controller nodes from appliance list
+    if (d.entityType === 'NODE' || d.deviceCategory === 'NODE' || d.type === 'OTHER') return false
+
     const q = deviceSearchQuery.toLowerCase()
     const matchesSearch =
       (d.name && d.name.toLowerCase().includes(q)) ||
@@ -333,21 +342,38 @@ export function AdminPage() {
     return matchesSearch && matchesType
   })
 
-  // Real ESP32 controller hubs derived from active classrooms
-  const displayedHubs = Array.from(new Set(dbDevices.map((d) => d.classroom).filter(Boolean))).map((room) => {
-    const roomDevices = dbDevices.filter((d) => d.classroom === room)
-    const onlineCount = roomDevices.filter((d) => d.isOnline === true).length
-    const isNodeOnline = onlineCount > 0
+  // Physical ESP32 controller nodes
+  const nodeDevices = dbDevices.filter(
+    (d) => d.entityType === 'NODE' || d.deviceCategory === 'NODE' || d.type === 'OTHER'
+  )
+
+  const displayedHubs = (
+    nodeDevices.length > 0
+      ? nodeDevices
+      : Array.from(new Set(dbDevices.map((d) => d.classroom).filter(Boolean))).map((room) => ({
+          deviceId: `ESP32-${room.replace(/\s+/g, '').toUpperCase()}-01`,
+          name: `${room} ESP32 Controller Node`,
+          classroom: room,
+          isOnline: dbDevices.some((d) => d.classroom === room && d.isOnline === true),
+        }))
+  ).map((node) => {
+    const room = node.classroom || 'Room 302'
+    const channels = dbDevices.filter(
+      (d) => (d.entityType === 'CHANNEL' || d.deviceCategory === 'CHANNEL' || d.type !== 'OTHER') && d.classroom === room
+    )
+    const isNodeOnline = node.isOnline === true
     return {
-      id: `ESP32-${room.replace(/\s+/g, '').toUpperCase()}`,
-      name: `ESP32 Smart Controller (${room})`,
+      id: node.deviceId,
+      deviceId: node.deviceId,
+      name: node.name || `ESP32 Smart Controller (${room})`,
       room,
-      relays: `${roomDevices.length} Channels (${roomDevices.map((d) => d.type).join(', ')})`,
+      relays: `${channels.length} Channels (${channels.map((d) => d.type).join(', ')})`,
+      channelsList: channels,
       status: isNodeOnline ? 'Online' : 'Offline',
       isOnline: isNodeOnline,
-      ip: 'DHCP Mesh',
+      ip: '192.168.1.100 (DHCP)',
       rssi: isNodeOnline ? 'Active (Connected)' : 'Disconnected',
-      mac: `ESP32-${room.replace(/\s+/g, '').toUpperCase()}`,
+      mac: node.deviceId,
     }
   })
 
@@ -355,7 +381,8 @@ export function AdminPage() {
     const q = deviceSearchQuery.toLowerCase()
     const matchesSearch =
       h.name.toLowerCase().includes(q) ||
-      h.room.toLowerCase().includes(q)
+      h.room.toLowerCase().includes(q) ||
+      h.deviceId.toLowerCase().includes(q)
     const matchesType = selectedDeviceType === 'ALL' || selectedDeviceType === 'HUB'
     return matchesSearch && matchesType
   })
@@ -501,9 +528,9 @@ export function AdminPage() {
             <div className="p-4 sm:p-5 flex items-start justify-between gap-3 hover:bg-slate-50/50 transition-colors">
               <div>
                 <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider block">IoT Nodes</span>
-                <div className="mt-1 text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">{metrics.totalDevices}</div>
+                <div className="mt-1 text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">{metrics.totalNodes ?? metrics.totalDevices}</div>
                 <span className="text-[11px] text-emerald-600 font-medium mt-1 block flex items-center gap-1">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-ping inline-block" /> {metrics.onlineDevices} Online {metrics.offlineDevices > 0 ? `• ${metrics.offlineDevices} Offline` : ''}
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-ping inline-block" /> {metrics.onlineNodes ?? metrics.onlineDevices} Online {metrics.totalChannels ? `• ${metrics.totalChannels} Channels` : ''}
                 </span>
               </div>
               <div className="w-10 h-10 rounded-2xl bg-emerald-50 border border-emerald-100/80 flex items-center justify-center text-emerald-600 shrink-0 shadow-2xs">
@@ -585,8 +612,8 @@ export function AdminPage() {
                   <Cpu className="w-3.5 h-3.5" />
                 </div>
                 <div>
-                  <span className="font-bold text-slate-800 block text-[11px]">ESP32</span>
-                  <span className="text-[10px] text-slate-400 font-mono">{metrics.totalDevices} Nodes</span>
+                  <span className="font-bold text-slate-800 block text-[11px]">ESP32 Node</span>
+                  <span className="text-[10px] text-slate-400 font-mono">{metrics.totalNodes ?? 1} Node • {metrics.totalChannels ?? 3} Relays</span>
                 </div>
               </div>
               <Badge variant={systemHealth?.esp32?.connected ? 'success' : 'danger'} dot size="sm">
@@ -831,7 +858,7 @@ export function AdminPage() {
                       leftIcon={<Cpu className="w-4 h-4 text-cyan-400" />}
                       onClick={() => handleTabChange('devices')}
                     >
-                      Check {metrics.totalDevices} IoT Relays & Nodes
+                      Check {metrics.totalNodes ?? 1} Controller Node & {metrics.totalChannels ?? 3} Channels
                     </Button>
                     <Button
                       variant="secondary"
