@@ -3,6 +3,7 @@ const router = express.Router()
 const { requireAuth, requireRole } = require('../middleware/auth.middleware')
 const { User, ROLES } = require('../models/User')
 const { Device } = require('../models/Device')
+const { DeviceLog } = require('../models/DeviceLog')
 const { getMongoStatus } = require('../config/db')
 const { getMQTTStatus } = require('../services/mqtt.service')
 const { hashPassword } = require('../utils/password.util')
@@ -35,7 +36,7 @@ router.get(
 
 /**
  * @route   GET /api/admin/dashboard
- * @desc    Aggregated telemetry, counts, and service status for Super Admin console
+ * @desc    Real-time aggregated telemetry, device counts, and system status from MongoDB
  * @access  Private (Requires valid JWT with SUPER_ADMIN role)
  */
 router.get(
@@ -44,24 +45,64 @@ router.get(
   requireRole(ROLES.SUPER_ADMIN),
   async (req, res) => {
     try {
-      const [teachersCount, studentsCount, teachersList, connectedDevicesCount, distinctClassrooms] = await Promise.all([
+      const [
+        teachersCount,
+        studentsCount,
+        teachersList,
+        totalActiveDevices,
+        onlineDevicesCount,
+        offlineDevicesCount,
+        classroomAgg,
+        recentLogs,
+      ] = await Promise.all([
         User.countDocuments({ role: ROLES.TEACHER }),
         User.countDocuments({ role: ROLES.STUDENT }),
         User.find({ role: ROLES.TEACHER })
           .select('-passwordHash')
           .sort({ createdAt: -1 })
-          .limit(10)
+          .limit(20)
           .lean(),
-        Device.countDocuments({ isOnline: true }),
-        Device.distinct('classroom'),
+        Device.countDocuments({ isActive: true }),
+        Device.countDocuments({ isActive: true, isOnline: true }),
+        Device.countDocuments({ isActive: true, isOnline: false }),
+        Device.aggregate([
+          { $match: { isActive: true } },
+          {
+            $group: {
+              _id: '$classroom',
+              totalDevices: { $sum: 1 },
+              onlineDevices: {
+                $sum: { $cond: [{ $eq: ['$isOnline', true] }, 1, 0] },
+              },
+              deviceTypes: { $addToSet: '$type' },
+            },
+          },
+          { $sort: { _id: 1 } },
+        ]),
+        DeviceLog.find()
+          .sort({ createdAt: -1 })
+          .limit(10)
+          .select('deviceName deviceId classroom action previousState newState mqttStatus userName userRole source createdAt')
+          .lean(),
       ])
 
       const mongoStatus = getMongoStatus()
       const diagnostics = env.getDiagnostics()
       const liveMqtt = getMQTTStatus()
 
-      const totalClasses = distinctClassrooms.length > 0 ? distinctClassrooms.length : 1
-      const connectedDevices = connectedDevicesCount
+      const classrooms = classroomAgg
+        .filter((c) => c._id)
+        .map((c) => ({
+          id: c._id.toLowerCase().replace(/[^a-z0-9]/g, '-'),
+          name: c._id,
+          relays: c.totalDevices,
+          totalDevices: c.totalDevices,
+          onlineDevices: c.onlineDevices,
+          status: c.onlineDevices > 0 ? 'Active' : 'Offline',
+          deviceTypes: c.deviceTypes,
+        }))
+
+      const totalClasses = classrooms.length
 
       // Derived service statuses
       const mqttStatus = liveMqtt.connected ? 'connected' : (liveMqtt.status || 'offline')
@@ -72,9 +113,13 @@ router.get(
         status: 'success',
         metrics: {
           totalTeachers: teachersCount,
-          totalClasses,
           totalStudents: studentsCount,
-          connectedDevices,
+          totalDevices: totalActiveDevices,
+          connectedDevices: onlineDevicesCount,
+          onlineDevices: onlineDevicesCount,
+          offlineDevices: offlineDevicesCount,
+          totalClasses,
+          activeClassrooms: classrooms.map((c) => c.name),
           systemStatus,
           mqttStatus,
           geminiStatus,
@@ -92,12 +137,14 @@ router.get(
           mqtt: liveMqtt,
           gemini: {
             status: geminiStatus,
-            model: 'Gemini 2.5 Flash / Pro',
+            model: process.env.GEMINI_MODEL || 'gemini-2.5-flash',
             keyMasked: diagnostics.geminiMasked,
             speechEngine: 'Bilingual (Tamil / English)',
           },
         },
+        classrooms,
         teachers: teachersList,
+        recentActivities: recentLogs,
         timestamp: new Date().toISOString(),
       })
     } catch (err) {

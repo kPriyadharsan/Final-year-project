@@ -244,155 +244,37 @@ export function AdminPage() {
     }, 600)
   }
 
-  const metrics = dashboardData?.metrics || {
-    totalTeachers: 0,
-    totalClasses: 0,
-    totalStudents: 0,
-    connectedDevices: dbDevices.length,
+  // Derive real statistics and status from actual MongoDB records
+  const metrics = {
+    totalTeachers: dashboardData?.metrics?.totalTeachers ?? 0,
+    totalClasses: dashboardData?.metrics?.totalClasses ?? (dashboardData?.classrooms?.length || 0),
+    totalStudents: dashboardData?.metrics?.totalStudents ?? 0,
+    totalDevices: dashboardData?.metrics?.totalDevices ?? dbDevices.length,
+    connectedDevices: dashboardData?.metrics?.onlineDevices ?? dbDevices.filter((d) => d.isOnline === true).length,
+    onlineDevices: dashboardData?.metrics?.onlineDevices ?? dbDevices.filter((d) => d.isOnline === true).length,
+    offlineDevices: dashboardData?.metrics?.offlineDevices ?? dbDevices.filter((d) => d.isOnline === false).length,
     systemStatus: systemHealth?.backend?.status || 'offline',
-    mqttStatus: systemHealth?.mqtt?.status || 'offline',
+    mqttStatus: systemHealth?.mqtt?.connected ? 'connected' : 'offline',
     geminiStatus: systemHealth?.gemini?.status || 'offline',
   }
 
   const services = dashboardData?.services || {}
 
-  // Safe fallback teacher samples if DB has none yet
-  const sampleTeachers = [
-    {
-      id: 'T-101',
-      name: 'Dr. R. Ramanathan',
-      email: 'ramanathan@smartclassroom.edu',
-      department: 'Computer Science & Engineering',
-      assignedClasses: ['CS-301', 'CS-Lab-3'],
-      status: 'Active',
-      joined: 'Sep 2026',
-    },
-    {
-      id: 'T-102',
-      name: 'Prof. M. Malathi',
-      email: 'malathi.m@smartclassroom.edu',
-      department: 'Information Technology',
-      assignedClasses: ['IT-202', 'IT-401'],
-      status: 'Active',
-      joined: 'Sep 2026',
-    },
-    {
-      id: 'T-103',
-      name: 'Dr. K. Senthil Kumar',
-      email: 'senthil.k@smartclassroom.edu',
-      department: 'Electronics & Communication',
-      assignedClasses: ['EC-104'],
-      status: 'Active',
-      joined: 'Aug 2026',
-    },
-  ]
-
-  // Safe sample classrooms
-  const sampleClasses = [
-    {
-      id: 'RM-101',
-      name: 'Lecture Hall 101',
-      department: 'Computer Science',
-      capacity: 65,
-      relays: 4,
-      devices: 'ESP32-RM101',
-      status: 'In Session',
-      currentTopic: 'Database Systems',
-    },
-    {
-      id: 'RM-204',
-      name: 'Audio/Visual Seminar Hall',
-      department: 'Interdisciplinary',
-      capacity: 120,
-      relays: 6,
-      devices: 'ESP32-RM204',
-      status: 'Standby',
-      currentTopic: 'Next: 02:00 PM',
-    },
-    {
-      id: 'RM-302',
-      name: 'AI & Voice Research Lab',
-      department: 'Computer Science',
-      capacity: 40,
-      relays: 4,
-      devices: 'NodeMCU-RM302',
-      status: 'Active',
-      currentTopic: 'Speech Processing',
-    },
-    {
-      id: 'RM-405',
-      name: 'IoT Hardware Lab',
-      department: 'Electronics',
-      capacity: 50,
-      relays: 8,
-      devices: 'ESP32-RM405',
-      status: 'Automated',
-      currentTopic: 'Microcontroller Systems',
-    },
-  ]
-
-  // Safe sample IoT devices
-  const sampleDevices = [
-    {
-      id: 'ESP-101',
-      name: 'ESP32 Classroom Hub 101',
-      room: 'Room 101',
-      ip: '192.168.1.101',
-      mac: '24:6F:28:AB:11:01',
-      relays: '4 Channels (Lights, Fans, Projector, AC)',
-      rssi: '-54 dBm',
-      status: 'Online',
-    },
-    {
-      id: 'ESP-204',
-      name: 'ESP32 Seminar Controller',
-      room: 'Room 204',
-      ip: '192.168.1.102',
-      mac: '24:6F:28:AB:11:02',
-      relays: '6 Channels (Stage, Podium, AV, AC x2, Hall)',
-      rssi: '-58 dBm',
-      status: 'Online',
-    },
-    {
-      id: 'NODEMCU-302',
-      name: 'NodeMCU AI Lab Node',
-      room: 'Room 302',
-      ip: '192.168.1.103',
-      mac: 'A0:20:A6:14:22:98',
-      relays: '4 Channels (Main Lights, Projector, Audio, AC)',
-      rssi: '-61 dBm',
-      status: 'Online',
-    },
-    {
-      id: 'ESP-GW01',
-      name: 'ESP32 Master Campus Gateway',
-      room: 'Server Facility',
-      ip: '192.168.1.100',
-      mac: '24:6F:28:FF:99:00',
-      relays: 'Central Telemetry Broker',
-      rssi: '-42 dBm',
-      status: 'Online',
-    },
-  ]
-
-  // Combined real + sample teachers
-  const displayedTeachers =
-    dashboardData?.teachers && dashboardData.teachers.length > 0
-      ? dashboardData.teachers.map((t, idx) => ({
-          id: t._id || `T-${idx}`,
-          name: t.name,
-          email: t.email,
-          department: t.department || 'Computer Science & Engineering',
-          assignedClasses: t.assignedClasses || ['CS-302 (Lab 302)'],
-          status: t.isActive !== false ? 'Active' : 'Inactive',
-          joined: t.createdAt
-            ? new Date(t.createdAt).toLocaleDateString('en-US', {
-                month: 'short',
-                year: 'numeric',
-              })
-            : 'Sep 2026',
-        }))
-      : sampleTeachers
+  // Sourced strictly from MongoDB teachers query
+  const displayedTeachers = (dashboardData?.teachers || []).map((t, idx) => ({
+    id: t._id || `T-${idx}`,
+    name: t.name,
+    email: t.email,
+    department: t.department || 'Academic Department',
+    assignedClasses: Array.isArray(t.assignedClasses) && t.assignedClasses.length > 0 ? t.assignedClasses : ['Room 302'],
+    status: t.isActive !== false ? 'Active' : 'Inactive',
+    joined: t.createdAt
+      ? new Date(t.createdAt).toLocaleDateString('en-US', {
+          month: 'short',
+          year: 'numeric',
+        })
+      : 'Active',
+  }))
 
   const filteredTeachers = displayedTeachers.filter((t) => {
     const q = teacherSearchQuery.toLowerCase()
@@ -403,12 +285,39 @@ export function AdminPage() {
     )
   })
 
-  const filteredClasses = sampleClasses.filter((c) => {
+  // Sourced strictly from MongoDB distinct classrooms and devices
+  const displayedClasses = (
+    dashboardData?.classrooms && dashboardData.classrooms.length > 0
+      ? dashboardData.classrooms
+      : Array.from(new Set(dbDevices.map((d) => d.classroom).filter(Boolean))).map((room) => {
+          const roomDevices = dbDevices.filter((d) => d.classroom === room)
+          const onlineCount = roomDevices.filter((d) => d.isOnline === true).length
+          return {
+            id: room.toLowerCase().replace(/[^a-z0-9]/g, '-'),
+            name: room,
+            department: 'Smart Classroom Facility',
+            relays: roomDevices.length,
+            totalDevices: roomDevices.length,
+            onlineDevices: onlineCount,
+            devices: `${roomDevices.length} Connected Relays`,
+            status: onlineCount > 0 ? 'Active' : 'Offline',
+          }
+        })
+  ).map((c) => ({
+    id: c.id || c.name,
+    name: c.name,
+    department: c.department || 'Smart Classroom Facility',
+    relays: c.relays ?? c.totalDevices ?? 0,
+    devices: c.devices || `${c.totalDevices ?? 0} Relay Devices`,
+    status: c.status || (c.onlineDevices > 0 ? 'Active' : 'Offline'),
+    currentTopic: c.onlineDevices > 0 ? `${c.onlineDevices} Online` : 'Standby',
+  }))
+
+  const filteredClasses = displayedClasses.filter((c) => {
     const q = classSearchQuery.toLowerCase()
     return (
       c.name.toLowerCase().includes(q) ||
-      c.department.toLowerCase().includes(q) ||
-      c.currentTopic.toLowerCase().includes(q)
+      c.department.toLowerCase().includes(q)
     )
   })
 
@@ -424,12 +333,29 @@ export function AdminPage() {
     return matchesSearch && matchesType
   })
 
-  const filteredHubs = sampleDevices.filter((h) => {
+  // Real ESP32 controller hubs derived from active classrooms
+  const displayedHubs = Array.from(new Set(dbDevices.map((d) => d.classroom).filter(Boolean))).map((room) => {
+    const roomDevices = dbDevices.filter((d) => d.classroom === room)
+    const onlineCount = roomDevices.filter((d) => d.isOnline === true).length
+    const isNodeOnline = onlineCount > 0
+    return {
+      id: `ESP32-${room.replace(/\s+/g, '').toUpperCase()}`,
+      name: `ESP32 Smart Controller (${room})`,
+      room,
+      relays: `${roomDevices.length} Channels (${roomDevices.map((d) => d.type).join(', ')})`,
+      status: isNodeOnline ? 'Online' : 'Offline',
+      isOnline: isNodeOnline,
+      ip: 'DHCP Mesh',
+      rssi: isNodeOnline ? 'Active (Connected)' : 'Disconnected',
+      mac: `ESP32-${room.replace(/\s+/g, '').toUpperCase()}`,
+    }
+  })
+
+  const filteredHubs = displayedHubs.filter((h) => {
     const q = deviceSearchQuery.toLowerCase()
     const matchesSearch =
       h.name.toLowerCase().includes(q) ||
-      h.room.toLowerCase().includes(q) ||
-      h.ip.toLowerCase().includes(q)
+      h.room.toLowerCase().includes(q)
     const matchesType = selectedDeviceType === 'ALL' || selectedDeviceType === 'HUB'
     return matchesSearch && matchesType
   })
@@ -552,7 +478,9 @@ export function AdminPage() {
               <div>
                 <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider block">Classrooms</span>
                 <div className="mt-1 text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">{metrics.totalClasses}</div>
-                <span className="text-[11px] text-slate-400 mt-1 block font-medium">8 Active lecture halls</span>
+                <span className="text-[11px] text-slate-400 mt-1 block font-medium">
+                  {metrics.totalClasses} Active {metrics.totalClasses === 1 ? 'room' : 'rooms'}
+                </span>
               </div>
               <div className="w-10 h-10 rounded-2xl bg-cyan-50 border border-cyan-100/80 flex items-center justify-center text-cyan-600 shrink-0 shadow-2xs">
                 <School className="w-5 h-5" />
@@ -573,9 +501,9 @@ export function AdminPage() {
             <div className="p-4 sm:p-5 flex items-start justify-between gap-3 hover:bg-slate-50/50 transition-colors">
               <div>
                 <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider block">IoT Nodes</span>
-                <div className="mt-1 text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">{metrics.connectedDevices}</div>
+                <div className="mt-1 text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">{metrics.totalDevices}</div>
                 <span className="text-[11px] text-emerald-600 font-medium mt-1 block flex items-center gap-1">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-ping inline-block" /> 24 Online
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-ping inline-block" /> {metrics.onlineDevices} Online {metrics.offlineDevices > 0 ? `• ${metrics.offlineDevices} Offline` : ''}
                 </span>
               </div>
               <div className="w-10 h-10 rounded-2xl bg-emerald-50 border border-emerald-100/80 flex items-center justify-center text-emerald-600 shrink-0 shadow-2xs">
@@ -658,7 +586,7 @@ export function AdminPage() {
                 </div>
                 <div>
                   <span className="font-bold text-slate-800 block text-[11px]">ESP32</span>
-                  <span className="text-[10px] text-slate-400 font-mono">24 Nodes</span>
+                  <span className="text-[10px] text-slate-400 font-mono">{metrics.totalDevices} Nodes</span>
                 </div>
               </div>
               <Badge variant={systemHealth?.esp32?.connected ? 'success' : 'danger'} dot size="sm">
@@ -706,38 +634,108 @@ export function AdminPage() {
                     </Button>
                   </CardHeader>
                   <CardContent className="p-0">
-                    <div className="divide-y divide-slate-800/80">
-                      {sampleClasses.map((cls) => (
-                        <div key={cls.id} className="p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-slate-900/40 transition-colors">
-                          <div className="flex items-center gap-3">
-                            <div className="w-10 h-10 rounded-xl bg-slate-800 flex items-center justify-center text-slate-300 shrink-0">
-                              <School className="w-5 h-5" />
-                            </div>
-                            <div>
-                              <div className="flex items-center gap-2">
-                                <h4 className="text-sm font-semibold text-white">{cls.name}</h4>
-                                <Badge variant={cls.status === 'In Session' ? 'success' : 'neutral'} dot={cls.status === 'In Session'} size="sm">
-                                  {cls.status}
-                                </Badge>
+                    {displayedClasses.length > 0 ? (
+                      <div className="divide-y divide-slate-800/80">
+                        {displayedClasses.map((cls) => (
+                          <div key={cls.id} className="p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-slate-900/40 transition-colors">
+                            <div className="flex items-center gap-3">
+                              <div className="w-10 h-10 rounded-xl bg-slate-800 flex items-center justify-center text-slate-300 shrink-0">
+                                <School className="w-5 h-5" />
                               </div>
-                              <p className="text-xs text-slate-400 mt-0.5">
-                                {cls.department} &bull; Capacity: {cls.capacity} seats &bull; {cls.devices}
-                              </p>
+                              <div>
+                                <div className="flex items-center gap-2">
+                                  <h4 className="text-sm font-semibold text-white">{cls.name}</h4>
+                                  <Badge variant={cls.status === 'Active' || cls.status === 'In Session' ? 'success' : 'neutral'} dot={cls.status === 'Active' || cls.status === 'In Session'} size="sm">
+                                    {cls.status}
+                                  </Badge>
+                                </div>
+                                <p className="text-xs text-slate-400 mt-0.5">
+                                  {cls.department} &bull; {cls.devices}
+                                </p>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs font-mono text-slate-400">{cls.relays} Relays</span>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => handleTabChange('devices')}
+                              >
+                                Manage Hub
+                              </Button>
                             </div>
                           </div>
-                          <div className="flex items-center gap-2">
-                            <span className="text-xs font-mono text-slate-400">{cls.relays} Relays</span>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => handleTabChange('devices')}
-                            >
-                              Manage Hub
-                            </Button>
-                          </div>
-                        </div>
-                      ))}
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="p-6 text-center text-xs text-slate-500">
+                        No active classrooms registered in the system.
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+
+                {/* Real-time Hardware & Security Audit Activity */}
+                <Card>
+                  <CardHeader>
+                    <div>
+                      <CardTitle className="flex items-center gap-2">
+                        <Activity className="w-4 h-4 text-cyan-400" />
+                        <span>Recent Hardware Activity & Audit Log</span>
+                      </CardTitle>
+                      <CardDescription>
+                        Live event records from physical relays, ESP32 nodes, and authorized faculty actions.
+                      </CardDescription>
                     </div>
+                    <Badge variant="purple" size="sm">
+                      {dashboardData?.recentActivities?.length || 0} Events
+                    </Badge>
+                  </CardHeader>
+                  <CardContent className="p-0">
+                    {dashboardData?.recentActivities && dashboardData.recentActivities.length > 0 ? (
+                      <div className="divide-y divide-slate-800/80">
+                        {dashboardData.recentActivities.map((act) => (
+                          <div key={act.id || act._id} className="p-3.5 sm:p-4 flex items-center justify-between gap-3 hover:bg-slate-900/40 transition-colors text-xs">
+                            <div className="flex items-center gap-3">
+                              <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${
+                                act.newState === 'ON' || act.action === 'ON' ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30' : 'bg-slate-800 text-slate-400'
+                              }`}>
+                                <Zap className="w-4 h-4" />
+                              </div>
+                              <div>
+                                <div className="flex items-center gap-2">
+                                  <span className="font-semibold text-white">
+                                    {act.deviceName || act.deviceId || 'Hardware Relay'}
+                                  </span>
+                                  <Badge variant={act.mqttStatus === 'FAILED' ? 'danger' : 'success'} size="sm">
+                                    {act.action || 'COMMAND'}
+                                  </Badge>
+                                  {(act.newState || act.action) && (
+                                    <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded ${
+                                      (act.newState || act.action) === 'ON' ? 'bg-emerald-500/20 text-emerald-300' : 'bg-slate-800 text-slate-400'
+                                    }`}>
+                                      {act.newState || act.action}
+                                    </span>
+                                  )}
+                                </div>
+                                <div className="text-[11px] text-slate-400 mt-0.5">
+                                  {act.classroom || 'Room 302'} &bull; User: <span className="text-slate-300 font-medium">{act.userName || 'System'}</span> ({act.userRole || 'SYSTEM'})
+                                </div>
+                              </div>
+                            </div>
+                            <div className="text-right shrink-0">
+                              <span className="text-[10px] text-slate-500 font-mono block">
+                                {act.createdAt ? new Date(act.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : 'Recent'}
+                              </span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="p-6 text-center text-xs text-slate-500">
+                        No hardware activity recorded yet in the database.
+                      </div>
+                    )}
                   </CardContent>
                 </Card>
 
@@ -833,7 +831,7 @@ export function AdminPage() {
                       leftIcon={<Cpu className="w-4 h-4 text-cyan-400" />}
                       onClick={() => handleTabChange('devices')}
                     >
-                      Check 24 IoT Hubs & Relays
+                      Check {metrics.totalDevices} IoT Relays & Nodes
                     </Button>
                     <Button
                       variant="secondary"
@@ -1020,16 +1018,16 @@ export function AdminPage() {
 
                     <div className="grid grid-cols-3 gap-2.5 p-3 rounded-xl bg-slate-50 border border-slate-200/70 text-xs">
                       <div>
-                        <span className="text-[10px] text-slate-400 block uppercase font-medium">Capacity</span>
-                        <span className="font-semibold text-slate-800 font-mono">{cls.capacity} seats</span>
-                      </div>
-                      <div>
                         <span className="text-[10px] text-slate-400 block uppercase font-medium">Relays</span>
                         <span className="font-semibold text-indigo-600 font-mono">{cls.relays} Relays</span>
                       </div>
                       <div>
-                        <span className="text-[10px] text-slate-400 block uppercase">Hardware</span>
-                        <span className="font-semibold text-slate-200 font-mono truncate block">{cls.devices}</span>
+                        <span className="text-[10px] text-slate-400 block uppercase font-medium">Status</span>
+                        <span className="font-semibold text-slate-800 font-mono">{cls.status}</span>
+                      </div>
+                      <div>
+                        <span className="text-[10px] text-slate-400 block uppercase font-medium">Hardware</span>
+                        <span className="font-semibold text-slate-800 font-mono truncate block">{cls.devices}</span>
                       </div>
                     </div>
 
