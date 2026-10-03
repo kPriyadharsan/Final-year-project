@@ -32,6 +32,7 @@ async function runRealtimeTests() {
 
   // 1. Setup Test Device in MongoDB
   console.log('\n--- 1. Setting up Test Device ---')
+  const { getCommandTopic, getStateTopic } = require('../src/utils/mqttTopics')
   const testDevice = await Device.findOneAndUpdate(
     { deviceId: 'ESP32-RM302-LIGHT-01' },
     {
@@ -39,8 +40,8 @@ async function runRealtimeTests() {
       type: DEVICE_TYPES.LIGHT,
       classroom: 'Room 302',
       deviceId: 'ESP32-RM302-LIGHT-01',
-      mqttCommandTopic: 'smartclassroom/room302/relay/light/set',
-      mqttStatusTopic: 'smartclassroom/room302/relay/light/state',
+      mqttCommandTopic: getCommandTopic('Room 302', 'light'),
+      mqttStatusTopic: getStateTopic('Room 302', 'light'),
       state: DEVICE_STATES.OFF,
       isOnline: true,
       gpioPin: 23,

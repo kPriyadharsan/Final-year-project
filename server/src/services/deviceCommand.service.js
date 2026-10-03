@@ -3,6 +3,7 @@ const { Device, DEVICE_TYPES, DEVICE_STATES } = require('../models/Device')
 const { DeviceLog, MQTT_DELIVERY_STATUS } = require('../models/DeviceLog')
 const { publish, getMQTTStatus } = require('./mqtt.service')
 const { emitDeviceStatus } = require('./socket.service')
+const { getCommandTopic, buildCommandPayload } = require('../utils/mqttTopics')
 
 /**
  * Returns a human-friendly device label for execution messages.
@@ -143,8 +144,8 @@ async function executeDeviceCommand({
   const previousState = device.state
   const newState = normalizedAction
 
-  // 5. Retrieve MQTT command topic strictly from database configuration
-  const mqttTopic = device.mqttCommandTopic
+  // 5. Retrieve MQTT command topic strictly from database configuration (with standard fallback)
+  const mqttTopic = device.mqttCommandTopic || getCommandTopic(device.classroom, device.type)
   if (!mqttTopic || mqttTopic.trim() === '') {
     return {
       success: false,
@@ -220,14 +221,13 @@ async function executeDeviceCommand({
     }
   }
 
-  // 7. Build standardized MQTT payload
-  const mqttPayload = {
+  // 7. Build standardized MQTT command payload
+  const mqttPayload = buildCommandPayload({
     deviceId: device.deviceId,
     name: device.name,
     classroom: device.classroom,
     type: device.type,
     command: newState,
-    state: newState === 'ON' ? 1 : 0,
     gpioPin: device.gpioPin,
     initiatedBy: {
       userId: user?._id || user?.id || null,
@@ -235,7 +235,7 @@ async function executeDeviceCommand({
       role: user?.role || 'TEACHER',
     },
     timestamp: new Date().toISOString(),
-  }
+  })
 
   // 8. Publish to MQTT command topic (QoS 1)
   try {

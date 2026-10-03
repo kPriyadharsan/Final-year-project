@@ -93,17 +93,18 @@ void publishDeviceStatus(const char* appliance, const char* statusTopic, bool st
 
   // Map appliance name to exact MongoDB hardware deviceId
   const char* devId = "ESP32-RM302-LIGHT-01";
-  const char* fallbackTopic = "smartclassroom/room302/relay/light/state";
+  const char* legacyTopic = "classroom/device/light/status";
 
   if (strcmp(appliance, "FAN") == 0) {
     devId = "ESP32-RM302-FAN-01";
-    fallbackTopic = "smartclassroom/room302/relay/fan/state";
+    legacyTopic = "classroom/device/fan/status";
   } else if (strcmp(appliance, "PROJECTOR") == 0) {
     devId = "ESP32-RM302-PROJ-01";
-    fallbackTopic = "smartclassroom/room302/relay/projector/state";
+    legacyTopic = "classroom/device/projector/status";
   }
 
-  // 1. Build structured JSON payload with true online status and telemetry
+  // 1. Build standardized JSON payload matching project specifications:
+  //    { "deviceId": "...", "state": "ON", "timestamp": "...", "isOnline": true }
   char jsonBuffer[256];
   snprintf(
     jsonBuffer,
@@ -116,14 +117,14 @@ void publishDeviceStatus(const char* appliance, const char* statusTopic, bool st
     millis() / 1000
   );
 
-  // 2. Publish to primary status topic (e.g. classroom/device/light/status)
+  // 2. Publish to primary standardized state topic (smartclassroom/room302/relay/<appliance>/state)
   mqttClient.publish(statusTopic, jsonBuffer, false);
 
-  // 3. Publish to backward-compatible relay topic (e.g. smartclassroom/room302/relay/light/state)
-  mqttClient.publish(fallbackTopic, jsonBuffer, false);
+  // 3. Publish to legacy status topic (classroom/device/<appliance>/status) for backward compatibility
+  mqttClient.publish(legacyTopic, jsonBuffer, false);
 
-  // 4. Also publish plain text "ON" / "OFF" for simple third-party subscribers
-  char rawTopic[64];
+  // 4. Also publish plain text "ON" / "OFF" for simple diagnostic monitoring
+  char rawTopic[80];
   snprintf(rawTopic, sizeof(rawTopic), "%s/raw", statusTopic);
   mqttClient.publish(rawTopic, stateStr, false);
 
@@ -153,11 +154,15 @@ void onMqttMessageReceived(char* topic, byte* payload, unsigned int length) {
   // Supports both raw strings ("ON", "OFF", "1", "0") and JSON ({"command":"ON"}, {"state":1})
   bool commandIsOn  = (payloadUpper == "ON" || payloadUpper == "1" || 
                        payloadUpper.indexOf("\"COMMAND\":\"ON\"") >= 0 ||
-                       payloadUpper.indexOf("\"STATE\":1") >= 0);
+                       payloadUpper.indexOf("\"COMMAND\": \"ON\"") >= 0 ||
+                       payloadUpper.indexOf("\"STATE\":1") >= 0 ||
+                       payloadUpper.indexOf("\"STATE\": 1") >= 0);
 
   bool commandIsOff = (payloadUpper == "OFF" || payloadUpper == "0" || 
                        payloadUpper.indexOf("\"COMMAND\":\"OFF\"") >= 0 ||
-                       payloadUpper.indexOf("\"STATE\":0") >= 0);
+                       payloadUpper.indexOf("\"COMMAND\": \"OFF\"") >= 0 ||
+                       payloadUpper.indexOf("\"STATE\":0") >= 0 ||
+                       payloadUpper.indexOf("\"STATE\": 0") >= 0);
 
   if (!commandIsOn && !commandIsOff) {
     Serial.printf("[WARN] ⚠️ Unrecognized command action in payload: \"%s\". Ignoring.\n", message);
@@ -170,36 +175,42 @@ void onMqttMessageReceived(char* topic, byte* payload, unsigned int length) {
 
   // --------------------------------------------------------------------------
   // 1. LIGHT APPLIANCE HANDLER
+  // Matches: smartclassroom/room302/relay/light/command, classroom/device/light/set
   // --------------------------------------------------------------------------
-  if (topicStr == TOPIC_LIGHT_SET || 
+  if (topicStr == TOPIC_LIGHT_COMMAND || 
+      topicStr.indexOf("/light/command") >= 0 || 
       topicStr.indexOf("/light/set") >= 0 || 
       topicStr.indexOf("/light") >= 0) {
     lightState = targetState;
     applyPinOutput(PIN_RELAY_LIGHT, lightState);
     Serial.printf("[HARDWARE] 💡 LIGHT set to: [%s] on GPIO %d\n", lightState ? "ON" : "OFF", PIN_RELAY_LIGHT);
-    publishDeviceStatus("LIGHT", TOPIC_LIGHT_STATUS, lightState);
+    publishDeviceStatus("LIGHT", TOPIC_LIGHT_STATE, lightState);
   }
   // --------------------------------------------------------------------------
   // 2. FAN APPLIANCE HANDLER
+  // Matches: smartclassroom/room302/relay/fan/command, classroom/device/fan/set
   // --------------------------------------------------------------------------
-  else if (topicStr == TOPIC_FAN_SET || 
+  else if (topicStr == TOPIC_FAN_COMMAND || 
+           topicStr.indexOf("/fan/command") >= 0 || 
            topicStr.indexOf("/fan/set") >= 0 || 
            topicStr.indexOf("/fan") >= 0) {
     fanState = targetState;
     applyPinOutput(PIN_RELAY_FAN, fanState);
     Serial.printf("[HARDWARE] 🌀 FAN set to: [%s] on GPIO %d\n", fanState ? "ON" : "OFF", PIN_RELAY_FAN);
-    publishDeviceStatus("FAN", TOPIC_FAN_STATUS, fanState);
+    publishDeviceStatus("FAN", TOPIC_FAN_STATE, fanState);
   }
   // --------------------------------------------------------------------------
   // 3. PROJECTOR APPLIANCE HANDLER
+  // Matches: smartclassroom/room302/relay/projector/command, classroom/device/projector/set
   // --------------------------------------------------------------------------
-  else if (topicStr == TOPIC_PROJECTOR_SET || 
+  else if (topicStr == TOPIC_PROJECTOR_COMMAND || 
+           topicStr.indexOf("/projector/command") >= 0 || 
            topicStr.indexOf("/projector/set") >= 0 || 
            topicStr.indexOf("/projector") >= 0) {
     projectorState = targetState;
     applyPinOutput(PIN_RELAY_PROJECTOR, projectorState);
     Serial.printf("[HARDWARE] 📽️ PROJECTOR set to: [%s] on GPIO %d\n", projectorState ? "ON" : "OFF", PIN_RELAY_PROJECTOR);
-    publishDeviceStatus("PROJECTOR", TOPIC_PROJECTOR_STATUS, projectorState);
+    publishDeviceStatus("PROJECTOR", TOPIC_PROJECTOR_STATE, projectorState);
   }
   else {
     Serial.printf("[WARN] ⚠️ Unmatched command topic: [%s]\n", topic);
@@ -289,27 +300,31 @@ void connectToMQTT() {
     // 1. Publish "online" availability status (retained)
     mqttClient.publish(TOPIC_AVAILABILITY, "online", true);
 
-    // 2. Subscribe to required appliance control topics
-    Serial.println("[MQTT] 📡 Subscribing to appliance command topics:");
+    // 2. Subscribe to required standardized appliance command topics
+    Serial.println("[MQTT] 📡 Subscribing to standardized appliance command topics:");
     
-    mqttClient.subscribe(TOPIC_LIGHT_SET);
-    Serial.printf("   ✓ Subscribed: %s\n", TOPIC_LIGHT_SET);
+    mqttClient.subscribe(TOPIC_LIGHT_COMMAND);
+    Serial.printf("   ✓ Subscribed: %s\n", TOPIC_LIGHT_COMMAND);
 
-    mqttClient.subscribe(TOPIC_FAN_SET);
-    Serial.printf("   ✓ Subscribed: %s\n", TOPIC_FAN_SET);
+    mqttClient.subscribe(TOPIC_FAN_COMMAND);
+    Serial.printf("   ✓ Subscribed: %s\n", TOPIC_FAN_COMMAND);
 
-    mqttClient.subscribe(TOPIC_PROJECTOR_SET);
-    Serial.printf("   ✓ Subscribed: %s\n", TOPIC_PROJECTOR_SET);
+    mqttClient.subscribe(TOPIC_PROJECTOR_COMMAND);
+    Serial.printf("   ✓ Subscribed: %s\n", TOPIC_PROJECTOR_COMMAND);
 
-    // Also subscribe to backward-compatible room wildcard topics
-    mqttClient.subscribe("smartclassroom/room302/relay/+/set");
-    Serial.println("   ✓ Subscribed: smartclassroom/room302/relay/+/set (Fallback)");
+    // Also subscribe to wildcard command topic for future expansion
+    mqttClient.subscribe("smartclassroom/room302/relay/+/command");
+    Serial.println("   ✓ Subscribed: smartclassroom/room302/relay/+/command (Standard Wildcard)");
+
+    // Legacy fallback topic
+    mqttClient.subscribe("classroom/device/+/set");
+    Serial.println("   ✓ Subscribed: classroom/device/+/set (Legacy Fallback)");
 
     // 3. Immediately publish initial power-on states so backend syncs
     Serial.println("[MQTT] 📤 Publishing initial hardware state snapshots...");
-    publishDeviceStatus("LIGHT", TOPIC_LIGHT_STATUS, lightState);
-    publishDeviceStatus("FAN", TOPIC_FAN_STATUS, fanState);
-    publishDeviceStatus("PROJECTOR", TOPIC_PROJECTOR_STATUS, projectorState);
+    publishDeviceStatus("LIGHT", TOPIC_LIGHT_STATE, lightState);
+    publishDeviceStatus("FAN", TOPIC_FAN_STATE, fanState);
+    publishDeviceStatus("PROJECTOR", TOPIC_PROJECTOR_STATE, projectorState);
 
     Serial.println("[MQTT] 🚀 All subscriptions active. Ready for classroom commands!");
   } else {

@@ -12,6 +12,7 @@ const path = require('path')
 require('dotenv').config({ path: path.resolve(__dirname, '../.env') })
 const mongoose = require('mongoose')
 const { Device, DEVICE_TYPES, DEVICE_STATES } = require('../src/models/Device')
+const { getCommandTopic, getStateTopic } = require('../src/utils/mqttTopics')
 
 async function seedDevices() {
   console.log('='.repeat(70))
@@ -33,8 +34,8 @@ async function seedDevices() {
       type: DEVICE_TYPES.LIGHT,
       classroom,
       gpioPin: 23,
-      mqttCommandTopic: 'classroom/device/light/set',
-      mqttStatusTopic: 'classroom/device/light/status',
+      mqttCommandTopic: getCommandTopic(classroom, 'light'),
+      mqttStatusTopic: getStateTopic(classroom, 'light'),
       state: DEVICE_STATES.OFF,
       isOnline: true,
       isActive: true,
@@ -46,8 +47,8 @@ async function seedDevices() {
       type: DEVICE_TYPES.FAN,
       classroom,
       gpioPin: 22,
-      mqttCommandTopic: 'classroom/device/fan/set',
-      mqttStatusTopic: 'classroom/device/fan/status',
+      mqttCommandTopic: getCommandTopic(classroom, 'fan'),
+      mqttStatusTopic: getStateTopic(classroom, 'fan'),
       state: DEVICE_STATES.OFF,
       isOnline: true,
       isActive: true,
@@ -59,8 +60,8 @@ async function seedDevices() {
       type: DEVICE_TYPES.PROJECTOR,
       classroom,
       gpioPin: 21,
-      mqttCommandTopic: 'classroom/device/projector/set',
-      mqttStatusTopic: 'classroom/device/projector/status',
+      mqttCommandTopic: getCommandTopic(classroom, 'projector'),
+      mqttStatusTopic: getStateTopic(classroom, 'projector'),
       state: DEVICE_STATES.OFF,
       isOnline: true,
       isActive: true,

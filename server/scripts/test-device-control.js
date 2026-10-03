@@ -31,6 +31,7 @@ async function runTests() {
 
   // 1. Prepare Target Test Device
   console.log('\n--- 1. Setting up Test Device ---')
+  const { getCommandTopic, getStateTopic } = require('../src/utils/mqttTopics')
   const testDevice = await Device.findOneAndUpdate(
     { deviceId: 'ESP32-RM302-LIGHT-01' },
     {
@@ -38,8 +39,8 @@ async function runTests() {
       type: DEVICE_TYPES.LIGHT,
       classroom: 'Room 302',
       deviceId: 'ESP32-RM302-LIGHT-01',
-      mqttCommandTopic: 'smartclassroom/room302/relay/light/set',
-      mqttStatusTopic: 'smartclassroom/room302/relay/light/state',
+      mqttCommandTopic: getCommandTopic('Room 302', 'light'),
+      mqttStatusTopic: getStateTopic('Room 302', 'light'),
       state: DEVICE_STATES.OFF,
       isOnline: true,
       gpioPin: 23,
@@ -57,8 +58,8 @@ async function runTests() {
       type: DEVICE_TYPES.PROJECTOR,
       classroom: 'Room 302',
       deviceId: 'ESP32-RM302-DEACTIVATED',
-      mqttCommandTopic: 'smartclassroom/room302/relay/deactivated/set',
-      mqttStatusTopic: 'smartclassroom/room302/relay/deactivated/state',
+      mqttCommandTopic: getCommandTopic('Room 302', 'projector'),
+      mqttStatusTopic: getStateTopic('Room 302', 'projector'),
       state: DEVICE_STATES.OFF,
       isOnline: false,
       isActive: false,

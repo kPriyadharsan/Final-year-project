@@ -31,12 +31,15 @@ const clientId =
 
 const isTls = brokerUrl.startsWith('mqtts://') || brokerUrl.startsWith('ssl://') || brokerUrl.startsWith('wss://')
 
+const { TOPIC_PATTERNS } = require('../utils/mqttTopics')
+
 // Default operational topics for telemetry and hardware synchronization
 const DEFAULT_TOPICS = [
-  'classroom/device/+/status',
-  'classroom/device/availability',
-  'classroom/esp32/status',
-  'smartclassroom/+/relay/+/state',
+  TOPIC_PATTERNS.ALL_STATES,
+  TOPIC_PATTERNS.ALL_AVAILABILITY,
+  TOPIC_PATTERNS.LEGACY_DEVICE_STATUS,
+  TOPIC_PATTERNS.LEGACY_AVAILABILITY,
+  TOPIC_PATTERNS.LEGACY_ESP32_STATUS,
 ]
 
 // Internal state tracking

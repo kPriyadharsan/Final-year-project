@@ -40,10 +40,13 @@ async function runTests() {
   console.log('Default Topics    :', DEFAULT_TOPICS)
   console.log('Initial Status    :', initialStatus.status)
 
-  if (DEFAULT_TOPICS.includes('classroom/device/+/status')) {
-    console.log('✅ PASS: Configured to subscribe to "classroom/device/+/status"')
+  if (
+    DEFAULT_TOPICS.includes('smartclassroom/+/relay/+/state') &&
+    DEFAULT_TOPICS.includes('smartclassroom/+/availability')
+  ) {
+    console.log('✅ PASS: Configured to subscribe to standardized topics: "smartclassroom/+/relay/+/state" and "smartclassroom/+/availability"')
   } else {
-    console.error('❌ FAIL: Missing "classroom/device/+/status" default topic')
+    console.error('❌ FAIL: Missing standardized default topics in DEFAULT_TOPICS')
   }
 
   // 2. Connect Client
@@ -68,9 +71,10 @@ async function runTests() {
   // 4. Test Resilient Error Handling (Attempting publish while connecting / offline)
   console.log('\n--- 4. Error Safety Check (Publish Handling) ---')
   try {
-    await publish('classroom/device/room302/status', {
+    await publish('smartclassroom/room302/relay/light/command', {
       deviceId: 'ESP32-RM302-LIGHT-01',
-      state: 'ON',
+      command: 'ON',
+      state: 1,
       timestamp: new Date().toISOString(),
     })
     console.log('✅ PASS: Message published successfully (broker is active)')
@@ -83,10 +87,10 @@ async function runTests() {
   // 5. Test Topic Matching Logic & Message Registration
   console.log('\n--- 5. Topic Subscription & Handler Registration ---')
   let receivedMessage = null
-  const unsubscribeHandler = onMessage('classroom/device/+/status', (topic, payload) => {
+  const unsubscribeHandler = onMessage('smartclassroom/+/relay/+/state', (topic, payload) => {
     receivedMessage = { topic, payload }
   })
-  console.log('✓ Registered message callback for pattern: classroom/device/+/status')
+  console.log('✓ Registered message callback for pattern: smartclassroom/+/relay/+/state')
   unsubscribeHandler()
   console.log('✅ PASS: onMessage registration and teardown successful')
 

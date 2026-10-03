@@ -33,14 +33,15 @@ async function runTests() {
 
   // 2. Insert or Upsert Test Devices for Testing
   console.log('\n--- 2. Upserting Sample IoT Devices ---')
+  const { getCommandTopic, getStateTopic } = require('../src/utils/mqttTopics')
   const testDevicesData = [
     {
       name: 'Classroom 302 Main Lights',
       type: DEVICE_TYPES.LIGHT,
       classroom: 'Room 302',
       deviceId: 'ESP32-RM302-LIGHT-01',
-      mqttCommandTopic: 'smartclassroom/room302/relay/light/set',
-      mqttStatusTopic: 'smartclassroom/room302/relay/light/state',
+      mqttCommandTopic: getCommandTopic('Room 302', 'light'),
+      mqttStatusTopic: getStateTopic('Room 302', 'light'),
       state: DEVICE_STATES.ON,
       isOnline: true,
       gpioPin: 23,
@@ -52,8 +53,8 @@ async function runTests() {
       type: DEVICE_TYPES.FAN,
       classroom: 'Room 302',
       deviceId: 'ESP32-RM302-FAN-01',
-      mqttCommandTopic: 'smartclassroom/room302/relay/fan/set',
-      mqttStatusTopic: 'smartclassroom/room302/relay/fan/state',
+      mqttCommandTopic: getCommandTopic('Room 302', 'fan'),
+      mqttStatusTopic: getStateTopic('Room 302', 'fan'),
       state: DEVICE_STATES.OFF,
       isOnline: true,
       gpioPin: 19,
@@ -65,8 +66,8 @@ async function runTests() {
       type: DEVICE_TYPES.PROJECTOR,
       classroom: 'Room 302',
       deviceId: 'ESP32-RM302-PROJ-01',
-      mqttCommandTopic: 'smartclassroom/room302/relay/projector/set',
-      mqttStatusTopic: 'smartclassroom/room302/relay/projector/state',
+      mqttCommandTopic: getCommandTopic('Room 302', 'projector'),
+      mqttStatusTopic: getStateTopic('Room 302', 'projector'),
       state: DEVICE_STATES.ON,
       isOnline: true,
       gpioPin: 18,

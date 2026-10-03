@@ -39,6 +39,7 @@ async function runESP32IntegrationTest() {
 
   // 1. Prepare Target Test Devices in MongoDB
   console.log('\n--- 1. Setting up Target Devices in MongoDB ---')
+  const { getCommandTopic, getStateTopic, getAvailabilityTopic } = require('../src/utils/mqttTopics')
   const fanDevice = await Device.findOneAndUpdate(
     { deviceId: 'ESP32-RM302-FAN-01' },
     {
@@ -46,8 +47,8 @@ async function runESP32IntegrationTest() {
       type: DEVICE_TYPES.FAN,
       classroom: 'Room 302',
       deviceId: 'ESP32-RM302-FAN-01',
-      mqttCommandTopic: 'classroom/device/fan/set',
-      mqttStatusTopic: 'classroom/device/fan/status',
+      mqttCommandTopic: getCommandTopic('Room 302', 'fan'),
+      mqttStatusTopic: getStateTopic('Room 302', 'fan'),
       state: DEVICE_STATES.OFF,
       isOnline: false, // Starts offline until ESP32 connects
       gpioPin: 22,
@@ -85,11 +86,12 @@ async function runESP32IntegrationTest() {
 
   // 4. Connect Hardware ESP32 MQTT Client
   console.log('\n--- 4. Connecting ESP32 Hardware MQTT Client ---')
+  const availabilityTopic = getAvailabilityTopic('Room 302')
   const esp32Mqtt = mqtt.connect(MQTT_BROKER, {
     clientId: 'ESP32_SmartClassroom_Hardware_Simulator',
     clean: true,
     will: {
-      topic: 'classroom/device/availability',
+      topic: availabilityTopic,
       payload: 'offline',
       qos: 1,
       retain: true,
@@ -102,8 +104,8 @@ async function runESP32IntegrationTest() {
     esp32Mqtt.on('connect', () => {
       console.log('✅ ESP32 connected to MQTT Broker')
       // Subscribe to all appliance control topics matching firmware
-      esp32Mqtt.subscribe('classroom/device/+/set', { qos: 1 }, () => {
-        console.log('✓ ESP32 subscribed to: classroom/device/+/set')
+      esp32Mqtt.subscribe('smartclassroom/room302/relay/+/command', { qos: 1 }, () => {
+        console.log('✓ ESP32 subscribed to: smartclassroom/room302/relay/+/command')
         resolve()
       })
     })
@@ -118,7 +120,7 @@ async function runESP32IntegrationTest() {
 
   // 5. ESP32 Announces Availability ("online")
   console.log('\n--- 5. ESP32 Announces Online Availability ---')
-  esp32Mqtt.publish('classroom/device/availability', 'online', { qos: 1, retain: true })
+  esp32Mqtt.publish(availabilityTopic, 'online', { qos: 1, retain: true })
 
   // Wait 1 second for backend deviceSync to process availability and update MongoDB
   await new Promise((r) => setTimeout(r, 1000))
@@ -170,8 +172,9 @@ async function runESP32IntegrationTest() {
     uptime: 42,
   })
 
-  esp32Mqtt.publish('classroom/device/fan/status', statusPayload, { qos: 1 })
-  console.log('[ESP32 Hardware TX] 📤 Published status to [classroom/device/fan/status]:', statusPayload)
+  const fanStateTopic = getStateTopic('Room 302', 'fan')
+  esp32Mqtt.publish(fanStateTopic, statusPayload, { qos: 1 })
+  console.log(`[ESP32 Hardware TX] 📤 Published status to [${fanStateTopic}]:`, statusPayload)
 
   // Wait 1 second for backend deviceSync and Socket.IO broadcast
   await new Promise((r) => setTimeout(r, 1000))
@@ -190,7 +193,7 @@ async function runESP32IntegrationTest() {
 
   // 8. Test Flow 3: ESP32 Disconnection / Offline Status Propagation
   console.log('\n--- 8. Testing Flow 3: ESP32 Disconnect -> OFFLINE Status ---')
-  esp32Mqtt.publish('classroom/device/availability', 'offline', { qos: 1, retain: true })
+  esp32Mqtt.publish(availabilityTopic, 'offline', { qos: 1, retain: true })
   esp32Mqtt.end(true)
 
   await new Promise((r) => setTimeout(r, 1000))

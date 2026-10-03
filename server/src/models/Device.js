@@ -120,6 +120,20 @@ deviceSchema.index({ classroom: 1, isActive: 1 })
 deviceSchema.index({ mqttStatusTopic: 1 })
 deviceSchema.index({ mqttCommandTopic: 1 })
 
+// Auto-populate standardized MQTT topics if not provided
+const { getCommandTopic, getStateTopic } = require('../utils/mqttTopics')
+deviceSchema.pre('validate', function (next) {
+  if (this.classroom && this.type) {
+    if (!this.mqttCommandTopic || this.mqttCommandTopic.trim() === '') {
+      this.mqttCommandTopic = getCommandTopic(this.classroom, this.type)
+    }
+    if (!this.mqttStatusTopic || this.mqttStatusTopic.trim() === '') {
+      this.mqttStatusTopic = getStateTopic(this.classroom, this.type)
+    }
+  }
+  next()
+})
+
 const Device = mongoose.model('Device', deviceSchema)
 
 module.exports = {

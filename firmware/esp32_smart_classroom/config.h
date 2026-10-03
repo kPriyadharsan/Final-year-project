@@ -50,22 +50,31 @@
 #define RELAY_ACTIVE_LOW    false
 
 // ----------------------------------------------------------------------------
-// 5. MQTT TOPIC DEFINITIONS (Strictly matches project specification)
+// 5. MQTT TOPIC DEFINITIONS (Standardized Smart Classroom Architecture)
 // ----------------------------------------------------------------------------
 // Inbound Command Topics (ESP32 subscribes to these)
-#define TOPIC_LIGHT_SET        "classroom/device/light/set"
-#define TOPIC_FAN_SET          "classroom/device/fan/set"
-#define TOPIC_PROJECTOR_SET    "classroom/device/projector/set"
+#define TOPIC_LIGHT_COMMAND        "smartclassroom/room302/relay/light/command"
+#define TOPIC_FAN_COMMAND          "smartclassroom/room302/relay/fan/command"
+#define TOPIC_PROJECTOR_COMMAND    "smartclassroom/room302/relay/projector/command"
 
-// Outbound Status Topics (ESP32 publishes status updates to these)
-#define TOPIC_LIGHT_STATUS     "classroom/device/light/status"
-#define TOPIC_FAN_STATUS       "classroom/device/fan/status"
-#define TOPIC_PROJECTOR_STATUS "classroom/device/projector/status"
+// Outbound State Topics (ESP32 publishes status updates to these)
+#define TOPIC_LIGHT_STATE          "smartclassroom/room302/relay/light/state"
+#define TOPIC_FAN_STATE            "smartclassroom/room302/relay/fan/state"
+#define TOPIC_PROJECTOR_STATE      "smartclassroom/room302/relay/projector/state"
 
 // Board Availability / Last Will and Testament (LWT) Topic
-#define TOPIC_AVAILABILITY     "classroom/device/availability"
+#define TOPIC_AVAILABILITY         "smartclassroom/room302/availability"
+
+// Backward-Compatibility Aliases
+#define TOPIC_LIGHT_SET            TOPIC_LIGHT_COMMAND
+#define TOPIC_FAN_SET              TOPIC_FAN_COMMAND
+#define TOPIC_PROJECTOR_SET        TOPIC_PROJECTOR_COMMAND
+#define TOPIC_LIGHT_STATUS         TOPIC_LIGHT_STATE
+#define TOPIC_FAN_STATUS           TOPIC_FAN_STATE
+#define TOPIC_PROJECTOR_STATUS     TOPIC_PROJECTOR_STATE
+#define TOPIC_LEGACY_AVAILABILITY  "classroom/device/availability"
 
 // Optional Telemetry / Heartbeat interval in milliseconds (30 seconds)
-#define TELEMETRY_INTERVAL_MS  30000
+#define TELEMETRY_INTERVAL_MS      30000
 
 #endif // CONFIG_H
