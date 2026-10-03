@@ -66,9 +66,10 @@ function maskBrokerUrl(url) {
  * Initializes and connects the MQTT client to the broker.
  * Avoids duplicate connections if client is already established or connecting.
  *
+ * @param {Object} [customConfig={}] - Optional configuration overrides (e.g. for testing)
  * @returns {mqtt.MqttClient|null}
  */
-function connectMQTT() {
+function connectMQTT(customConfig = {}) {
   if (client) {
     if (isConnected || currentStatus === 'connecting') {
       return client
@@ -78,11 +79,17 @@ function connectMQTT() {
   currentStatus = 'connecting'
   lastError = null
 
-  console.log(`[MQTT] Initializing ${isTls ? 'TLS encrypted' : 'standard'} connection to broker: ${maskBrokerUrl(brokerUrl)}`)
-  console.log(`[MQTT] Client ID: ${clientId} (TLS: ${isTls})`)
+  const targetBrokerUrl = customConfig.brokerUrl || brokerUrl
+  const targetClientId = customConfig.clientId || clientId
+  const targetUsername = customConfig.username !== undefined ? customConfig.username : username
+  const targetPassword = customConfig.password !== undefined ? customConfig.password : password
+  const targetIsTls = targetBrokerUrl.startsWith('mqtts://') || targetBrokerUrl.startsWith('ssl://') || targetBrokerUrl.startsWith('wss://')
+
+  console.log(`[MQTT] Initializing ${targetIsTls ? 'TLS encrypted (Port 8883)' : 'standard'} connection to broker: ${maskBrokerUrl(targetBrokerUrl)}`)
+  console.log(`[MQTT] Client ID: ${targetClientId} | TLS: ${targetIsTls} | Auth configured: ${Boolean(targetUsername && targetPassword)}`)
 
   const connectionOptions = {
-    clientId,
+    clientId: targetClientId,
     clean: true,
     connectTimeout: 10000, // 10s timeout to allow for cloud TLS negotiation
     reconnectPeriod: 5000,  // Automatically retry connection every 5 seconds
@@ -90,20 +97,21 @@ function connectMQTT() {
   }
 
   // TLS-specific configuration for EMQX Cloud (mqtts://)
-  if (isTls) {
-    connectionOptions.rejectUnauthorized = true // Verify cloud server TLS certificates
+  // Standard Node.js root CA store validates EMQX Cloud certificates without needing custom CA file
+  if (targetIsTls) {
+    connectionOptions.rejectUnauthorized = true
   }
 
-  // Authentication credentials (never logged)
-  if (username && username.trim() !== '') {
-    connectionOptions.username = username.trim()
+  // Authentication credentials (strictly configurable via environment, never logged)
+  if (targetUsername && targetUsername.trim() !== '') {
+    connectionOptions.username = targetUsername.trim()
   }
-  if (password && password.trim() !== '') {
-    connectionOptions.password = password.trim()
+  if (targetPassword && targetPassword.trim() !== '') {
+    connectionOptions.password = targetPassword.trim()
   }
 
   try {
-    client = mqtt.connect(brokerUrl, connectionOptions)
+    client = mqtt.connect(targetBrokerUrl, connectionOptions)
   } catch (err) {
     currentStatus = 'error'
     lastError = err.message

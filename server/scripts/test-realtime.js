@@ -157,6 +157,8 @@ async function runRealtimeTests() {
   const mqttClient = mqtt.connect(MQTT_BROKER, {
     clientId: 'Realtime_Test_Hardware_Simulator_' + Math.random().toString(16).slice(2, 8),
     clean: true,
+    ...(process.env.MQTT_USERNAME ? { username: process.env.MQTT_USERNAME } : {}),
+    ...(process.env.MQTT_PASSWORD ? { password: process.env.MQTT_PASSWORD } : {}),
   })
 
   await new Promise((resolve, reject) => {

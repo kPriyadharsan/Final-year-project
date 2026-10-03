@@ -90,6 +90,8 @@ async function runESP32IntegrationTest() {
   const esp32Mqtt = mqtt.connect(MQTT_BROKER, {
     clientId: 'ESP32_SmartClassroom_Hardware_Simulator',
     clean: true,
+    ...(process.env.MQTT_USERNAME ? { username: process.env.MQTT_USERNAME } : {}),
+    ...(process.env.MQTT_PASSWORD ? { password: process.env.MQTT_PASSWORD } : {}),
     will: {
       topic: availabilityTopic,
       payload: 'offline',
