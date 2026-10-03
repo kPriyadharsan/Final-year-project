@@ -66,7 +66,10 @@ function validateOrigin(origin, callback) {
 
   const errorMsg = `Origin "${origin}" is not permitted by CORS policy.`
   console.warn(`[CORS Security] ❌ ${errorMsg} (NODE_ENV: ${env.NODE_ENV}, Allowed: [${allowed.join(', ')}])`)
-  return callback(new Error(errorMsg))
+  const corsError = new Error(errorMsg)
+  corsError.status = 403
+  corsError.statusCode = 403
+  return callback(corsError)
 }
 
 module.exports = {

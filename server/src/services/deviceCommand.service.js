@@ -82,6 +82,18 @@ async function executeDeviceCommand({
     }
   }
 
+  // 1b. Prevent unauthorized device control: Students are not permitted to operate classroom relays
+  if (user && user.role === 'STUDENT') {
+    return {
+      success: false,
+      delivered: false,
+      code: 'UNAUTHORIZED_ROLE',
+      executionStatus: 'FAILED',
+      message: 'Students are not authorized to control classroom hardware.',
+      timestamp: new Date().toISOString(),
+    }
+  }
+
   let device = null
 
   // 2a. Find by specific deviceId or ObjectId if provided

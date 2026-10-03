@@ -18,6 +18,7 @@ const deviceRoutes = require('./routes/device.routes')
 const aiRoutes = require('./routes/ai.routes')
 const voiceRoutes = require('./routes/voice.routes')
 const studentRoutes = require('./routes/student.routes')
+const { errorHandler } = require('./middleware/error.middleware')
 
 const app = express()
 const PORT = env.PORT
@@ -96,14 +97,8 @@ app.use((req, res) => {
   })
 })
 
-// Global Error Handler
-app.use((err, req, res, next) => {
-  console.error('Unhandled Server Error:', err)
-  res.status(500).json({
-    status: 'error',
-    message: err.message || 'Internal Server Error',
-  })
-})
+// Global Error Handler (Sanitizes errors, handles CORS & MongoDB, protects against secrets/stack leakage)
+app.use(errorHandler)
 
 // Create Node HTTP server wrapping Express app
 const server = http.createServer(app)
@@ -130,17 +125,50 @@ server.listen(PORT, () => {
   console.log('='.repeat(60))
 })
 
-// Graceful termination handling
+// Graceful termination handling for all 5 subsystems: HTTP, Socket.IO, MQTT, Embedded Broker, MongoDB
+let isShuttingDown = false
+
 const handleShutdown = async (signal) => {
+  if (isShuttingDown) return
+  isShuttingDown = true
+
   console.log(`\n🛑 Received [${signal}]. Initiating graceful shutdown...`)
-  await disconnectMQTT()
-  await stopEmbeddedBroker()
-  await closeSocket()
-  server.close(async () => {
-    console.log('🔒 Express HTTP server closed.')
+
+  // Fallback watchdog timer to prevent process hanging on stubborn connections
+  const forceExitTimer = setTimeout(() => {
+    console.error('[Shutdown] ⚠️ Forceful termination triggered after shutdown timeout.')
+    process.exit(1)
+  }, 10000)
+  forceExitTimer.unref()
+
+  try {
+    // 1. Stop accepting new HTTP requests
+    await new Promise((resolve) => {
+      server.close((err) => {
+        if (err) console.warn('[Shutdown] HTTP server close note:', err.message)
+        console.log('🔒 Express HTTP server closed.')
+        resolve()
+      })
+    })
+
+    // 2. Disconnect Socket.IO clients cleanly
+    await closeSocket()
+
+    // 3. Disconnect MQTT client cleanly
+    await disconnectMQTT()
+
+    // 4. Stop embedded development broker if running
+    await stopEmbeddedBroker()
+
+    // 5. Close MongoDB database connections
     await closeDB(signal)
+
+    console.log('✅ Graceful shutdown completed cleanly.')
     process.exit(0)
-  })
+  } catch (err) {
+    console.error('[Shutdown] Error during graceful shutdown:', err)
+    process.exit(1)
+  }
 }
 
 process.on('SIGINT', () => handleShutdown('SIGINT'))
@@ -151,7 +179,9 @@ process.on('unhandledRejection', (reason, promise) => {
 })
 
 process.on('uncaughtException', (err) => {
-  console.error('[Process] ❌ Uncaught Exception:', err)
+  console.error('[Process] ❌ Uncaught Exception:', err.message)
+  if (err.stack) console.error(err.stack)
+  handleShutdown('UNCAUGHT_EXCEPTION')
 })
 
 module.exports = app

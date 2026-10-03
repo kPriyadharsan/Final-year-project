@@ -1,5 +1,6 @@
 const express = require('express')
 const router = express.Router()
+const mongoose = require('mongoose')
 const { requireAuth, requireRole } = require('../middleware/auth.middleware')
 const { User, ROLES } = require('../models/User')
 const { Device } = require('../models/Device')
@@ -317,6 +318,14 @@ router.patch(
     try {
       const { id } = req.params
       const { isActive } = req.body
+
+      if (!id || !mongoose.Types.ObjectId.isValid(id)) {
+        return res.status(400).json({
+          status: 'error',
+          code: 'INVALID_USER_ID',
+          message: 'Invalid user identifier format.',
+        })
+      }
 
       if (typeof isActive !== 'boolean') {
         return res.status(400).json({

@@ -1,3 +1,4 @@
+const mongoose = require('mongoose')
 const { verifyToken } = require('../utils/jwt.util')
 const { User, ROLES } = require('../models/User')
 
@@ -53,12 +54,12 @@ async function requireAuth(req, res, next) {
       })
     }
 
-    // 4. Ensure payload contains user id
-    if (!decoded.id) {
+    // 4. Ensure payload contains valid MongoDB user id
+    if (!decoded.id || !mongoose.Types.ObjectId.isValid(decoded.id)) {
       return res.status(401).json({
         status: 'error',
         code: 'TOKEN_PAYLOAD_INVALID',
-        message: 'Invalid token payload: user id missing.',
+        message: 'Invalid token payload: valid user id missing.',
       })
     }
 
@@ -158,7 +159,7 @@ async function optionalAuth(req, res, next) {
 
     try {
       const decoded = verifyToken(token)
-      if (decoded && decoded.id) {
+      if (decoded && decoded.id && mongoose.Types.ObjectId.isValid(decoded.id)) {
         const user = await User.findById(decoded.id)
         if (user && user.isActive) {
           req.user = user
