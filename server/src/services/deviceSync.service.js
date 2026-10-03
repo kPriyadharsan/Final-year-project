@@ -94,10 +94,13 @@ async function processDeviceStatusMessage(topic, payload) {
       return null
     }
 
-    // 2. Determine state and online flag
+    // 2. Determine state, confirmed physical telemetry, and online flag
     const rawState = data.state !== undefined ? data.state : data.command
     if (rawState !== undefined) {
-      device.state = normalizeState(rawState)
+      const confirmed = normalizeState(rawState)
+      device.state = confirmed
+      device.confirmedState = confirmed
+      device.lastConfirmedAt = new Date()
     }
 
     if (typeof data.isOnline === 'boolean') {
@@ -109,7 +112,7 @@ async function processDeviceStatusMessage(topic, payload) {
 
     // 3. Save to database
     await device.save()
-    console.log(`[DeviceSync] 💾 Database updated: [${device.deviceId}] -> State: ${device.state}, Online: ${device.isOnline}`)
+    console.log(`[DeviceSync] 💾 Database updated: [${device.deviceId}] -> Confirmed State: ${device.confirmedState || device.state}, Online: ${device.isOnline}`)
 
     // 4. Emit real-time Socket.IO event to all connected dashboards
     emitDeviceStatus(device)

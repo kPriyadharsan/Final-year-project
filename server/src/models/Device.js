@@ -72,6 +72,28 @@ const deviceSchema = new mongoose.Schema(
       uppercase: true,
       trim: true,
     },
+    requestedState: {
+      type: String,
+      enum: Object.values(DEVICE_STATES),
+      default: null,
+      uppercase: true,
+      trim: true,
+    },
+    confirmedState: {
+      type: String,
+      enum: Object.values(DEVICE_STATES),
+      default: null,
+      uppercase: true,
+      trim: true,
+    },
+    lastCommandedAt: {
+      type: Date,
+      default: null,
+    },
+    lastConfirmedAt: {
+      type: Date,
+      default: null,
+    },
     isOnline: {
       type: Boolean,
       default: false,

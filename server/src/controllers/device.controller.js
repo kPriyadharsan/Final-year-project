@@ -146,6 +146,8 @@ async function sendDeviceCommand(req, res) {
         cmdResult.code === 'DEVICE_INACTIVE' ? 400 :
         cmdResult.code === 'INVALID_ACTION' ? 400 :
         cmdResult.code === 'ACTION_REQUIRED' ? 400 :
+        cmdResult.code === 'MQTT_DISCONNECTED' ? 503 :
+        cmdResult.code === 'DEVICE_OFFLINE' ? 503 :
         cmdResult.code === 'DELIVERY_FAILED' ? 503 : 400
 
       return res.status(statusCode).json({

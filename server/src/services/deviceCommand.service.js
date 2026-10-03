@@ -163,6 +163,7 @@ async function executeDeviceCommand({
   const isDeviceOnline = device.isOnline !== false
 
   if (!isMqttConnected || !isDeviceOnline) {
+    const failureCode = !isMqttConnected ? 'MQTT_DISCONNECTED' : 'DEVICE_OFFLINE'
     const failureReason = !isMqttConnected
       ? 'MQTT broker is offline'
       : `ESP32 hardware for device "${device.name}" (${device.deviceId}) is offline`
@@ -196,9 +197,10 @@ async function executeDeviceCommand({
     return {
       success: false,
       delivered: false,
-      code: 'DELIVERY_FAILED',
+      code: failureCode,
       executionStatus: 'FAILED',
       message: 'Command could not be delivered.',
+      error: failureReason,
       device: {
         id: device._id,
         deviceId: device.deviceId,
@@ -206,9 +208,13 @@ async function executeDeviceCommand({
         classroom: device.classroom,
         type: device.type,
         state: device.state,
+        requestedState: newState,
+        confirmedState: device.confirmedState || null,
         previousState: device.state,
         isOnline: device.isOnline,
         gpioPin: device.gpioPin,
+        lastCommandedAt: device.lastCommandedAt || null,
+        lastConfirmedAt: device.lastConfirmedAt || null,
       },
       mqtt: {
         topic: mqttTopic,
@@ -294,8 +300,10 @@ async function executeDeviceCommand({
     }
   }
 
-  // 9. Update device state in MongoDB
+  // 9. Update device commanded state in MongoDB
   device.state = newState
+  device.requestedState = newState
+  device.lastCommandedAt = new Date()
   await device.save()
 
   // 10. Real-time broadcast via Socket.IO to connected dashboards
@@ -344,9 +352,13 @@ async function executeDeviceCommand({
       classroom: device.classroom,
       type: device.type,
       state: device.state,
+      requestedState: device.requestedState,
+      confirmedState: device.confirmedState || null,
       previousState,
       isOnline: device.isOnline,
       gpioPin: device.gpioPin,
+      lastCommandedAt: device.lastCommandedAt,
+      lastConfirmedAt: device.lastConfirmedAt || null,
     },
     mqtt: {
       topic: mqttTopic,
