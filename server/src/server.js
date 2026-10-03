@@ -36,11 +36,13 @@ const configuredOrigins = (CLIENT_URL || '')
   .map((url) => url.trim())
   .filter(Boolean)
 
-const allowedOrigins = [
-  ...configuredOrigins,
-  'http://localhost:5173',
-  'http://127.0.0.1:5173',
-]
+const allowedOrigins = env.NODE_ENV === 'production'
+  ? (configuredOrigins.length > 0 ? configuredOrigins : ['http://localhost:5173'])
+  : [
+      ...configuredOrigins,
+      'http://localhost:5173',
+      'http://127.0.0.1:5173',
+    ]
 
 app.use(
   cors({
@@ -140,7 +142,7 @@ server.listen(PORT, () => {
   console.log(`📚 Teacher Test Route: http://localhost:${PORT}/api/teacher/test`)
   console.log(`🌐 Allowed Origin   : ${CLIENT_URL}`)
   console.log(`🤖 AI Engine        : Gemini API configured (server-side only)`)
-  console.log(`🔌 MQTT Broker      : ${env.MQTT_BROKER_URL}`)
+  console.log(`🔌 MQTT Broker      : ${env.maskUrlCredentials(env.MQTT_BROKER_URL)}`)
   console.log(`⚡ Real-Time Engine : Socket.IO initialized`)
   console.log('='.repeat(60))
 })

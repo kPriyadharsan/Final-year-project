@@ -74,9 +74,10 @@ async function connectDB() {
     const conn = await mongoose.connect(mongoURI, options)
     return conn
   } catch (error) {
+    const maskedUri = mongoURI.replace(/\/\/(.*?):(.*?)@/, '//***:***@')
     console.error('\n' + '-'.repeat(60))
     console.error(`❌ [MongoDB] Initial Connection Failed:`)
-    console.error(`   Target URI: ${mongoURI}`)
+    console.error(`   Target URI: ${maskedUri}`)
     console.error(`   Error     : ${error.message}`)
     console.error('\n💡 Troubleshooting Guide:')
     console.error('   1. If using local MongoDB, ensure MongoDB service or "mongod" is running.')

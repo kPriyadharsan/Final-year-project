@@ -55,7 +55,8 @@ function connectMQTT() {
   currentStatus = 'connecting'
   lastError = null
 
-  console.log(`[MQTT] Initializing connection to broker: ${brokerUrl}`)
+  const maskedBrokerUrl = brokerUrl.replace(/\/\/(.*?):(.*?)@/, '//***:***@')
+  console.log(`[MQTT] Initializing connection to broker: ${maskedBrokerUrl}`)
   console.log(`[MQTT] Client ID: ${clientId}`)
 
   const connectionOptions = {

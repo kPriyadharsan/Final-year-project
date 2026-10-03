@@ -1,0 +1,15 @@
+# Dependencies
+node_modules/
+
+# Environment Variables (Keep examples tracked, ignore actual keys)
+.env
+.env*.local
+*.env
+!.env.example
+
+# Logs
+logs/
+*.log
+
+# Coverage
+coverage/

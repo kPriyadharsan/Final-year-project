@@ -15,11 +15,18 @@ function initSocket(httpServer) {
     return io
   }
 
-  const allowedOrigins = [
-    env.CLIENT_URL || 'http://localhost:5173',
-    'http://localhost:5173',
-    'http://127.0.0.1:5173',
-  ]
+  const configuredOrigins = (env.CLIENT_URL || '')
+    .split(',')
+    .map((url) => url.trim())
+    .filter(Boolean)
+
+  const allowedOrigins = env.NODE_ENV === 'production'
+    ? (configuredOrigins.length > 0 ? configuredOrigins : ['http://localhost:5173'])
+    : [
+        ...configuredOrigins,
+        'http://localhost:5173',
+        'http://127.0.0.1:5173',
+      ]
 
   io = new Server(httpServer, {
     cors: {
@@ -27,7 +34,10 @@ function initSocket(httpServer) {
         if (!origin || allowedOrigins.includes(origin)) {
           return callback(null, true)
         }
-        return callback(null, true)
+        if (env.NODE_ENV === 'development') {
+          return callback(null, true)
+        }
+        return callback(new Error(`Origin ${origin} not permitted by Socket.IO CORS policy.`))
       },
       methods: ['GET', 'POST'],
       credentials: true,
