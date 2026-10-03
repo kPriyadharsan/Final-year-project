@@ -30,8 +30,13 @@ startEmbeddedBroker().finally(() => {
 })
 
 // CORS Configuration
+const configuredOrigins = (CLIENT_URL || '')
+  .split(',')
+  .map((url) => url.trim())
+  .filter(Boolean)
+
 const allowedOrigins = [
-  CLIENT_URL,
+  ...configuredOrigins,
   'http://localhost:5173',
   'http://127.0.0.1:5173',
 ]
@@ -43,7 +48,11 @@ app.use(
       if (!origin || allowedOrigins.includes(origin)) {
         return callback(null, true)
       }
-      return callback(null, true)
+      if (env.NODE_ENV === 'development') {
+        // In local development, permit other local ports/LAN interfaces
+        return callback(null, true)
+      }
+      return callback(new Error(`Origin ${origin} not permitted by CORS policy.`))
     },
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
@@ -147,5 +156,13 @@ const handleShutdown = async (signal) => {
 
 process.on('SIGINT', () => handleShutdown('SIGINT'))
 process.on('SIGTERM', () => handleShutdown('SIGTERM'))
+
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('[Process] ⚠️ Unhandled Promise Rejection at:', promise, 'reason:', reason)
+})
+
+process.on('uncaughtException', (err) => {
+  console.error('[Process] ❌ Uncaught Exception:', err)
+})
 
 module.exports = app

@@ -1,7 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import {
-  LayoutDashboard,
   Users,
   School,
   Cpu,
@@ -11,27 +10,17 @@ import {
   RefreshCw,
   GraduationCap,
   Activity,
-  Radio,
   Wifi,
   Search,
-  CheckCircle2,
-  AlertCircle,
-  Clock,
   Mic,
   Sliders,
   Server,
   Database,
-  ArrowUpRight,
-  ShieldCheck,
   Send,
   Zap,
   Lightbulb,
   Fan,
   Projector,
-  Power,
-  Filter,
-  Check,
-  Plus,
 } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import { testProtectedRoute } from '../services/auth.service'
@@ -44,19 +33,12 @@ import {
   CardTitle,
   CardDescription,
   CardContent,
-  CardFooter,
-  StatCard,
   Modal,
-  LoadingSpinner,
-  PageLoading,
-  SkeletonCard,
   EmptyState,
-  ErrorState,
   AlertBanner,
   SiriCard,
-  BentoContainer,
-  ContiguousStatGrid,
 } from '../components/ui'
+import { API_BASE_URL } from '../config/api'
 
 export function AdminPage() {
   const { user, token } = useAuth()
@@ -134,7 +116,7 @@ export function AdminPage() {
     devices: 'ESP32-RM',
   })
 
-  const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000'
+  const apiBaseUrl = API_BASE_URL
 
   // Fetch Super Admin Telemetry from Backend (Parallel fetch of Dashboard, System Status, Devices)
   const fetchDashboardData = useCallback(async () => {

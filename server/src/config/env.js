@@ -61,19 +61,12 @@ function validateAndLoadEnv() {
     })
   }
 
-  // 4. GEMINI_API_KEY (CRITICAL: Server-only secret, never to be sent to frontend)
-  const geminiKey = process.env.GEMINI_API_KEY
-  if (!geminiKey) {
-    errors.push({
+  // 4. GEMINI_API_KEY (Server-only secret for AI voice interpretation)
+  const geminiKey = process.env.GEMINI_API_KEY || ''
+  if (!geminiKey || geminiKey.trim() === '' || geminiKey === 'your_gemini_api_key_here') {
+    warnings.push({
       key: 'GEMINI_API_KEY',
-      message: 'Google Gemini API key is missing.',
-      hint: 'Required for future AI voice interpretation. Generate one at: https://aistudio.google.com/app/apikey',
-    })
-  } else if (geminiKey.trim() === '' || geminiKey === 'your_gemini_api_key_here') {
-    errors.push({
-      key: 'GEMINI_API_KEY',
-      message: 'GEMINI_API_KEY contains an empty or default unconfigured placeholder.',
-      hint: 'Provide a valid Gemini API key in server/.env.',
+      message: 'GEMINI_API_KEY is missing or placeholder. The backend will operate using the built-in rule-based intent fallback parser.',
     })
   }
 

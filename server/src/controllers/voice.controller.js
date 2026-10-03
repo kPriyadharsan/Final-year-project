@@ -164,6 +164,7 @@ async function getVoiceHistory(req, res) {
       status: 'success',
       count: commands.length,
       commands,
+      data: commands,
     })
   } catch (err) {
     console.error('Error fetching voice history:', err)

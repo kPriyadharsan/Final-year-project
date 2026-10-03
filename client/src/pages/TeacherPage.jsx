@@ -20,18 +20,7 @@ import {
   Image as ImageIcon,
   Presentation,
   Power,
-  Users,
-  Search,
   Plus,
-  Send,
-  Zap,
-  Volume2,
-  Share2,
-  Download,
-  AlertTriangle,
-  Play,
-  RotateCcw,
-  Activity,
   Server,
   Database,
   Cpu,
@@ -49,24 +38,19 @@ import {
   CardTitle,
   CardDescription,
   CardContent,
-  CardFooter,
-  StatCard,
   Modal,
-  LoadingSpinner,
-  SkeletonCard,
-  EmptyState,
   AlertBanner,
   SiriCard,
   BentoContainer,
-  ContiguousStatGrid,
 } from '../components/ui'
 import { VoiceAssistant } from '../components/voice'
+import { API_BASE_URL } from '../config/api'
 
 export function TeacherPage() {
   const { user, token } = useAuth()
   const { socket, isConnected } = useSocket()
 
-  const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000'
+  const apiBaseUrl = API_BASE_URL
 
   // API Verification State
   const [testResult, setTestResult] = useState(null)
@@ -137,28 +121,24 @@ export function TeacherPage() {
         if (res.ok) {
           const data = await res.json()
           if (data.devices && data.devices.length > 0) {
-            setDevices((prev) =>
-              prev.map((mockDev) => {
-                const matched = data.devices.find(
-                  (d) =>
-                    d.deviceId === mockDev.deviceId ||
-                    d.type === mockDev.type ||
-                    d.name.toLowerCase().includes(mockDev.type.toLowerCase())
-                )
-                if (matched) {
-                  return {
-                    ...mockDev,
-                    id: matched._id,
-                    deviceId: matched.deviceId,
-                    name: matched.name,
-                    isOn: matched.state === 'ON',
-                    isOnline: typeof matched.isOnline === 'boolean' ? matched.isOnline : true,
-                    relayChannel: `GPIO ${matched.gpioPin || 'N/A'} (ESP32)`,
-                  }
-                }
-                return mockDev
-              })
-            )
+            const iconMap = {
+              LIGHT: Lightbulb,
+              FAN: Fan,
+              PROJECTOR: Projector,
+            }
+            const mappedDevices = data.devices.map((d) => ({
+              id: d._id || d.id,
+              deviceId: d.deviceId,
+              name: d.name,
+              type: d.type,
+              icon: iconMap[d.type] || Lightbulb,
+              room: d.classroom || 'Room 302',
+              isOn: d.state === 'ON',
+              isOnline: typeof d.isOnline === 'boolean' ? d.isOnline : true,
+              details: d.description || `GPIO ${d.gpioPin ?? 'N/A'} (ESP32)`,
+              relayChannel: `GPIO ${d.gpioPin ?? 'N/A'} (ESP32)`,
+            }))
+            setDevices(mappedDevices)
           }
         }
       } catch (err) {
@@ -272,8 +252,9 @@ export function TeacherPage() {
       })
       if (res.ok) {
         const data = await res.json()
-        if (data.status === 'success' && data.data) {
-          setRecentActivities(data.data)
+        if (data.status === 'success') {
+          const historyItems = data.data || data.commands || []
+          setRecentActivities(historyItems)
         }
       }
     } catch (err) {

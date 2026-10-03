@@ -12,6 +12,7 @@ import {
 } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
 import { Badge } from '../ui/Badge'
+import { API_BASE_URL } from '../../config/api'
 
 export function TopNav({ pageTitle = 'Dashboard' }) {
   const { user, logout } = useAuth()
@@ -19,7 +20,7 @@ export function TopNav({ pageTitle = 'Dashboard' }) {
   const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false)
   const [currentTime, setCurrentTime] = useState('')
 
-  const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000'
+  const apiBaseUrl = API_BASE_URL
 
   // Live Apple macOS style status clock
   useEffect(() => {

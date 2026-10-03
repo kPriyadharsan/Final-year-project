@@ -1,6 +1,8 @@
 import { createContext, useContext, useEffect, useState } from 'react'
 import { io } from 'socket.io-client'
 
+import { API_BASE_URL } from '../config/api'
+
 const SocketContext = createContext(null)
 
 export function SocketProvider({ children }) {
@@ -8,7 +10,7 @@ export function SocketProvider({ children }) {
   const [isConnected, setIsConnected] = useState(false)
   const [transport, setTransport] = useState('N/A')
 
-  const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000'
+  const apiBaseUrl = API_BASE_URL
 
   useEffect(() => {
     // Initialize Socket.IO connection with graceful reconnects

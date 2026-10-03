@@ -16,6 +16,7 @@ import {
 } from 'lucide-react'
 import { Button, Badge } from '../ui'
 import { useAuth } from '../../context/AuthContext'
+import { API_BASE_URL } from '../../config/api'
 
 /**
  * Supported Visual States of the Voice Assistant
@@ -56,7 +57,7 @@ export function VoiceAssistant({
   isEmbedded = false,
 }) {
   const { token } = useAuth()
-  const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000'
+  const apiBaseUrl = API_BASE_URL
 
   // State Management
   const [currentState, setCurrentState] = useState(VOICE_STATES.IDLE)
