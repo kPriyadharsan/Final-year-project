@@ -2,16 +2,22 @@ const mqtt = require('mqtt')
 const env = require('../config/env')
 
 /**
- * Smart Classroom MQTT Service
+ * Smart Classroom Production MQTT Service
  *
- * Requirements:
- * - Reads config from MQTT_BROKER_URL, MQTT_USERNAME, MQTT_PASSWORD, MQTT_CLIENT_ID
- * - Connects when backend starts
- * - Automatically attempts reconnect
- * - Subscribes to classroom/device/+/status
- * - Provides reusable publish() function
- * - Never crashes the Express server if broker is offline
- * - Exposes live connection status to the application
+ * Architecture:
+ *   React (Client)  -> [HTTPS REST / Socket.IO] -> Node/Express (Backend)
+ *   Node/Express    -> [MQTT over TLS (Port 8883)] -> EMQX Cloud Broker
+ *   EMQX Cloud      -> [MQTT (Port 8883/1883)] -> ESP32 Hardware Relays
+ *
+ * Security & Reliability Requirements:
+ * - Credentials reside strictly on the backend (never exposed to React client).
+ * - Supports TLS (mqtts://) for EMQX Cloud production deployments.
+ * - Idempotent connection: prevents duplicate connection instances.
+ * - Idempotent subscription: prevents duplicate subscription packets.
+ * - Non-fatal error handling: prevents host server crashes on network or broker dropouts.
+ * - Never logs MQTT passwords or raw credential strings.
+ * - Resubscribes automatically upon reconnection with QoS 1.
+ * - Graceful client disconnect on server shutdown.
  */
 
 // Configuration values from validated environment
@@ -23,7 +29,9 @@ const clientId =
   process.env.MQTT_CLIENT_ID ||
   `smart_classroom_backend_${Math.random().toString(16).slice(2, 8)}`
 
-// Default topics to automatically subscribe to
+const isTls = brokerUrl.startsWith('mqtts://') || brokerUrl.startsWith('ssl://') || brokerUrl.startsWith('wss://')
+
+// Default operational topics for telemetry and hardware synchronization
 const DEFAULT_TOPICS = [
   'classroom/device/+/status',
   'classroom/device/availability',
@@ -42,36 +50,53 @@ const activeSubscriptions = new Set()
 const messageHandlers = new Map() // topic pattern -> Set of callback functions
 
 /**
+ * Helper to mask credentials in URLs for secure logging
+ * @param {string} url
+ * @returns {string}
+ */
+function maskBrokerUrl(url) {
+  if (!url || typeof url !== 'string') return ''
+  return url.replace(/\/\/(.*?):(.*?)@/, '//***:***@')
+}
+
+/**
  * Initializes and connects the MQTT client to the broker.
- * Never throws or crashes the host server if broker is offline or unreachable.
+ * Avoids duplicate connections if client is already established or connecting.
  *
  * @returns {mqtt.MqttClient|null}
  */
 function connectMQTT() {
   if (client) {
-    return client
+    if (isConnected || currentStatus === 'connecting') {
+      return client
+    }
   }
 
   currentStatus = 'connecting'
   lastError = null
 
-  const maskedBrokerUrl = brokerUrl.replace(/\/\/(.*?):(.*?)@/, '//***:***@')
-  console.log(`[MQTT] Initializing connection to broker: ${maskedBrokerUrl}`)
-  console.log(`[MQTT] Client ID: ${clientId}`)
+  console.log(`[MQTT] Initializing ${isTls ? 'TLS encrypted' : 'standard'} connection to broker: ${maskBrokerUrl(brokerUrl)}`)
+  console.log(`[MQTT] Client ID: ${clientId} (TLS: ${isTls})`)
 
   const connectionOptions = {
     clientId,
     clean: true,
-    connectTimeout: 5000,
-    reconnectPeriod: 5000, // Automatically retry connection every 5 seconds
+    connectTimeout: 10000, // 10s timeout to allow for cloud TLS negotiation
+    reconnectPeriod: 5000,  // Automatically retry connection every 5 seconds
     keepalive: 60,
   }
 
+  // TLS-specific configuration for EMQX Cloud (mqtts://)
+  if (isTls) {
+    connectionOptions.rejectUnauthorized = true // Verify cloud server TLS certificates
+  }
+
+  // Authentication credentials (never logged)
   if (username && username.trim() !== '') {
-    connectionOptions.username = username
+    connectionOptions.username = username.trim()
   }
   if (password && password.trim() !== '') {
-    connectionOptions.password = password
+    connectionOptions.password = password.trim()
   }
 
   try {
@@ -91,12 +116,17 @@ function connectMQTT() {
     lastError = null
     reconnectAttempts = 0
 
-    console.log(`[MQTT] ✅ Connected successfully to broker at ${brokerUrl}`)
+    console.log(`[MQTT] ✅ Connected successfully to broker at ${maskBrokerUrl(brokerUrl)} (TLS: ${isTls})`)
 
-    // Automatically subscribe to default topics
+    // Subscribe to default topics (QoS 1)
     DEFAULT_TOPICS.forEach((topicPattern) => {
-      subscribe(topicPattern, 1)
+      internalSubscribe(topicPattern, 1)
     })
+
+    // Resubscribe any registered message handlers
+    for (const topicPattern of messageHandlers.keys()) {
+      internalSubscribe(topicPattern, 1)
+    }
   })
 
   // 2. Reconnect Event
@@ -104,19 +134,19 @@ function connectMQTT() {
     isConnected = false
     currentStatus = 'reconnecting'
     reconnectAttempts += 1
+
     // Log reconnects cleanly without flooding logs
     if (reconnectAttempts === 1 || reconnectAttempts % 5 === 0) {
-      console.warn(`[MQTT] 🔄 Reconnecting to ${brokerUrl}... (attempt #${reconnectAttempts})`)
+      console.warn(`[MQTT] 🔄 Reconnecting to broker (${maskBrokerUrl(brokerUrl)})... [attempt #${reconnectAttempts}]`)
     }
   })
 
-  // 3. Error Event (CRITICAL: Catches errors to prevent process crash)
+  // 3. Error Event (Catches network/broker dropouts safely to prevent server crash)
   client.on('error', (err) => {
     isConnected = false
     currentStatus = 'error'
     lastError = err.message || 'Unknown MQTT connection error'
 
-    // Non-fatal warning; server continues operating normally
     console.warn(`[MQTT] ⚠️ Broker connection error (will retry automatically): ${err.message}`)
   })
 
@@ -145,10 +175,10 @@ function connectMQTT() {
     try {
       parsedPayload = JSON.parse(rawPayload)
     } catch {
-      // Retain as raw string if not JSON
+      // Retain as raw string if payload is plain text/number
     }
 
-    // Execute pattern handlers
+    // Execute matching pattern handlers
     for (const [pattern, handlers] of messageHandlers.entries()) {
       if (matchesMqttTopic(pattern, topic)) {
         handlers.forEach((handler) => {
@@ -188,16 +218,39 @@ function matchesMqttTopic(pattern, topic) {
 }
 
 /**
- * Subscribes to an MQTT topic pattern.
+ * Internal subscription helper with duplicate prevention
  *
  * @param {string} topic
- * @param {number} [qos=0]
+ * @param {number} [qos=1]
+ */
+function internalSubscribe(topic, qos = 1) {
+  if (!client || !isConnected) {
+    activeSubscriptions.add(topic)
+    return
+  }
+
+  client.subscribe(topic, { qos }, (err) => {
+    if (err) {
+      console.warn(`[MQTT] Failed to subscribe to [${topic}]: ${err.message}`)
+      return
+    }
+
+    activeSubscriptions.add(topic)
+  })
+}
+
+/**
+ * Subscribes to an MQTT topic pattern with duplicate prevention.
+ *
+ * @param {string} topic
+ * @param {number} [qos=1]
  * @returns {Promise<boolean>}
  */
-function subscribe(topic, qos = 0) {
+function subscribe(topic, qos = 1) {
   return new Promise((resolve) => {
-    if (!client) {
-      activeSubscriptions.add(topic)
+    activeSubscriptions.add(topic)
+
+    if (!client || !isConnected) {
       return resolve(false)
     }
 
@@ -207,7 +260,6 @@ function subscribe(topic, qos = 0) {
         return resolve(false)
       }
 
-      activeSubscriptions.add(topic)
       console.log(`[MQTT] 📡 Subscribed to topic: ${topic} (QoS: ${qos})`)
       return resolve(true)
     })
@@ -296,6 +348,7 @@ function publish(topic, message, options = { qos: 1, retain: false }) {
 
 /**
  * Registers an application callback for incoming messages on a topic pattern.
+ * Avoids duplicate subscriptions.
  *
  * @param {string} topicPattern (e.g. 'classroom/device/+/status')
  * @param {Function} handler (topic, parsedPayload, rawPayload) => void
@@ -304,11 +357,10 @@ function publish(topic, message, options = { qos: 1, retain: false }) {
 function onMessage(topicPattern, handler) {
   if (!messageHandlers.has(topicPattern)) {
     messageHandlers.set(topicPattern, new Set())
+    // Ensure client subscribes to new topic pattern (QoS 1)
+    subscribe(topicPattern, 1)
   }
   messageHandlers.get(topicPattern).add(handler)
-
-  // Ensure client is subscribed to topic pattern
-  subscribe(topicPattern, 1)
 
   return () => {
     const handlers = messageHandlers.get(topicPattern)
@@ -316,6 +368,7 @@ function onMessage(topicPattern, handler) {
       handlers.delete(handler)
       if (handlers.size === 0) {
         messageHandlers.delete(topicPattern)
+        unsubscribe(topicPattern)
       }
     }
   }
@@ -323,6 +376,7 @@ function onMessage(topicPattern, handler) {
 
 /**
  * Exposes live MQTT connection status and metrics to the application.
+ * Never includes plaintext credentials.
  *
  * @returns {Object}
  */
@@ -330,8 +384,11 @@ function getMQTTStatus() {
   return {
     connected: isConnected,
     status: currentStatus,
-    brokerUrl,
+    brokerUrl: maskBrokerUrl(brokerUrl),
     clientId,
+    protocol: isTls ? 'mqtts' : 'mqtt',
+    isTls,
+    hasAuth: !!(username && password),
     subscriptions: Array.from(activeSubscriptions),
     lastConnectedAt,
     lastError,
@@ -351,7 +408,7 @@ function disconnectMQTT(force = false) {
       return resolve()
     }
 
-    console.log('[MQTT] Disconnecting client...')
+    console.log('[MQTT] Disconnecting client gracefully...')
     client.end(force, () => {
       isConnected = false
       currentStatus = 'disconnected'

@@ -6,12 +6,17 @@ let isRunning = false
 
 /**
  * Starts a lightweight local MQTT broker using Aedes if port is available.
- * Enables real MQTT pub/sub and hardware command verification during development.
+ * STRICT REQUIREMENT: Only available in local development. Must NEVER run in production.
  *
  * @param {number} [port=1883]
  * @returns {Promise<boolean>} Whether the local broker was started
  */
 async function startEmbeddedBroker(port = 1883) {
+  // Production guard: Never start embedded broker in production mode
+  if (process.env.NODE_ENV === 'production') {
+    return false
+  }
+
   if (isRunning) return true
 
   try {
@@ -22,13 +27,13 @@ async function startEmbeddedBroker(port = 1883) {
     return new Promise((resolve) => {
       netServer.listen(port, () => {
         isRunning = true
-        console.log(`[Aedes MQTT] 🚀 Local MQTT Broker listening on port ${port}`)
+        console.log(`[Aedes MQTT] 🚀 Local embedded broker listening on port ${port} (development mode)`)
         resolve(true)
       })
 
       netServer.on('error', (err) => {
-        // Port in use (e.g. external Mosquitto or EMQX already running)
-        console.log(`[Aedes MQTT] Note: Port ${port} not bound (${err.code}). Connecting to existing broker.`)
+        // Port in use (e.g. external broker already running)
+        console.log(`[Aedes MQTT] Port ${port} unavailable (${err.code}). Connecting to existing broker.`)
         resolve(false)
       })
     })
@@ -39,7 +44,7 @@ async function startEmbeddedBroker(port = 1883) {
 }
 
 /**
- * Stops the embedded MQTT broker on server shutdown
+ * Stops the embedded MQTT broker gracefully on server shutdown
  */
 async function stopEmbeddedBroker() {
   if (!isRunning) return

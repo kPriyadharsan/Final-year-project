@@ -25,10 +25,15 @@ const CLIENT_URL = env.CLIENT_URL
 // Connect to MongoDB upon server startup
 connectDB()
 
-// Start embedded MQTT broker if local URL is used, then connect MQTT client
-startEmbeddedBroker().finally(() => {
+// Connect MQTT client (production connects directly to cloud broker; dev uses local/embedded broker)
+if (env.NODE_ENV === 'production') {
+  console.log('[MQTT] ☁️ Production environment: Direct connection to cloud broker (embedded Aedes broker disabled)')
   connectMQTT()
-})
+} else {
+  startEmbeddedBroker().finally(() => {
+    connectMQTT()
+  })
+}
 
 // CORS Configuration
 const configuredOrigins = (CLIENT_URL || '')
