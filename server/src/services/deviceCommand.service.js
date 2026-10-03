@@ -39,7 +39,7 @@ function getDeviceLabel(device) {
 async function executeDeviceCommand({
   deviceId,
   deviceType,
-  classroom = 'Room 302',
+  classroom = process.env.DEFAULT_CLASSROOM || 'Room 302',
   action,
   user = null,
   source = 'VOICE_COMMAND',

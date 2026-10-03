@@ -89,6 +89,10 @@ const userSchema = new mongoose.Schema(
   }
 )
 
+// Fast query indexes
+userSchema.index({ role: 1, isActive: 1 })
+userSchema.index({ department: 1 })
+
 /**
  * Virtual: Checks if the user has dashboard access privileges
  * Returns true for SUPER_ADMIN and TEACHER

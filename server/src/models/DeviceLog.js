@@ -124,6 +124,7 @@ const deviceLogSchema = new mongoose.Schema(
 
 // Index for chronological classroom and device telemetry inspection
 deviceLogSchema.index({ device: 1, createdAt: -1 })
+deviceLogSchema.index({ deviceId: 1, createdAt: -1 })
 deviceLogSchema.index({ classroom: 1, createdAt: -1 })
 deviceLogSchema.index({ user: 1, createdAt: -1 })
 

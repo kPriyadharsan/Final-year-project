@@ -24,7 +24,7 @@ async function handleVoiceCommand(req, res) {
     }
 
     const transcript = rawTranscript.trim()
-    const classroom = req.body.classroom || 'Room 302'
+    const classroom = req.body.classroom || process.env.DEFAULT_CLASSROOM || 'Room 302'
     const currentUser = req.user || null
 
     console.log(`[VoiceController] 🎙️ Processing voice command: "${transcript}" (User: ${currentUser ? currentUser.name : 'Anonymous'})`)

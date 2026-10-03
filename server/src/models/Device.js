@@ -114,9 +114,11 @@ const deviceSchema = new mongoose.Schema(
   }
 )
 
-// Compound Index for fast classroom + device queries
+// Compound and lookup indexes for fast queries
 deviceSchema.index({ classroom: 1, type: 1 })
 deviceSchema.index({ classroom: 1, isActive: 1 })
+deviceSchema.index({ mqttStatusTopic: 1 })
+deviceSchema.index({ mqttCommandTopic: 1 })
 
 const Device = mongoose.model('Device', deviceSchema)
 

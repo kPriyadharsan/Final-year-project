@@ -59,15 +59,24 @@ async function closeDB(signal = 'App Termination') {
  * @returns {Promise<mongoose.Connection|null>}
  */
 async function connectDB() {
-  const mongoURI = process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/smart_classroom'
+  const mongoURI = process.env.MONGODB_URI
+
+  if (!mongoURI || typeof mongoURI !== 'string' || mongoURI.trim() === '') {
+    const errorMsg = 'MONGODB_URI is missing or empty. MongoDB connection must come entirely from MONGODB_URI.'
+    console.error(`❌ [MongoDB] Configuration Error: ${errorMsg}`)
+    throw new Error(errorMsg)
+  }
 
   // Register lifecycle event listeners
   setupConnectionListeners()
 
   const options = {
-    serverSelectionTimeoutMS: 15000, // Generous timeout for cloud MongoDB Atlas connectivity
+    serverSelectionTimeoutMS: 8000, // Timeout for cluster connectivity
     socketTimeoutMS: 45000,
-    autoIndex: true, // Build indexes in development
+    connectTimeoutMS: 10000,
+    maxPoolSize: 50,
+    minPoolSize: 2,
+    autoIndex: process.env.NODE_ENV !== 'production',
   }
 
   try {

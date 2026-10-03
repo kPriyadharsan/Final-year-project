@@ -63,6 +63,9 @@ const voiceCommandSchema = new mongoose.Schema(
   }
 )
 
+voiceCommandSchema.index({ user: 1, createdAt: -1 })
+voiceCommandSchema.index({ intent: 1, createdAt: -1 })
+
 const VoiceCommand = mongoose.models.VoiceCommand || mongoose.model('VoiceCommand', voiceCommandSchema)
 
 module.exports = {
