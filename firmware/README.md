@@ -104,31 +104,41 @@ Open **Tools** → **Manage Libraries...** and search for:
 
 ---
 
-## 5. Firmware Configuration (`config.h`)
+## 5. Firmware Configuration (`secrets.h` & `config.h`)
 
-Open `firmware/esp32_smart_classroom/config.h` and update the constants for your local network:
+For security, credentials are kept out of Git using a local untracked `secrets.h` file.
+
+### Step 1: Create your local `secrets.h`
+In `firmware/esp32_smart_classroom/`, copy `secrets.h.example` to `secrets.h`:
+```bash
+cp firmware/esp32_smart_classroom/secrets.h.example firmware/esp32_smart_classroom/secrets.h
+```
+*(On Windows Command Prompt: `copy firmware\esp32_smart_classroom\secrets.h.example firmware\esp32_smart_classroom\secrets.h`)*
+
+### Step 2: Configure your parameters in `secrets.h`
 
 ```cpp
-// 1. Wi-Fi Settings (Must be 2.4 GHz)
-#define WIFI_SSID           "My_Home_WiFi"
-#define WIFI_PASSWORD       "SecretPassword123"
+// 1. Wi-Fi Settings (2.4 GHz ONLY)
+#define SECRET_WIFI_SSID       "My_Home_WiFi"
+#define SECRET_WIFI_PASSWORD   "SecretPassword123"
 
-// 2. MQTT Broker Host IP
-// Find your laptop/PC IPv4 address using "ipconfig" in Windows Command Prompt
-#define MQTT_BROKER_HOST    "192.168.1.15"  // Do NOT use localhost/127.0.0.1
-#define MQTT_BROKER_PORT    1883
+// 2. Production EMQX Cloud over TLS (Port 8883)
+#define SECRET_MQTT_HOST       "z1910bc1.ala.us-east-1.emqxsl.com"
+#define SECRET_MQTT_PORT       8883
+#define SECRET_MQTT_USE_TLS    true
 
-// 3. Hardware Relay Mode
-// Set false for testing with LEDs (HIGH = ON)
-// Set true for 5V Relay Modules (LOW = ON)
-#define RELAY_ACTIVE_LOW    false
+// 3. MQTT Authentication (Created in EMQX Cloud Console -> Authentication)
+#define SECRET_MQTT_USER       "smart_esp32_user"
+#define SECRET_MQTT_PASS       "your_secure_password"
+
+// 4. Client ID & CA Root Certificate Verification
+#define SECRET_MQTT_CLIENT_ID  "ESP32_SmartClassroom_Room302"
+#define SECRET_USE_CA_CERT     true // Uses ISRG Root X1 CA in ca_cert.h
 ```
 
-### How to Find Your PC's Local IP Address on Windows:
-1. Press `Win + R`, type `cmd`, and press Enter.
-2. Type `ipconfig` and press Enter.
-3. Locate **Wireless LAN adapter Wi-Fi** or **Ethernet adapter**.
-4. Copy the **IPv4 Address** (e.g., `192.168.1.15`) into `MQTT_BROKER_HOST`.
+> [!NOTE]
+> `secrets.h` is pre-configured in `.gitignore`. Your real Wi-Fi and EMQX passwords will never be accidentally committed to Git.
+> `config.h` automatically detects `secrets.h` using `__has_include("secrets.h")`.
 
 ---
 
@@ -179,18 +189,18 @@ Open `firmware/esp32_smart_classroom/config.h` and update the constants for your
 [Wi-Fi] 🏷️ MAC Address            : 24:6F:28:XX:XX:XX
 
 [MQTT] 🔌 Connecting to MQTT Broker...
-[MQTT] 🖥️ Broker Host : 192.168.1.15:1883
+[MQTT] 🖥️ Broker Host : z1910bc1.ala.us-east-1.emqxsl.com:8883 (TLS: true)
 [MQTT] 🆔 Client ID   : ESP32_SmartClassroom_Room302
 [MQTT] ✅ Connected Successfully to MQTT Broker!
 [MQTT] 📡 Subscribing to appliance command topics:
-   ✓ Subscribed: classroom/device/light/set
-   ✓ Subscribed: classroom/device/fan/set
-   ✓ Subscribed: classroom/device/projector/set
-   ✓ Subscribed: smartclassroom/room302/relay/+/set (Fallback)
+   ✓ Subscribed: smartclassroom/room302/relay/light/command
+   ✓ Subscribed: smartclassroom/room302/relay/fan/command
+   ✓ Subscribed: smartclassroom/room302/relay/projector/command
+   ✓ Subscribed: smartclassroom/room302/relay/+/command (Standard Wildcard)
 [MQTT] 📤 Publishing initial hardware state snapshots...
-[MQTT] 📤 Published [classroom/device/light/status] -> OFF
-[MQTT] 📤 Published [classroom/device/fan/status] -> OFF
-[MQTT] 📤 Published [classroom/device/projector/status] -> OFF
+[MQTT] 📤 Published state confirmation to [smartclassroom/room302/relay/light/state] -> OFF
+[MQTT] 📤 Published state confirmation to [smartclassroom/room302/relay/fan/state] -> OFF
+[MQTT] 📤 Published state confirmation to [smartclassroom/room302/relay/projector/state] -> OFF
 [MQTT] 🚀 All subscriptions active. Ready for classroom commands!
 ```
 
@@ -203,14 +213,14 @@ Open `firmware/esp32_smart_classroom/config.h` and update the constants for your
 2. Locate the **Ceiling Fans** device card.
 3. Click the toggle switch to **ON**:
    - The dashboard calls backend `POST /api/devices/:id/command`.
-   - The backend publishes payload to MQTT topic `classroom/device/fan/set`.
+   - The backend publishes payload to MQTT topic `smartclassroom/room302/relay/fan/command`.
    - **ESP32 Serial Monitor prints:**
      ```text
      ----------------------------------------------------------------
-     [MQTT IN] 📥 Message received on Topic: [classroom/device/fan/set]
-     [MQTT IN] 📦 Raw Payload: "{"deviceId":"ESP32-RM302-FAN-01","command":"ON"}"
+     [MQTT IN] 📥 Message received on Topic: [smartclassroom/room302/relay/fan/command]
+     [MQTT IN] 📦 Command Payload: "{"deviceId":"ESP32-RM302-FAN-01","command":"ON","state":1,...}"
      [HARDWARE] 🌀 FAN set to: [ON] on GPIO 22
-     [MQTT OUT] 📤 Published [classroom/device/fan/status] -> ON
+     [MQTT OUT] 📤 Published state confirmation to [smartclassroom/room302/relay/fan/state] -> ON
      ----------------------------------------------------------------
      ```
    - GPIO 22 goes HIGH and the Fan LED/relay illuminates immediately!
