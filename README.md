@@ -117,3 +117,15 @@ npm run server:dev
 # Run frontend only
 npm run client:dev
 ```
+
+---
+
+## 🌐 Production Cloud Deployment
+
+For step-by-step instructions on deploying the system to production clouds, see [DEPLOYMENT.md](file:///d:/Final%20Year%20Project/WebApp/DEPLOYMENT.md).
+
+- **Frontend → Vercel**: Deploy from `client/` root directory (`npm run build` -> `dist/`). SPA rewrites handled by [`client/vercel.json`](file:///d:/Final%20Year%20Project/WebApp/client/vercel.json).
+- **Backend → Render**: Deploy as a Web Service from `server/` root directory (`npm install` -> `npm start`). Auto-binds to `process.env.PORT`.
+- **Database → MongoDB Atlas**: Cloud-hosted replica set via `MONGODB_URI`.
+- **MQTT Broker → EMQX Cloud**: Cloud IoT broker over TLS (`mqtts://...:8883`).
+
