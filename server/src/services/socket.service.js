@@ -1,11 +1,25 @@
 const { Server } = require('socket.io')
+const jwt = require('jsonwebtoken')
 const env = require('../config/env')
+const { validateOrigin } = require('../config/cors')
+const { toClassroomSlug } = require('../utils/mqttTopics')
 
 let io = null
 let connectedSocketsCount = 0
 
+// Client mutation events that must NEVER be accepted over Socket.IO to prevent auth bypass
+const BLOCKED_CLIENT_MUTATION_EVENTS = [
+  'device:command',
+  'device:toggle',
+  'device:set',
+  'device:update',
+  'device:state',
+  'command',
+  'voice:command',
+]
+
 /**
- * Initializes Socket.IO server attached to the Node HTTP server
+ * Initializes the Socket.IO server attached to the Node HTTP server
  *
  * @param {import('http').Server} httpServer
  * @returns {Server}
@@ -15,64 +29,123 @@ function initSocket(httpServer) {
     return io
   }
 
-  const configuredOrigins = (env.CLIENT_URL || '')
-    .split(',')
-    .map((url) => url.trim())
-    .filter(Boolean)
-
-  const allowedOrigins = env.NODE_ENV === 'production'
-    ? (configuredOrigins.length > 0 ? configuredOrigins : ['http://localhost:5173'])
-    : [
-        ...configuredOrigins,
-        'http://localhost:5173',
-        'http://127.0.0.1:5173',
-      ]
-
   io = new Server(httpServer, {
     cors: {
-      origin: (origin, callback) => {
-        if (!origin || allowedOrigins.includes(origin)) {
-          return callback(null, true)
-        }
-        if (env.NODE_ENV === 'development') {
-          return callback(null, true)
-        }
-        return callback(new Error(`Origin ${origin} not permitted by Socket.IO CORS policy.`))
-      },
+      origin: validateOrigin,
       methods: ['GET', 'POST'],
       credentials: true,
     },
+    transports: ['websocket', 'polling'],
     pingTimeout: 20000,
     pingInterval: 25000,
+    connectTimeout: 20000,
   })
 
+  // 1. Handshake Authentication Middleware
+  // Protects the socket gateway without bypassing JWT verification or exposing MQTT credentials
+  io.use((socket, next) => {
+    try {
+      const rawToken =
+        socket.handshake.auth?.token ||
+        socket.handshake.headers?.authorization ||
+        socket.handshake.query?.token
+
+      if (rawToken && typeof rawToken === 'string') {
+        const token = rawToken.startsWith('Bearer ') ? rawToken.slice(7).trim() : rawToken.trim()
+        try {
+          const decoded = jwt.verify(token, env.JWT_SECRET)
+          socket.user = decoded
+          console.log(`[Socket.IO] 🔐 Authenticated client connection (${socket.id}) for user: ${decoded.email || decoded.id} [${decoded.role || 'USER'}]`)
+        } catch (jwtErr) {
+          console.warn(`[Socket.IO] ⚠️ Handshake token verification warning for (${socket.id}): ${jwtErr.message}`)
+          if (env.NODE_ENV === 'production' && socket.handshake.auth?.requireAuth) {
+            return next(new Error('Authentication failed: Invalid or expired token'))
+          }
+          socket.user = null
+        }
+      } else {
+        // Unauthenticated client (read-only observer)
+        socket.user = null
+      }
+
+      return next()
+    } catch (err) {
+      console.error(`[Socket.IO] Handshake middleware exception:`, err)
+      return next(new Error('Connection rejected by gateway security.'))
+    }
+  })
+
+  // 2. Client Connection Lifecycle & Security Event Handlers
   io.on('connection', (socket) => {
     connectedSocketsCount += 1
-    console.log(`[Socket.IO] 🔌 Client connected: ${socket.id} (Total: ${connectedSocketsCount})`)
+    const clientUser = socket.user ? `${socket.user.email || socket.user.id} (${socket.user.role})` : 'Anonymous / Observer'
+    console.log(`[Socket.IO] 🔌 Client connected: ${socket.id} | User: ${clientUser} | Transport: ${socket.conn.transport.name} (Active: ${connectedSocketsCount})`)
 
-    // Optional: client can join classroom-specific room
+    // Monitor transport upgrade
+    socket.conn.on('upgrade', (transport) => {
+      console.log(`[Socket.IO] 🚀 Client ${socket.id} upgraded transport to: ${transport.name}`)
+    })
+
+    // SECURITY GUARD: Prevent authentication & authorization bypass through Socket.IO.
+    // Device control MUST strictly use authenticated REST endpoints (POST /api/devices/:id/command).
+    BLOCKED_CLIENT_MUTATION_EVENTS.forEach((eventName) => {
+      socket.on(eventName, () => {
+        console.warn(`[Socket.IO Security] ⚠️ Client ${socket.id} attempted unauthorized mutation via event "${eventName}". Request rejected.`)
+        socket.emit('error:unauthorized', {
+          status: 'error',
+          code: 'UNAUTHORIZED_MUTATION',
+          message: 'Hardware state mutations cannot be performed over Socket.IO. Use authenticated REST endpoints.',
+          event: eventName,
+          timestamp: new Date().toISOString(),
+        })
+      })
+    })
+
+    // Classroom Room Subscription
     socket.on('join:classroom', (classroom) => {
       if (classroom && typeof classroom === 'string') {
-        const roomName = `classroom:${classroom.trim().toLowerCase()}`
-        socket.join(roomName)
-        console.log(`[Socket.IO] Client ${socket.id} joined room: ${roomName}`)
+        const slug = toClassroomSlug(classroom)
+        if (slug) {
+          const roomName = `classroom:${slug}`
+          socket.join(roomName)
+          console.log(`[Socket.IO] 🏫 Client ${socket.id} joined room: "${roomName}" (Requested: "${classroom}")`)
+          socket.emit('joined:classroom', {
+            classroom,
+            slug,
+            room: roomName,
+            status: 'subscribed',
+            timestamp: new Date().toISOString(),
+          })
+        }
       }
     })
 
     socket.on('leave:classroom', (classroom) => {
       if (classroom && typeof classroom === 'string') {
-        const roomName = `classroom:${classroom.trim().toLowerCase()}`
-        socket.leave(roomName)
+        const slug = toClassroomSlug(classroom)
+        if (slug) {
+          const roomName = `classroom:${slug}`
+          socket.leave(roomName)
+          console.log(`[Socket.IO] 🏫 Client ${socket.id} left room: "${roomName}"`)
+          socket.emit('left:classroom', {
+            classroom,
+            slug,
+            room: roomName,
+            status: 'unsubscribed',
+            timestamp: new Date().toISOString(),
+          })
+        }
       }
     })
 
+    // Disconnect Lifecycle
     socket.on('disconnect', (reason) => {
       connectedSocketsCount = Math.max(0, connectedSocketsCount - 1)
-      console.log(`[Socket.IO] ❌ Client disconnected: ${socket.id} (${reason}) (Total: ${connectedSocketsCount})`)
+      console.log(`[Socket.IO] ❌ Client disconnected: ${socket.id} (${reason}) (Active: ${connectedSocketsCount})`)
     })
   })
 
-  console.log('[Socket.IO] ✅ Real-time server initialized')
+  console.log('[Socket.IO] ✅ Real-time server initialized (CORS & Auth hardened)')
   return io
 }
 
@@ -86,12 +159,16 @@ function getIO() {
 }
 
 /**
- * Broadcasts a device:status real-time event to all connected dashboards
+ * Broadcasts a device:status real-time event to all connected dashboards,
+ * device-specific listeners, and classroom rooms.
+ *
+ * IMPORTANT SECURITY:
+ * Never exposes MQTT credentials (username, password, broker URL, private certs).
  *
  * @param {Object} device - Device database document or snapshot
  */
 function emitDeviceStatus(device) {
-  if (!io) {
+  if (!io || !device) {
     return
   }
 
@@ -111,9 +188,27 @@ function emitDeviceStatus(device) {
     updatedAt: device.updatedAt ? new Date(device.updatedAt).toISOString() : new Date().toISOString(),
   }
 
-  // Broadcast real-time status update to all connected dashboard clients
+  // 1. Universal Broadcast: All connected teacher/admin dashboards
   io.emit('device:status', payload)
-  console.log(`[Socket.IO] 📡 Emitted "device:status" for [${device.deviceId}] -> ${device.state} (Online: ${payload.isOnline})`)
+
+  // 2. Device-Specific Event: Targeted listeners for this hardware deviceId
+  if (payload.deviceId) {
+    io.emit(`device:${payload.deviceId}:status`, payload)
+  }
+
+  // 3. Classroom-Specific Room & Event: Targeted listeners for this classroom
+  if (device.classroom) {
+    const roomSlug = toClassroomSlug(device.classroom)
+    if (roomSlug) {
+      io.to(`classroom:${roomSlug}`).emit('classroom:device:status', payload)
+      io.emit(`classroom:${roomSlug}:status`, payload)
+    }
+  }
+
+  console.log(
+    `[Socket.IO] 📡 Emitted "device:status" for [${device.deviceId}] -> ${device.state} ` +
+    `(Req: ${payload.requestedState || 'none'}, Conf: ${payload.confirmedState || 'none'}, Online: ${payload.isOnline})`
+  )
 }
 
 /**
@@ -126,9 +221,29 @@ function getSocketStats() {
   }
 }
 
+/**
+ * Gracefully shuts down the Socket.IO server
+ */
+async function closeSocket() {
+  if (!io) {
+    return
+  }
+
+  console.log('[Socket.IO] 🔒 Closing all active real-time connections...')
+  return new Promise((resolve) => {
+    io.close(() => {
+      console.log('[Socket.IO] 🔒 Socket.IO server closed cleanly.')
+      io = null
+      connectedSocketsCount = 0
+      resolve()
+    })
+  })
+}
+
 module.exports = {
   initSocket,
   getIO,
   emitDeviceStatus,
   getSocketStats,
+  closeSocket,
 }

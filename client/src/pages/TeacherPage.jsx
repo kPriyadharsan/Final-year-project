@@ -27,7 +27,7 @@ import {
   Wifi,
 } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
-import { useSocket } from '../context/SocketContext'
+import { useSocket, useSocketEvent } from '../context/SocketContext'
 import { testProtectedRoute } from '../services/auth.service'
 import { DashboardLayout } from '../components/layout'
 import {
@@ -48,7 +48,7 @@ import { API_BASE_URL } from '../config/api'
 
 export function TeacherPage() {
   const { user, token } = useAuth()
-  const { socket, isConnected } = useSocket()
+  const { socket, isConnected, joinClassroom, leaveClassroom } = useSocket()
 
   const apiBaseUrl = API_BASE_URL
 
@@ -151,46 +151,49 @@ export function TeacherPage() {
     }
   }, [token, apiBaseUrl])
 
-  // Real-Time Socket.IO Listener: Listen for "device:status"
+  // Subscribe to Room 302 real-time classroom telemetry
   useEffect(() => {
-    if (!socket) return
-
-    const handleDeviceStatus = (incoming) => {
-      console.log('[Socket.IO UI] ⚡ Received live device:status event:', incoming)
-
-      setDevices((prev) =>
-        prev.map((dev) => {
-          const isMatch =
-            dev.deviceId === incoming.deviceId ||
-            dev.id === incoming.id ||
-            dev.id === incoming.deviceId ||
-            (dev.type && incoming.type && dev.type.toUpperCase() === incoming.type.toUpperCase())
-
-          if (isMatch) {
-            return {
-              ...dev,
-              isOn: incoming.state === 'ON',
-              isOnline: typeof incoming.isOnline === 'boolean' ? incoming.isOnline : dev.isOnline,
-            }
-          }
-          return dev
-        })
-      )
-
-      setActionAlert({
-        type: 'info',
-        message: `Real-time update: ${incoming.name || incoming.deviceId} is now ${incoming.state} (${
-          incoming.isOnline ? 'Online' : 'Offline'
-        }).`,
-      })
-    }
-
-    socket.on('device:status', handleDeviceStatus)
-
+    joinClassroom('Room 302')
     return () => {
-      socket.off('device:status', handleDeviceStatus)
+      leaveClassroom('Room 302')
     }
-  }, [socket])
+  }, [joinClassroom, leaveClassroom])
+
+  // Real-Time Socket.IO Listener: Listen for "device:status" safely without duplicate listeners
+  useSocketEvent('device:status', (incoming) => {
+    console.log('[Socket.IO UI] ⚡ Received live device:status event:', incoming)
+
+    setDevices((prev) =>
+      prev.map((dev) => {
+        const isMatch =
+          dev.deviceId === incoming.deviceId ||
+          dev.id === incoming.id ||
+          dev.id === incoming.deviceId ||
+          (dev.type && incoming.type && dev.type.toUpperCase() === incoming.type.toUpperCase())
+
+        if (isMatch) {
+          return {
+            ...dev,
+            isOn: incoming.state === 'ON',
+            isOnline: typeof incoming.isOnline === 'boolean' ? incoming.isOnline : dev.isOnline,
+          }
+        }
+        return dev
+      })
+    )
+
+    setActionAlert({
+      type: 'info',
+      message: `Real-time update: ${incoming.name || incoming.deviceId} is now ${incoming.state} (${
+        incoming.isOnline ? 'Online' : 'Offline'
+      }).`,
+    })
+  })
+
+  // Classroom-scoped status listener
+  useSocketEvent('classroom:device:status', (incoming) => {
+    console.log('[Socket.IO UI] 🏫 Received classroom-scoped device telemetry:', incoming.deviceId, incoming.state)
+  })
 
   // Fetch system status (Backend, MongoDB, MQTT, Gemini, ESP32)
   const fetchSystemStatus = useCallback(async () => {

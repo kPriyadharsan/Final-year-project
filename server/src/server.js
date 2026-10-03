@@ -4,10 +4,11 @@ const env = require('./config/env')
 const http = require('http')
 const express = require('express')
 const cors = require('cors')
+const { validateOrigin } = require('./config/cors')
 const { connectDB, closeDB } = require('./config/db')
 const { connectMQTT, disconnectMQTT } = require('./services/mqtt.service')
 const { startEmbeddedBroker, stopEmbeddedBroker } = require('./services/embeddedBroker.service')
-const { initSocket } = require('./services/socket.service')
+const { initSocket, closeSocket } = require('./services/socket.service')
 const { initDeviceSync } = require('./services/deviceSync.service')
 const healthRoutes = require('./routes/health.routes')
 const authRoutes = require('./routes/auth.routes')
@@ -35,33 +36,10 @@ if (env.NODE_ENV === 'production') {
   })
 }
 
-// CORS Configuration
-const configuredOrigins = (CLIENT_URL || '')
-  .split(',')
-  .map((url) => url.trim())
-  .filter(Boolean)
-
-const allowedOrigins = env.NODE_ENV === 'production'
-  ? (configuredOrigins.length > 0 ? configuredOrigins : ['http://localhost:5173'])
-  : [
-      ...configuredOrigins,
-      'http://localhost:5173',
-      'http://127.0.0.1:5173',
-    ]
-
+// CORS Configuration (Strictly enforces production frontend URL, avoids unrestricted origins)
 app.use(
   cors({
-    origin: (origin, callback) => {
-      // Allow non-browser requests (Postman, curl, IoT scripts) or matched origins
-      if (!origin || allowedOrigins.includes(origin)) {
-        return callback(null, true)
-      }
-      if (env.NODE_ENV === 'development') {
-        // In local development, permit other local ports/LAN interfaces
-        return callback(null, true)
-      }
-      return callback(new Error(`Origin ${origin} not permitted by CORS policy.`))
-    },
+    origin: validateOrigin,
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization'],
@@ -157,6 +135,7 @@ const handleShutdown = async (signal) => {
   console.log(`\n🛑 Received [${signal}]. Initiating graceful shutdown...`)
   await disconnectMQTT()
   await stopEmbeddedBroker()
+  await closeSocket()
   server.close(async () => {
     console.log('🔒 Express HTTP server closed.')
     await closeDB(signal)
