@@ -79,6 +79,8 @@ router.get('/system/status', async (req, res) => {
     let onlineNodes = 0
     let totalChannels = 0
     let onlineChannels = 0
+    let channelsOn = 0
+    let availableChannels = 0
 
     if (mongoose.connection.readyState === 1) {
       try {
@@ -87,7 +89,7 @@ router.get('/system/status', async (req, res) => {
           : { isActive: true }
 
         const devices = await Device.find(classroomFilter)
-          .select('deviceId name isOnline type state classroom entityType deviceCategory')
+          .select('deviceId name isOnline type state classroom entityType deviceCategory nodeId')
           .lean()
 
         const nodes = devices.filter(
@@ -103,6 +105,14 @@ router.get('/system/status', async (req, res) => {
         totalNodes = nodes.length
         onlineNodes = nodes.filter((d) => d.isOnline === true).length
         totalChannels = channels.length
+
+        const onlineNodeRooms = new Set(nodes.filter((n) => n.isOnline === true).map((n) => n.classroom))
+        const onlineNodeIds = new Set(nodes.filter((n) => n.isOnline === true).map((n) => n.deviceId))
+
+        channelsOn = channels.filter((c) => c.state === 'ON').length
+        availableChannels = channels.filter(
+          (c) => (c.nodeId && onlineNodeIds.has(c.nodeId)) || (c.classroom && onlineNodeRooms.has(c.classroom))
+        ).length
         onlineChannels = channels.filter((d) => d.isOnline === true).length
         esp32Online = onlineNodes > 0
       } catch (dbErr) {
@@ -153,7 +163,9 @@ router.get('/system/status', async (req, res) => {
         totalNodes,
         onlineNodes,
         totalChannels,
-        onlineChannels,
+        channelsOn,
+        availableChannels,
+        activeChannels: availableChannels,
         totalDevices: totalNodes,
         onlineDevices: onlineNodes,
         classroom: 'Room 302',

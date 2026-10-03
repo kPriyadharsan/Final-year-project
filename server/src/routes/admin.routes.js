@@ -56,7 +56,7 @@ router.get(
         totalActiveNodes,
         onlineNodesCount,
         totalActiveChannels,
-        onlineChannelsCount,
+        channelsOnCount,
         classroomAgg,
         recentLogs,
       ] = await Promise.all([
@@ -70,7 +70,7 @@ router.get(
         Device.countDocuments(nodeFilter),
         Device.countDocuments({ ...nodeFilter, isOnline: true }),
         Device.countDocuments(channelFilter),
-        Device.countDocuments({ ...channelFilter, isOnline: true }),
+        Device.countDocuments({ ...channelFilter, state: 'ON' }),
         Device.aggregate([
           { $match: { isActive: true } },
           {
@@ -103,18 +103,13 @@ router.get(
                   ],
                 },
               },
-              onlineChannels: {
+              channelsOn: {
                 $sum: {
                   $cond: [
                     {
                       $and: [
-                        { $eq: ['$isOnline', true] },
-                        {
-                          $or: [
-                            { $eq: ['$entityType', 'CHANNEL'] },
-                            { $in: ['$type', ['LIGHT', 'FAN', 'PROJECTOR']] },
-                          ],
-                        },
+                        { $eq: ['$state', 'ON'] },
+                        { $or: [{ $eq: ['$entityType', 'CHANNEL'] }, { $in: ['$type', ['LIGHT', 'FAN', 'PROJECTOR']] }] },
                       ],
                     },
                     1,
@@ -148,21 +143,31 @@ router.get(
 
       const classrooms = classroomAgg
         .filter((c) => c._id)
-        .map((c) => ({
-          id: c._id.toLowerCase().replace(/[^a-z0-9]/g, '-'),
-          name: c._id,
-          nodes: c.totalNodes,
-          onlineNodes: c.onlineNodes,
-          relays: c.totalChannels,
-          totalChannels: c.totalChannels,
-          onlineChannels: c.onlineChannels,
-          totalDevices: c.totalNodes,
-          onlineDevices: c.onlineNodes,
-          status: c.onlineNodes > 0 ? 'Active' : 'Offline',
-          deviceTypes: c.deviceTypes || [],
-        }))
+        .map((c) => {
+          const isRoomOnline = c.onlineNodes > 0
+          const availableInRoom = isRoomOnline ? c.totalChannels : 0
+          return {
+            id: c._id.toLowerCase().replace(/[^a-z0-9]/g, '-'),
+            name: c._id,
+            nodes: c.totalNodes,
+            onlineNodes: c.onlineNodes,
+            relays: c.totalChannels,
+            totalChannels: c.totalChannels,
+            channelsOn: c.channelsOn || 0,
+            availableChannels: availableInRoom,
+            onlineChannels: availableInRoom,
+            totalDevices: c.totalNodes,
+            onlineDevices: c.onlineNodes,
+            status: isRoomOnline ? 'Active' : 'Offline',
+            deviceTypes: c.deviceTypes || [],
+            devicesSummary: isRoomOnline
+              ? `${c.channelsOn || 0} ON / ${availableInRoom} Available`
+              : '0 Controllable • Node Offline',
+          }
+        })
 
       const totalClasses = classrooms.length
+      const availableChannelsCount = classrooms.reduce((acc, c) => acc + c.availableChannels, 0)
 
       // Derived service statuses
       const mqttStatus = liveMqtt.connected ? 'connected' : (liveMqtt.status || 'offline')
@@ -174,15 +179,17 @@ router.get(
         metrics: {
           totalTeachers: teachersCount,
           totalStudents: studentsCount,
-          // Accurate Physical Node metrics
+          // Physical IoT Nodes
           totalNodes: totalActiveNodes,
           onlineNodes: onlineNodesCount,
           offlineNodes: Math.max(0, totalActiveNodes - onlineNodesCount),
-          // Accurate Relay Channel metrics
+          // Relay Channels
           totalChannels: totalActiveChannels,
-          onlineChannels: onlineChannelsCount,
-          offlineChannels: Math.max(0, totalActiveChannels - onlineChannelsCount),
-          // Backward-compatible metrics mapping (totalDevices refers to physical nodes)
+          channelsOn: channelsOnCount,
+          channelsOff: Math.max(0, totalActiveChannels - channelsOnCount),
+          availableChannels: availableChannelsCount,
+          activeChannels: availableChannelsCount,
+          // Backward-compatible metrics mapping
           totalDevices: totalActiveNodes,
           connectedDevices: onlineNodesCount,
           onlineDevices: onlineNodesCount,

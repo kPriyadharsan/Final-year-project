@@ -23,6 +23,7 @@ import {
   Projector,
 } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
+import { useSocket, useSocketEvent } from '../context/SocketContext'
 import { testProtectedRoute } from '../services/auth.service'
 import { DashboardLayout } from '../components/layout'
 import {
@@ -42,6 +43,7 @@ import { API_BASE_URL } from '../config/api'
 
 export function AdminPage() {
   const { user, token } = useAuth()
+  const { isConnected: isSocketConnected } = useSocket()
   const location = useLocation()
   const navigate = useNavigate()
 
@@ -79,6 +81,24 @@ export function AdminPage() {
 
   // Live Database Devices & Controls
   const [dbDevices, setDbDevices] = useState([])
+
+  // Real-time listener for incoming MQTT status events via Socket.IO
+  useSocketEvent('device:status', (incoming) => {
+    if (!incoming || !incoming.deviceId) return
+    setDbDevices((prev) =>
+      prev.map((dev) => {
+        if (dev.deviceId === incoming.deviceId || dev._id === incoming.id) {
+          return {
+            ...dev,
+            state: incoming.state || dev.state,
+            isOnline: typeof incoming.isOnline === 'boolean' ? incoming.isOnline : dev.isOnline,
+            lastSeenAt: incoming.lastSeenAt || dev.lastSeenAt,
+          }
+        }
+        return dev
+      })
+    )
+  })
 
   // Search & Filter States
   const [teacherSearchQuery, setTeacherSearchQuery] = useState('')
@@ -244,19 +264,62 @@ export function AdminPage() {
     }, 600)
   }
 
-  // Derive real statistics and status from actual MongoDB records
+  // Derive real statistics and status from actual MongoDB records & live Socket updates
+  const nodesInDb = dbDevices.filter(
+    (d) => d.entityType === 'NODE' || d.deviceCategory === 'NODE' || d.type === 'OTHER'
+  )
+  const channelsInDb = dbDevices.filter(
+    (d) =>
+      d.entityType === 'CHANNEL' ||
+      d.deviceCategory === 'CHANNEL' ||
+      (d.type !== 'OTHER' && ['LIGHT', 'FAN', 'PROJECTOR'].includes(d.type))
+  )
+
+  const liveTotalNodes =
+    nodesInDb.length > 0 ? nodesInDb.length : (dashboardData?.metrics?.totalNodes ?? 1)
+  const liveOnlineNodes =
+    nodesInDb.length > 0
+      ? nodesInDb.filter((d) => d.isOnline === true).length
+      : (dashboardData?.metrics?.onlineNodes ?? (systemHealth?.esp32?.onlineNodes ?? 0))
+
+  const onlineNodeRooms = new Set(nodesInDb.filter((n) => n.isOnline === true).map((n) => n.classroom))
+  const onlineNodeIds = new Set(nodesInDb.filter((n) => n.isOnline === true).map((n) => n.deviceId))
+
+  const liveTotalChannels =
+    channelsInDb.length > 0 ? channelsInDb.length : (dashboardData?.metrics?.totalChannels ?? 3)
+  const liveChannelsOn =
+    channelsInDb.length > 0
+      ? channelsInDb.filter((d) => d.state === 'ON').length
+      : (dashboardData?.metrics?.channelsOn ?? 0)
+
+  // Channel availability is strictly based on the parent controller node being connected
+  const liveAvailableChannels =
+    channelsInDb.length > 0
+      ? channelsInDb.filter(
+          (c) =>
+            (c.nodeId && onlineNodeIds.has(c.nodeId)) || (c.classroom && onlineNodeRooms.has(c.classroom))
+        ).length
+      : (liveOnlineNodes > 0 ? (dashboardData?.metrics?.availableChannels ?? liveTotalChannels) : 0)
+
   const metrics = {
     totalTeachers: dashboardData?.metrics?.totalTeachers ?? 0,
     totalClasses: dashboardData?.metrics?.totalClasses ?? (dashboardData?.classrooms?.length || 0),
     totalStudents: dashboardData?.metrics?.totalStudents ?? 0,
-    totalNodes: dashboardData?.metrics?.totalNodes ?? dbDevices.filter((d) => d.entityType === 'NODE' || d.type === 'OTHER').length,
-    onlineNodes: dashboardData?.metrics?.onlineNodes ?? dbDevices.filter((d) => (d.entityType === 'NODE' || d.type === 'OTHER') && d.isOnline === true).length,
-    totalChannels: dashboardData?.metrics?.totalChannels ?? dbDevices.filter((d) => d.entityType === 'CHANNEL' || d.type !== 'OTHER').length,
-    onlineChannels: dashboardData?.metrics?.onlineChannels ?? dbDevices.filter((d) => (d.entityType === 'CHANNEL' || d.type !== 'OTHER') && d.isOnline === true).length,
-    totalDevices: dashboardData?.metrics?.totalNodes ?? (dashboardData?.metrics?.totalDevices ?? dbDevices.filter((d) => d.entityType === 'NODE' || d.type === 'OTHER').length),
-    connectedDevices: dashboardData?.metrics?.onlineNodes ?? (dashboardData?.metrics?.onlineDevices ?? dbDevices.filter((d) => (d.entityType === 'NODE' || d.type === 'OTHER') && d.isOnline === true).length),
-    onlineDevices: dashboardData?.metrics?.onlineNodes ?? (dashboardData?.metrics?.onlineDevices ?? dbDevices.filter((d) => (d.entityType === 'NODE' || d.type === 'OTHER') && d.isOnline === true).length),
-    offlineDevices: dashboardData?.metrics?.offlineNodes ?? 0,
+    // Physical IoT Nodes
+    totalNodes: liveTotalNodes,
+    onlineNodes: liveOnlineNodes,
+    offlineNodes: Math.max(0, liveTotalNodes - liveOnlineNodes),
+    // Relay Channels
+    totalChannels: liveTotalChannels,
+    channelsOn: liveChannelsOn,
+    channelsOff: Math.max(0, liveTotalChannels - liveChannelsOn),
+    activeChannels: liveAvailableChannels,
+    availableChannels: liveAvailableChannels,
+    // Backward-compatible metrics mapping
+    totalDevices: liveTotalNodes,
+    connectedDevices: liveOnlineNodes,
+    onlineDevices: liveOnlineNodes,
+    offlineDevices: Math.max(0, liveTotalNodes - liveOnlineNodes),
     systemStatus: systemHealth?.backend?.status || 'offline',
     mqttStatus: systemHealth?.mqtt?.connected ? 'connected' : 'offline',
     geminiStatus: systemHealth?.gemini?.status || 'offline',
@@ -289,35 +352,76 @@ export function AdminPage() {
     )
   })
 
-  // Sourced strictly from MongoDB distinct classrooms and devices
+  // Sourced strictly from MongoDB distinct classrooms and live device states
   const displayedClasses = (
     dashboardData?.classrooms && dashboardData.classrooms.length > 0
-      ? dashboardData.classrooms
+      ? dashboardData.classrooms.map((c) => {
+          const roomDevices = dbDevices.filter((d) => d.classroom === c.name)
+          if (roomDevices.length > 0) {
+            const roomNodes = roomDevices.filter((d) => d.entityType === 'NODE' || d.type === 'OTHER')
+            const roomChannels = roomDevices.filter((d) => d.entityType === 'CHANNEL' || d.type !== 'OTHER')
+            const isRoomOnline = roomNodes.some((d) => d.isOnline === true)
+            const availableInRoom = isRoomOnline ? roomChannels.length : 0
+            const onInRoom = roomChannels.filter((d) => d.state === 'ON').length
+            return {
+              ...c,
+              nodes: roomNodes.length,
+              onlineNodes: roomNodes.filter((d) => d.isOnline === true).length,
+              relays: roomChannels.length,
+              totalChannels: roomChannels.length,
+              channelsOn: onInRoom,
+              availableChannels: availableInRoom,
+              status: isRoomOnline ? 'Active' : 'Offline',
+              devicesSummary: isRoomOnline
+                ? `${onInRoom} ON / ${availableInRoom} Available`
+                : '0 Controllable • Node Offline',
+            }
+          }
+          return c
+        })
       : Array.from(new Set(dbDevices.map((d) => d.classroom).filter(Boolean))).map((room) => {
           const roomDevices = dbDevices.filter((d) => d.classroom === room)
+          const roomNodes = roomDevices.filter((d) => d.entityType === 'NODE' || d.type === 'OTHER')
           const roomChannels = roomDevices.filter((d) => d.entityType === 'CHANNEL' || d.type !== 'OTHER')
-          const onlineCount = roomDevices.filter((d) => d.isOnline === true).length
+          const isRoomOnline = roomNodes.some((d) => d.isOnline === true)
+          const availableInRoom = isRoomOnline ? roomChannels.length : 0
+          const onInRoom = roomChannels.filter((d) => d.state === 'ON').length
           return {
             id: room.toLowerCase().replace(/[^a-z0-9]/g, '-'),
             name: room,
             department: 'Smart Classroom Facility',
+            nodes: roomNodes.length,
+            onlineNodes: roomNodes.filter((d) => d.isOnline === true).length,
             relays: roomChannels.length,
             totalChannels: roomChannels.length,
-            totalDevices: 1,
-            onlineDevices: onlineCount > 0 ? 1 : 0,
-            devices: `${roomChannels.length} Relay Channels`,
-            status: onlineCount > 0 ? 'Active' : 'Offline',
+            channelsOn: onInRoom,
+            availableChannels: availableInRoom,
+            totalDevices: roomNodes.length,
+            onlineDevices: isRoomOnline ? 1 : 0,
+            devices: isRoomOnline ? `${onInRoom} ON / ${availableInRoom} Available` : '0 Controllable • Node Offline',
+            devicesSummary: isRoomOnline ? `${onInRoom} ON / ${availableInRoom} Available` : '0 Controllable • Node Offline',
+            status: isRoomOnline ? 'Active' : 'Offline',
           }
         })
-  ).map((c) => ({
-    id: c.id || c.name,
-    name: c.name,
-    department: c.department || 'Smart Classroom Facility',
-    relays: c.relays ?? c.totalChannels ?? 3,
-    devices: c.devices || `${c.relays ?? c.totalChannels ?? 3} Relay Channels`,
-    status: c.status || (c.onlineDevices > 0 ? 'Active' : 'Offline'),
-    currentTopic: c.onlineDevices > 0 ? `${c.onlineDevices} Online` : 'Standby',
-  }))
+  ).map((c) => {
+    const isOnline = (c.onlineNodes ?? 0) > 0 || c.status === 'Active'
+    const avail = c.availableChannels ?? (isOnline ? (c.totalChannels ?? c.relays ?? 3) : 0)
+    const onCount = c.channelsOn ?? 0
+    return {
+      id: c.id || c.name,
+      name: c.name,
+      department: c.department || 'Smart Classroom Facility',
+      nodes: c.nodes ?? 1,
+      onlineNodes: c.onlineNodes ?? (isOnline ? 1 : 0),
+      relays: c.relays ?? c.totalChannels ?? 3,
+      totalChannels: c.totalChannels ?? c.relays ?? 3,
+      channelsOn: onCount,
+      availableChannels: avail,
+      devices: c.devicesSummary || (isOnline ? `${onCount} ON / ${avail} Available` : '0 Controllable • Node Offline'),
+      status: isOnline ? 'Active' : 'Offline',
+      currentTopic: isOnline ? `${c.onlineNodes ?? 1} Node Online` : 'Standby (Offline)',
+    }
+  })
 
   const filteredClasses = displayedClasses.filter((c) => {
     const q = classSearchQuery.toLowerCase()
@@ -362,12 +466,16 @@ export function AdminPage() {
       (d) => (d.entityType === 'CHANNEL' || d.deviceCategory === 'CHANNEL' || d.type !== 'OTHER') && d.classroom === room
     )
     const isNodeOnline = node.isOnline === true
+    const onCount = channels.filter((c) => c.state === 'ON').length
+    const availableCount = isNodeOnline ? channels.length : 0
     return {
       id: node.deviceId,
       deviceId: node.deviceId,
       name: node.name || `ESP32 Smart Controller (${room})`,
       room,
-      relays: `${channels.length} Channels (${channels.map((d) => d.type).join(', ')})`,
+      relays: isNodeOnline
+        ? `${channels.length} Channels (${onCount} ON / ${availableCount} Available)`
+        : `${channels.length} Channels (0 Controllable • Node Offline)`,
       channelsList: channels,
       status: isNodeOnline ? 'Online' : 'Offline',
       isOnline: isNodeOnline,
@@ -489,7 +597,7 @@ export function AdminPage() {
           </div>
 
           {/* 2. Core Metrics Strip (Contiguous, Hairline Divider, Zero Gaps!) */}
-          <div className="border-t border-slate-100/90 grid grid-cols-2 lg:grid-cols-4 divide-y sm:divide-y-0 sm:divide-x divide-slate-100/90 bg-white/50">
+          <div className="border-t border-slate-100/90 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 divide-y sm:divide-y-0 sm:divide-x divide-slate-100/90 bg-white/50">
             <div className="p-4 sm:p-5 flex items-start justify-between gap-3 hover:bg-slate-50/50 transition-colors">
               <div>
                 <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider block">Total Faculty</span>
@@ -516,25 +624,58 @@ export function AdminPage() {
 
             <div className="p-4 sm:p-5 flex items-start justify-between gap-3 hover:bg-slate-50/50 transition-colors">
               <div>
+                <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider block">IoT Nodes</span>
+                <div className="mt-1 text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">{metrics.totalNodes}</div>
+                {metrics.onlineNodes > 0 ? (
+                  <span className="text-[11px] text-emerald-600 font-medium mt-1 block flex items-center gap-1">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-ping inline-block" /> {metrics.onlineNodes} Online
+                  </span>
+                ) : (
+                  <span className="text-[11px] text-rose-500 font-medium mt-1 block flex items-center gap-1">
+                    <span className="w-1.5 h-1.5 rounded-full bg-rose-500 inline-block" /> 0 Online • Offline
+                  </span>
+                )}
+              </div>
+              <div className={`w-10 h-10 rounded-2xl border flex items-center justify-center shrink-0 shadow-2xs ${
+                metrics.onlineNodes > 0
+                  ? 'bg-emerald-50 border-emerald-100/80 text-emerald-600'
+                  : 'bg-rose-50 border-rose-100/80 text-rose-600'
+              }`}>
+                <Cpu className="w-5 h-5" />
+              </div>
+            </div>
+
+            <div className="p-4 sm:p-5 flex items-start justify-between gap-3 hover:bg-slate-50/50 transition-colors">
+              <div>
+                <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider block">Active Channels</span>
+                <div className="mt-1 text-xl sm:text-2xl font-extrabold text-slate-900 tracking-tight">
+                  {metrics.onlineNodes > 0
+                    ? `${metrics.channelsOn} ON / ${metrics.availableChannels} Available`
+                    : '0 Controllable'}
+                </div>
+                {metrics.onlineNodes > 0 ? (
+                  <span className="text-[11px] text-indigo-600 font-medium mt-1 block">
+                    {metrics.channelsOn} ON of {metrics.totalChannels} Channels
+                  </span>
+                ) : (
+                  <span className="text-[11px] text-slate-400 font-medium mt-1 block">
+                    {metrics.totalChannels} Channels • Node Offline
+                  </span>
+                )}
+              </div>
+              <div className="w-10 h-10 rounded-2xl bg-indigo-50 border border-indigo-100/80 flex items-center justify-center text-indigo-600 shrink-0 shadow-2xs">
+                <Zap className="w-5 h-5" />
+              </div>
+            </div>
+
+            <div className="p-4 sm:p-5 flex items-start justify-between gap-3 hover:bg-slate-50/50 transition-colors col-span-2 sm:col-span-1">
+              <div>
                 <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider block">Students</span>
                 <div className="mt-1 text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">{metrics.totalStudents}</div>
                 <span className="text-[11px] text-slate-400 mt-1 block font-medium">Enrolled active roster</span>
               </div>
               <div className="w-10 h-10 rounded-2xl bg-amber-50 border border-amber-100/80 flex items-center justify-center text-amber-600 shrink-0 shadow-2xs">
                 <GraduationCap className="w-5 h-5" />
-              </div>
-            </div>
-
-            <div className="p-4 sm:p-5 flex items-start justify-between gap-3 hover:bg-slate-50/50 transition-colors">
-              <div>
-                <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider block">IoT Nodes</span>
-                <div className="mt-1 text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">{metrics.totalNodes ?? metrics.totalDevices}</div>
-                <span className="text-[11px] text-emerald-600 font-medium mt-1 block flex items-center gap-1">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-ping inline-block" /> {metrics.onlineNodes ?? metrics.onlineDevices} Online {metrics.totalChannels ? `• ${metrics.totalChannels} Channels` : ''}
-                </span>
-              </div>
-              <div className="w-10 h-10 rounded-2xl bg-emerald-50 border border-emerald-100/80 flex items-center justify-center text-emerald-600 shrink-0 shadow-2xs">
-                <Cpu className="w-5 h-5" />
               </div>
             </div>
           </div>
@@ -605,19 +746,27 @@ export function AdminPage() {
               </Badge>
             </div>
 
-            {/* 5. ESP32 */}
+            {/* 5. ESP32 Hardware */}
             <div className="p-3.5 sm:p-4 flex items-center justify-between gap-2 hover:bg-white/60 transition-colors">
               <div className="flex items-center gap-2.5">
-                <div className="w-7 h-7 rounded-xl bg-amber-50 border border-amber-100 text-amber-600 flex items-center justify-center shrink-0">
+                <div className={`w-7 h-7 rounded-xl border flex items-center justify-center shrink-0 ${
+                  metrics.onlineNodes > 0
+                    ? 'bg-amber-50 border-amber-100 text-amber-600'
+                    : 'bg-rose-50 border-rose-100 text-rose-600'
+                }`}>
                   <Cpu className="w-3.5 h-3.5" />
                 </div>
                 <div>
-                  <span className="font-bold text-slate-800 block text-[11px]">ESP32 Node</span>
-                  <span className="text-[10px] text-slate-400 font-mono">{metrics.totalNodes ?? 1} Node • {metrics.totalChannels ?? 3} Relays</span>
+                  <span className="font-bold text-slate-800 block text-[11px]">ESP32 Hardware</span>
+                  <span className="text-[10px] text-slate-400 font-mono">
+                    {metrics.onlineNodes > 0
+                      ? `${metrics.onlineNodes}/${metrics.totalNodes} Online • ${metrics.availableChannels} Relays Avail`
+                      : 'Offline • 0 Controllable'}
+                  </span>
                 </div>
               </div>
-              <Badge variant={systemHealth?.esp32?.connected ? 'success' : 'danger'} dot size="sm">
-                {systemHealth?.esp32?.connected ? 'Sync' : 'Offline'}
+              <Badge variant={metrics.onlineNodes > 0 ? 'success' : 'danger'} dot size="sm">
+                {metrics.onlineNodes > 0 ? 'Online' : 'Offline'}
               </Badge>
             </div>
           </div>
@@ -1034,9 +1183,9 @@ export function AdminPage() {
                         <p className="text-xs text-slate-500 mt-0.5">{cls.department}</p>
                       </div>
                       <Badge
-                        variant={cls.status === 'In Session' ? 'success' : 'info'}
-                        dot={cls.status === 'In Session'}
-                        pulse={cls.status === 'In Session'}
+                        variant={cls.status === 'Active' || cls.status === 'In Session' ? 'success' : 'danger'}
+                        dot={cls.status === 'Active' || cls.status === 'In Session'}
+                        pulse={cls.status === 'Active' || cls.status === 'In Session'}
                         size="sm"
                       >
                         {cls.status}
@@ -1046,14 +1195,14 @@ export function AdminPage() {
                     <div className="grid grid-cols-3 gap-2.5 p-3 rounded-xl bg-slate-50 border border-slate-200/70 text-xs">
                       <div>
                         <span className="text-[10px] text-slate-400 block uppercase font-medium">Relays</span>
-                        <span className="font-semibold text-indigo-600 font-mono">{cls.relays} Relays</span>
+                        <span className="font-semibold text-indigo-600 font-mono">{cls.channelsOn} ON / {cls.availableChannels} Avail</span>
                       </div>
                       <div>
                         <span className="text-[10px] text-slate-400 block uppercase font-medium">Status</span>
-                        <span className="font-semibold text-slate-800 font-mono">{cls.status}</span>
+                        <span className={`font-semibold font-mono ${cls.status === 'Active' || cls.status === 'In Session' ? 'text-emerald-600' : 'text-rose-500'}`}>{cls.status}</span>
                       </div>
                       <div>
-                        <span className="text-[10px] text-slate-400 block uppercase font-medium">Hardware</span>
+                        <span className="text-[10px] text-slate-400 block uppercase font-medium">Channels</span>
                         <span className="font-semibold text-slate-800 font-mono truncate block">{cls.devices}</span>
                       </div>
                     </div>
@@ -1272,7 +1421,7 @@ export function AdminPage() {
                                 <span className="text-[11px] text-slate-400 font-mono">{dev.room}</span>
                               </div>
                             </div>
-                            <Badge variant="success" dot size="sm">
+                            <Badge variant={dev.isOnline ? 'success' : 'danger'} dot size="sm">
                               {dev.status}
                             </Badge>
                           </div>
