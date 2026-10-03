@@ -43,7 +43,10 @@ export function ProtectedRoute({ allowedRoles, children }) {
     if (user.role === 'TEACHER') {
       return <Navigate to="/teacher" replace />
     }
-    // Any other unauthorized role (e.g. STUDENT)
+    if (user.role === 'STUDENT') {
+      return <Navigate to="/student" replace />
+    }
+    // Any other unauthorized role
     return <Navigate to="/login" replace />
   }
 

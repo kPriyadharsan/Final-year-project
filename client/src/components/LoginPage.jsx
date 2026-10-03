@@ -17,6 +17,7 @@ export function LoginPage() {
   const getRoleDestination = (role) => {
     if (role === 'SUPER_ADMIN') return '/admin'
     if (role === 'TEACHER') return '/teacher'
+    if (role === 'STUDENT') return '/student'
     return '/login'
   }
 

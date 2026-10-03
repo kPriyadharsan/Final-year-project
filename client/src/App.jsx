@@ -5,6 +5,7 @@ import { ProtectedRoute } from './components/ProtectedRoute'
 import { LoginPage } from './components/LoginPage'
 import { AdminPage } from './pages/AdminPage'
 import { TeacherPage } from './pages/TeacherPage'
+import { StudentPage } from './pages/StudentPage'
 import { NotFoundPage } from './pages/NotFoundPage'
 
 /**
@@ -34,6 +35,10 @@ function HomeRedirect() {
 
   if (user.role === 'TEACHER') {
     return <Navigate to="/teacher" replace />
+  }
+
+  if (user.role === 'STUDENT') {
+    return <Navigate to="/student" replace />
   }
 
   return <Navigate to="/login" replace />
@@ -98,6 +103,16 @@ function App() {
               element={
                 <ProtectedRoute allowedRoles={['TEACHER', 'SUPER_ADMIN']}>
                   <TeacherPage />
+                </ProtectedRoute>
+              }
+            />
+
+            {/* Protected route: /student (STUDENT only) */}
+            <Route
+              path="/student"
+              element={
+                <ProtectedRoute allowedRoles={['STUDENT', 'SUPER_ADMIN']}>
+                  <StudentPage />
                 </ProtectedRoute>
               }
             />

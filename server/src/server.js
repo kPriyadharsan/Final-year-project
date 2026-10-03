@@ -16,6 +16,7 @@ const teacherRoutes = require('./routes/teacher.routes')
 const deviceRoutes = require('./routes/device.routes')
 const aiRoutes = require('./routes/ai.routes')
 const voiceRoutes = require('./routes/voice.routes')
+const studentRoutes = require('./routes/student.routes')
 
 const app = express()
 const PORT = env.PORT
@@ -72,6 +73,7 @@ app.use('/api/teacher', teacherRoutes)
 app.use('/api/devices', deviceRoutes)
 app.use('/api/ai', aiRoutes)
 app.use('/api/voice', voiceRoutes)
+app.use('/api/student', studentRoutes)
 
 // Root fallback route
 app.get('/', (req, res) => {
@@ -95,6 +97,7 @@ app.get('/', (req, res) => {
     protectedTestEndpoints: {
       adminTest: 'GET /api/admin/test (SUPER_ADMIN only)',
       teacherTest: 'GET /api/teacher/test (TEACHER & SUPER_ADMIN)',
+      studentTest: 'GET /api/student/test (STUDENT & SUPER_ADMIN)',
     },
     status: 'Running',
   })
