@@ -206,15 +206,41 @@ export function LoginPage() {
 
         {/* Quick Demo Credentials Helper */}
         <div className="mt-8 pt-6 border-t border-slate-100 text-center">
-          <p className="text-[11px] text-slate-400 mb-2.5 font-medium">Quick Development Testing</p>
-          <button
-            type="button"
-            onClick={populateDemoAdmin}
-            className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-blue-50 hover:bg-blue-100 border border-blue-200/80 text-blue-700 transition-all text-xs font-medium cursor-pointer shadow-sm"
-          >
-            <ShieldCheck className="w-3.5 h-3.5 text-blue-600" />
-            <span>Use Seeded Super Admin Credentials</span>
-          </button>
+          <p className="text-[11px] text-slate-400 mb-2.5 font-medium">Quick Role Testing</p>
+          <div className="flex flex-wrap items-center justify-center gap-2">
+            <button
+              type="button"
+              onClick={populateDemoAdmin}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-blue-50 hover:bg-blue-100 border border-blue-200/80 text-blue-700 transition-all text-xs font-medium cursor-pointer shadow-sm"
+            >
+              <ShieldCheck className="w-3.5 h-3.5 text-blue-600" />
+              <span>Admin</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setEmail('teacher@smartclassroom.edu')
+                setPassword('TeacherSecure2026!')
+                setFieldErrors({})
+                clearError()
+              }}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-indigo-50 hover:bg-indigo-100 border border-indigo-200/80 text-indigo-700 transition-all text-xs font-medium cursor-pointer shadow-sm"
+            >
+              <span>Teacher</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setEmail('student@smartclassroom.edu')
+                setPassword('StudentSecure2026!')
+                setFieldErrors({})
+                clearError()
+              }}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-emerald-50 hover:bg-emerald-100 border border-emerald-200/80 text-emerald-700 transition-all text-xs font-medium cursor-pointer shadow-sm"
+            >
+              <span>Student</span>
+            </button>
+          </div>
         </div>
       </div>
     </div>
