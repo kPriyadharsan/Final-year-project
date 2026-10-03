@@ -145,24 +145,11 @@ export function AdminPage() {
         const data = await dashRes.value.json()
         setDashboardData(data)
       } else {
-        setDashboardData({
-          metrics: {
-            totalTeachers: 3,
-            totalClasses: 8,
-            totalStudents: 120,
-            connectedDevices: 24,
-            systemStatus: 'operational',
-            mqttStatus: 'connected',
-            geminiStatus: 'active',
-          },
-          services: {
-            system: { status: 'operational', uptime: '1240s', environment: 'development' },
-            database: { status: 'connected', provider: 'MongoDB Atlas' },
-            mqtt: { status: 'connected', brokerUrl: 'mqtt://127.0.0.1:1883', clientId: 'smart_classroom_admin' },
-            gemini: { status: 'active', model: 'Gemini 2.5 Flash / Pro', keyMasked: 'AIza..._KEY', speechEngine: 'Bilingual (Tamil / English)' },
-          },
-          teachers: [],
-        })
+        const errMessage =
+          dashRes.status === 'rejected'
+            ? dashRes.reason?.message
+            : `Failed to load admin metrics (HTTP ${dashRes.value?.status || 500})`
+        setDataError(errMessage || 'Backend dashboard telemetry unavailable.')
       }
 
       // 2. Process System Status (Backend, MongoDB, MQTT, Gemini, ESP32)
@@ -259,12 +246,12 @@ export function AdminPage() {
 
   const metrics = dashboardData?.metrics || {
     totalTeachers: 0,
-    totalClasses: 8,
+    totalClasses: 0,
     totalStudents: 0,
-    connectedDevices: 24,
-    systemStatus: 'operational',
-    mqttStatus: 'connected',
-    geminiStatus: 'active',
+    connectedDevices: dbDevices.length,
+    systemStatus: systemHealth?.backend?.status || 'offline',
+    mqttStatus: systemHealth?.mqtt?.status || 'offline',
+    geminiStatus: systemHealth?.gemini?.status || 'offline',
   }
 
   const services = dashboardData?.services || {}

@@ -25,6 +25,7 @@ import {
   Database,
   Cpu,
   Wifi,
+  AlertTriangle,
 } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import { useSocket, useSocketEvent } from '../context/SocketContext'
@@ -68,88 +69,64 @@ export function TeacherPage() {
   const [recentActivities, setRecentActivities] = useState([])
   const [activitiesLoading, setActivitiesLoading] = useState(false)
 
-  // 1. Classroom Devices (Light, Fan, Projector)
-  const [devices, setDevices] = useState([
-    {
-      id: 'light',
-      deviceId: 'ESP32-RM302-LIGHT-01',
-      name: 'Classroom Lights',
-      type: 'LIGHT',
-      icon: Lightbulb,
-      room: 'Room 302',
-      isOn: true,
-      isOnline: true,
-      details: '80% Daylight Spectrum',
-      relayChannel: 'Relay 1 (ESP32-RM302)',
-    },
-    {
-      id: 'fan',
-      deviceId: 'ESP32-RM302-FAN-01',
-      name: 'Ceiling Fans',
-      type: 'FAN',
-      icon: Fan,
-      room: 'Room 302',
-      isOn: false,
-      isOnline: true,
-      details: 'Speed 3 (Medium)',
-      relayChannel: 'Relay 2 (ESP32-RM302)',
-    },
-    {
-      id: 'projector',
-      deviceId: 'ESP32-RM302-PROJ-01',
-      name: 'Smart Projector',
-      type: 'PROJECTOR',
-      icon: Projector,
-      room: 'Room 302',
-      isOn: true,
-      isOnline: true,
-      details: 'HDMI 1 (Wireless Cast Ready)',
-      relayChannel: 'Relay 3 (ESP32-RM302)',
-    },
-  ])
+  // 1. Classroom Devices (Light, Fan, Projector) - Sourced dynamically from MongoDB
+  const [devices, setDevices] = useState([])
+  const [devicesLoading, setDevicesLoading] = useState(true)
+  const [devicesError, setDevicesError] = useState(null)
 
-  // Fetch initial devices from MongoDB backend
-  useEffect(() => {
-    async function loadBackendDevices() {
-      try {
-        const res = await fetch(`${apiBaseUrl}/api/devices?classroom=Room 302`, {
-          headers: {
-            Authorization: `Bearer ${token}`,
-            Accept: 'application/json',
-          },
-        })
-        if (res.ok) {
-          const data = await res.json()
-          if (data.devices && data.devices.length > 0) {
-            const iconMap = {
-              LIGHT: Lightbulb,
-              FAN: Fan,
-              PROJECTOR: Projector,
-            }
-            const mappedDevices = data.devices.map((d) => ({
-              id: d._id || d.id,
-              deviceId: d.deviceId,
-              name: d.name,
-              type: d.type,
-              icon: iconMap[d.type] || Lightbulb,
-              room: d.classroom || 'Room 302',
-              isOn: d.state === 'ON',
-              isOnline: typeof d.isOnline === 'boolean' ? d.isOnline : true,
-              details: d.description || `GPIO ${d.gpioPin ?? 'N/A'} (ESP32)`,
-              relayChannel: `GPIO ${d.gpioPin ?? 'N/A'} (ESP32)`,
-            }))
-            setDevices(mappedDevices)
+  // Fetch live devices from MongoDB backend
+  const loadBackendDevices = useCallback(async () => {
+    if (!token) return
+    setDevicesLoading(true)
+    setDevicesError(null)
+
+    try {
+      const res = await fetch(`${apiBaseUrl}/api/devices?classroom=Room 302`, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          Accept: 'application/json',
+        },
+      })
+      if (res.ok) {
+        const data = await res.json()
+        if (data.devices && data.devices.length > 0) {
+          const iconMap = {
+            LIGHT: Lightbulb,
+            FAN: Fan,
+            PROJECTOR: Projector,
           }
+          const mappedDevices = data.devices.map((d) => ({
+            id: d._id || d.id,
+            deviceId: d.deviceId,
+            name: d.name,
+            type: d.type,
+            icon: iconMap[d.type] || Lightbulb,
+            room: d.classroom || 'Room 302',
+            isOn: d.state === 'ON',
+            isOnline: typeof d.isOnline === 'boolean' ? d.isOnline : false,
+            requestedState: d.requestedState || null,
+            confirmedState: d.confirmedState || null,
+            details: d.description || `GPIO ${d.gpioPin ?? 'N/A'} (ESP32)`,
+            relayChannel: `GPIO ${d.gpioPin ?? 'N/A'} (ESP32)`,
+          }))
+          setDevices(mappedDevices)
+        } else {
+          setDevices([])
         }
-      } catch (err) {
-        console.warn('Initial device fetch note (using defaults):', err.message)
+      } else {
+        setDevicesError(`Failed to load devices (HTTP ${res.status}).`)
       }
-    }
-
-    if (token) {
-      loadBackendDevices()
+    } catch (err) {
+      console.warn('Initial device fetch error:', err.message)
+      setDevicesError('Unable to connect to backend device service.')
+    } finally {
+      setDevicesLoading(false)
     }
   }, [token, apiBaseUrl])
+
+  useEffect(() => {
+    loadBackendDevices()
+  }, [loadBackendDevices])
 
   // Subscribe to Room 302 real-time classroom telemetry
   useEffect(() => {
@@ -832,7 +809,7 @@ export function TeacherPage() {
                 </span>
               </div>
               <p className="text-xs text-slate-400 mt-0.5">
-                Temporary mock state &bull; Hardware interface ready for ESP32 relay mapping
+                MongoDB source of truth &bull; Real-time telemetry via EMQX Cloud &amp; Socket.IO
               </p>
             </div>
 
@@ -852,6 +829,7 @@ export function TeacherPage() {
                 variant="outline"
                 size="sm"
                 onClick={() => handleAllDevices(true)}
+                disabled={devicesLoading || devices.length === 0}
               >
                 All ON
               </Button>
@@ -859,6 +837,7 @@ export function TeacherPage() {
                 variant="outline"
                 size="sm"
                 onClick={() => handleAllDevices(false)}
+                disabled={devicesLoading || devices.length === 0}
               >
                 All OFF
               </Button>
@@ -867,7 +846,39 @@ export function TeacherPage() {
 
           {/* 3 Core Device Cards: Light, Fan, Projector (Gap-Free Bento Container) */}
           <BentoContainer className="grid grid-cols-1 md:grid-cols-3 divide-y md:divide-y-0 md:divide-x divide-slate-100/90">
-            {devices.map((device) => {
+            {devicesLoading ? (
+              [1, 2, 3].map((n) => (
+                <div key={n} className="p-6 space-y-4 animate-pulse">
+                  <div className="flex items-center gap-3">
+                    <div className="w-11 h-11 rounded-2xl bg-slate-200/80"></div>
+                    <div className="space-y-1.5 flex-1">
+                      <div className="h-4 bg-slate-200 rounded w-2/3"></div>
+                      <div className="h-3 bg-slate-100 rounded w-1/3"></div>
+                    </div>
+                  </div>
+                  <div className="h-16 bg-slate-100/70 rounded-2xl"></div>
+                  <div className="h-10 bg-slate-200/60 rounded-xl"></div>
+                </div>
+              ))
+            ) : devicesError ? (
+              <div className="col-span-1 md:col-span-3 p-8 text-center space-y-3">
+                <div className="w-10 h-10 mx-auto rounded-2xl bg-rose-50 border border-rose-200 text-rose-600 flex items-center justify-center">
+                  <AlertTriangle className="w-5 h-5" />
+                </div>
+                <p className="text-xs text-rose-700 font-medium">{devicesError}</p>
+                <Button variant="outline" size="sm" onClick={loadBackendDevices}>
+                  Retry Loading Devices
+                </Button>
+              </div>
+            ) : devices.length === 0 ? (
+              <div className="col-span-1 md:col-span-3 p-8 text-center space-y-2">
+                <p className="text-xs text-slate-500 font-medium">No devices registered for Room 302 in MongoDB database.</p>
+                <Button variant="outline" size="sm" onClick={loadBackendDevices}>
+                  Refresh Devices
+                </Button>
+              </div>
+            ) : (
+              devices.map((device) => {
               const IconComponent = device.icon
               return (
                 <div
@@ -971,7 +982,8 @@ export function TeacherPage() {
                   </div>
                 </div>
               )
-            })}
+            })
+          )}
           </BentoContainer>
         </section>
 

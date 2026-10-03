@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useAuth } from '../context/AuthContext'
 import { API_BASE_URL } from '../config/api'
 import {
@@ -19,7 +19,8 @@ export function StudentPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
 
-  const fetchStudentData = async () => {
+  const fetchStudentData = useCallback(async () => {
+    if (!token) return
     setLoading(true)
     setError(null)
     try {
@@ -39,11 +40,11 @@ export function StudentPage() {
     } finally {
       setLoading(false)
     }
-  }
+  }, [token])
 
   useEffect(() => {
     fetchStudentData()
-  }, [])
+  }, [fetchStudentData])
 
   return (
     <div className="min-h-screen bg-[#f8fafc] text-slate-800 selection:bg-blue-500/20 selection:text-blue-900 relative pb-16 font-sans">
