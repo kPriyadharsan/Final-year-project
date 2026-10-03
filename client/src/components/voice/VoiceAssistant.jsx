@@ -305,39 +305,39 @@ export function VoiceAssistant({
   }
 
   return (
-    <div className={`space-y-5 text-slate-100 ${isEmbedded ? '' : 'p-1'}`}>
+    <div className={`space-y-5 text-slate-800 ${isEmbedded ? '' : 'p-1'}`}>
       {/* Mic Status & Bluetooth Awareness Badge */}
-      <div className="flex items-center justify-between px-3.5 py-2 rounded-xl bg-slate-900/80 border border-slate-800 text-xs">
-        <div className="flex items-center gap-2 text-slate-300">
-          <Bluetooth className="w-3.5 h-3.5 text-cyan-400" />
+      <div className="flex items-center justify-between px-3.5 py-2.5 rounded-2xl bg-slate-100/80 border border-slate-200/80 text-xs">
+        <div className="flex items-center gap-2 text-slate-600 font-medium">
+          <Bluetooth className="w-3.5 h-3.5 text-blue-600" />
           <span>Microphone: Default System Audio (Built-in or Bluetooth)</span>
         </div>
-        <Badge variant="outline" size="sm">
+        <Badge variant="info" size="sm">
           en-US (English)
         </Badge>
       </div>
 
       {/* Main Dynamic State Viewport */}
-      <div className="rounded-2xl bg-gradient-to-b from-slate-900 to-slate-950 border border-slate-800 p-6 text-center space-y-4 shadow-inner">
+      <div className="rounded-3xl bg-slate-50/90 border border-slate-200/80 p-6 sm:p-7 text-center space-y-4 shadow-sm">
         {/* ================= STATE 1: IDLE ================= */}
         {currentState === VOICE_STATES.IDLE && (
           <div className="space-y-4 py-2">
             {!isSupported && (
-              <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 text-xs text-amber-300">
+              <div className="p-3 rounded-2xl bg-amber-50 border border-amber-200 text-xs text-amber-800">
                 Speech recognition is unavailable in this browser. You can enter commands using the text input below.
               </div>
             )}
             <button
               type="button"
               onClick={handleStartListening}
-              className="w-20 h-20 mx-auto rounded-full bg-gradient-to-tr from-purple-600 to-indigo-500 hover:from-purple-500 hover:to-indigo-400 flex items-center justify-center text-white shadow-xl shadow-purple-600/30 transition-transform active:scale-95 cursor-pointer group"
+              className="w-20 h-20 mx-auto rounded-full bg-gradient-to-tr from-purple-600 via-indigo-600 to-pink-500 hover:from-purple-500 hover:to-indigo-500 flex items-center justify-center text-white shadow-xl shadow-purple-500/30 transition-transform active:scale-95 cursor-pointer group"
               title="Tap to speak in English"
             >
               <Mic className="w-9 h-9 group-hover:scale-110 transition-transform" />
             </button>
             <div>
-              <p className="text-sm font-bold text-white">Tap to Speak</p>
-              <p className="text-xs text-slate-400 mt-1 max-w-sm mx-auto">
+              <p className="text-base font-bold text-slate-900">Tap to Speak</p>
+              <p className="text-xs text-slate-500 mt-1 max-w-sm mx-auto">
                 Speak naturally in English. Your voice is captured locally and parsed by Gemini AI.
               </p>
             </div>
@@ -362,23 +362,23 @@ export function VoiceAssistant({
             </div>
 
             <div>
-              <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-purple-500/10 border border-purple-500/30 text-purple-300 text-xs font-semibold">
-                <span className="w-2 h-2 rounded-full bg-purple-400 animate-ping" />
+              <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-purple-50 border border-purple-200 text-purple-700 text-xs font-semibold">
+                <span className="w-2 h-2 rounded-full bg-purple-500 animate-ping" />
                 Listening... Speak now
               </div>
-              <p className="text-xs text-slate-400 mt-2">
+              <p className="text-xs text-slate-500 mt-2">
                 Recording will stop automatically when speech finishes.
               </p>
             </div>
 
             {/* Live Real-Time Transcript Display */}
-            <div className="min-h-14 p-3.5 rounded-xl bg-slate-950 border border-purple-500/30 text-xs text-left font-mono">
+            <div className="min-h-14 p-3.5 rounded-2xl bg-white border border-purple-200 text-xs text-left font-mono shadow-sm">
               <span className="text-slate-400 text-[11px] block uppercase font-sans font-bold mb-1">
                 Live Speech Transcript:
               </span>
-              <p className="text-white font-medium break-words">
+              <p className="text-slate-800 font-medium break-words">
                 {transcript || interimTranscript || (
-                  <span className="text-slate-500 italic">Listening for speech...</span>
+                  <span className="text-slate-400 italic">Listening for speech...</span>
                 )}
               </p>
             </div>
@@ -387,7 +387,6 @@ export function VoiceAssistant({
               variant="outline"
               size="sm"
               onClick={handleStopListening}
-              className="border-slate-700 text-slate-300 hover:bg-slate-800"
             >
               Done Speaking
             </Button>
@@ -397,22 +396,22 @@ export function VoiceAssistant({
         {/* ================= STATE 3: PROCESSING ================= */}
         {currentState === VOICE_STATES.PROCESSING && (
           <div className="space-y-4 py-4">
-            <div className="w-16 h-16 mx-auto rounded-full bg-cyan-500/10 border border-cyan-500/30 flex items-center justify-center text-cyan-400 shadow-lg shadow-cyan-500/10">
+            <div className="w-16 h-16 mx-auto rounded-full bg-blue-50 border border-blue-200 flex items-center justify-center text-blue-600 shadow-sm">
               <Loader2 className="w-8 h-8 animate-spin" />
             </div>
             <div>
-              <p className="text-sm font-bold text-white">Analyzing Voice Command...</p>
-              <p className="text-xs text-slate-400 mt-1">
+              <p className="text-base font-bold text-slate-900">Analyzing Voice Command...</p>
+              <p className="text-xs text-slate-500 mt-1">
                 Gemini intent classification and backend allowlist validation in progress.
               </p>
             </div>
 
             {/* Echoed Transcript */}
-            <div className="p-3 rounded-xl bg-slate-950 border border-slate-800 text-xs text-left font-mono">
-              <span className="text-slate-500 text-[10px] block uppercase font-sans mb-1">
+            <div className="p-3.5 rounded-2xl bg-white border border-slate-200 text-xs text-left font-mono shadow-sm">
+              <span className="text-slate-400 text-[10px] block uppercase font-sans mb-1">
                 Transcribed Audio:
               </span>
-              <p className="text-cyan-300 font-medium italic">"{transcript}"</p>
+              <p className="text-blue-600 font-semibold italic">"{transcript}"</p>
             </div>
           </div>
         )}
@@ -420,16 +419,16 @@ export function VoiceAssistant({
         {/* ================= STATE 4: SUCCESS ================= */}
         {currentState === VOICE_STATES.SUCCESS && resultData && (
           <div className="space-y-4 py-2 text-left">
-            <div className="flex items-center justify-between pb-2 border-b border-slate-800">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-200">
               <div className="flex items-center gap-2">
                 {resultData.executionStatus === 'FAILED' ? (
-                  <AlertTriangle className="w-5 h-5 text-rose-400" />
+                  <AlertTriangle className="w-5 h-5 text-rose-500" />
                 ) : resultData.executionStatus === 'EXECUTED' ? (
-                  <CheckCircle2 className="w-5 h-5 text-emerald-400" />
+                  <CheckCircle2 className="w-5 h-5 text-emerald-600" />
                 ) : (
-                  <CheckCircle2 className="w-5 h-5 text-cyan-400" />
+                  <CheckCircle2 className="w-5 h-5 text-blue-600" />
                 )}
-                <span className="text-sm font-bold text-white">
+                <span className="text-sm font-bold text-slate-900">
                   {resultData.executionStatus === 'FAILED'
                     ? 'Delivery Notice'
                     : resultData.executionStatus === 'EXECUTED'
@@ -451,24 +450,24 @@ export function VoiceAssistant({
             </div>
 
             {/* Transcript Quote */}
-            <div className="p-3 rounded-xl bg-slate-950 border border-slate-800 space-y-1">
-              <span className="text-[10px] text-slate-500 uppercase tracking-wider block font-semibold">
+            <div className="p-3.5 rounded-2xl bg-white border border-slate-200 space-y-1 shadow-sm">
+              <span className="text-[10px] text-slate-400 uppercase tracking-wider block font-semibold">
                 Captured Transcript
               </span>
-              <p className="text-xs font-mono text-purple-300 font-semibold italic">
+              <p className="text-xs font-mono text-purple-700 font-semibold italic">
                 "{resultData.transcript}"
               </p>
             </div>
 
             {/* Intent & Device Badges */}
             <div className="grid grid-cols-2 gap-2 text-xs">
-              <div className="p-2.5 rounded-lg bg-slate-900 border border-slate-800">
-                <span className="text-[10px] text-slate-400 block">Classified Intent</span>
-                <span className="font-semibold text-white font-mono">{resultData.intent}</span>
+              <div className="p-3 rounded-2xl bg-white border border-slate-200 shadow-sm">
+                <span className="text-[10px] text-slate-400 block font-medium">Classified Intent</span>
+                <span className="font-semibold text-slate-900 font-mono">{resultData.intent}</span>
               </div>
-              <div className="p-2.5 rounded-lg bg-slate-900 border border-slate-800">
-                <span className="text-[10px] text-slate-400 block">Target Device / Action</span>
-                <span className="font-semibold text-cyan-300 font-mono">
+              <div className="p-3 rounded-2xl bg-white border border-slate-200 shadow-sm">
+                <span className="text-[10px] text-slate-400 block font-medium">Target Device / Action</span>
+                <span className="font-semibold text-blue-600 font-mono">
                   {resultData.device ? `${resultData.device.toUpperCase()} → ${resultData.action}` : 'N/A (Software)'}
                 </span>
               </div>
@@ -476,12 +475,12 @@ export function VoiceAssistant({
 
             {/* Human Readable Message from Backend */}
             <div
-              className={`p-3.5 rounded-xl border text-xs font-medium ${
+              className={`p-3.5 rounded-2xl border text-xs font-medium ${
                 resultData.executionStatus === 'FAILED'
-                  ? 'bg-rose-500/10 border-rose-500/30 text-rose-300'
+                  ? 'bg-rose-50 border-rose-200 text-rose-800'
                   : resultData.executionStatus === 'EXECUTED'
-                  ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'
-                  : 'bg-cyan-500/10 border-cyan-500/30 text-cyan-300'
+                  ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+                  : 'bg-sky-50 border-sky-200 text-sky-800'
               }`}
             >
               {resultData.message}
@@ -505,12 +504,12 @@ export function VoiceAssistant({
         {/* ================= STATE 5: ERROR ================= */}
         {currentState === VOICE_STATES.ERROR && (
           <div className="space-y-4 py-2">
-            <div className="w-14 h-14 mx-auto rounded-full bg-rose-500/10 border border-rose-500/30 flex items-center justify-center text-rose-400">
+            <div className="w-14 h-14 mx-auto rounded-full bg-rose-50 border border-rose-200 flex items-center justify-center text-rose-500 shadow-sm">
               <AlertTriangle className="w-7 h-7" />
             </div>
             <div>
-              <p className="text-sm font-bold text-white">Voice Command Notice</p>
-              <p className="text-xs text-rose-300 mt-1 max-w-sm mx-auto">{errorMessage}</p>
+              <p className="text-sm font-bold text-slate-900">Voice Command Notice</p>
+              <p className="text-xs text-rose-600 mt-1 max-w-sm mx-auto">{errorMessage}</p>
             </div>
             <div className="pt-2">
               <Button variant="outline" size="sm" onClick={handleRetry}>
@@ -537,10 +536,10 @@ export function VoiceAssistant({
                   setTranscript(phrase)
                   sendTranscriptToBackend(phrase)
                 }}
-                className="px-2.5 py-1 rounded-lg bg-slate-900 border border-slate-800 hover:border-purple-500/40 hover:bg-slate-800 text-[11px] text-slate-300 hover:text-white transition-all cursor-pointer font-mono flex items-center gap-1.5"
+                className="px-3 py-1.5 rounded-full bg-white border border-slate-200/80 hover:border-purple-300 hover:bg-purple-50/50 text-[11px] text-slate-700 hover:text-purple-700 transition-all cursor-pointer font-sans shadow-sm flex items-center gap-1.5 font-medium"
               >
                 <span>"{phrase}"</span>
-                <ArrowRight className="w-3 h-3 text-purple-400" />
+                <ArrowRight className="w-3 h-3 text-purple-500" />
               </button>
             ))}
           </div>
@@ -548,14 +547,14 @@ export function VoiceAssistant({
       )}
 
       {/* Manual Input Fallback */}
-      <div className="pt-1 border-t border-slate-800/80">
+      <div className="pt-2 border-t border-slate-200">
         <form onSubmit={handleManualSubmit} className="flex gap-2">
           <input
             type="text"
             value={manualText}
             onChange={(e) => setManualText(e.target.value)}
             placeholder="Or type an English voice command..."
-            className="flex-1 px-3.5 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none focus:border-purple-500 font-mono"
+            className="flex-1 px-4 py-2.5 bg-white border border-slate-200/80 rounded-2xl text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/10 font-sans shadow-sm"
           />
           <Button
             type="submit"

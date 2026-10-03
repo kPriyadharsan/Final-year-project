@@ -2,37 +2,27 @@ import { Loader2 } from 'lucide-react'
 
 const VARIANTS = {
   primary:
-    'bg-indigo-600 hover:bg-indigo-500 active:bg-indigo-700 text-white shadow-sm border border-indigo-500/30 focus-visible:ring-indigo-500',
+    'bg-[#0071e3] hover:bg-[#0077ed] active:bg-[#0062c4] text-white shadow-sm shadow-blue-500/20 border border-blue-400/20 focus-visible:ring-blue-500',
   secondary:
-    'bg-slate-800 hover:bg-slate-700 active:bg-slate-850 text-slate-100 border border-slate-700/80 focus-visible:ring-slate-500',
+    'bg-slate-100/90 hover:bg-slate-200/90 active:bg-slate-200 text-slate-800 border border-slate-200/70 focus-visible:ring-slate-400',
   outline:
-    'bg-transparent hover:bg-slate-800/80 active:bg-slate-800 text-slate-200 border border-slate-700 hover:border-slate-600 focus-visible:ring-slate-500',
+    'bg-white hover:bg-slate-50 active:bg-slate-100 text-slate-700 border border-slate-200/80 shadow-sm focus-visible:ring-slate-400',
   ghost:
-    'bg-transparent hover:bg-slate-800/70 active:bg-slate-800 text-slate-300 hover:text-white border border-transparent focus-visible:ring-slate-500',
+    'bg-transparent hover:bg-slate-100 active:bg-slate-200/60 text-slate-600 hover:text-slate-900 border border-transparent focus-visible:ring-slate-400',
   danger:
-    'bg-rose-600 hover:bg-rose-500 active:bg-rose-700 text-white shadow-sm border border-rose-500/30 focus-visible:ring-rose-500',
+    'bg-rose-600 hover:bg-rose-500 active:bg-rose-700 text-white shadow-sm shadow-rose-500/20 border border-rose-500/30 focus-visible:ring-rose-500',
   success:
-    'bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 text-white shadow-sm border border-emerald-500/30 focus-visible:ring-emerald-500',
+    'bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 text-white shadow-sm shadow-emerald-500/20 border border-emerald-500/30 focus-visible:ring-emerald-500',
 }
 
 const SIZES = {
-  sm: 'h-8 px-2.5 text-xs rounded-lg gap-1.5',
-  md: 'h-9 px-3.5 text-sm rounded-xl gap-2',
-  lg: 'h-11 px-5 text-base rounded-xl gap-2.5',
+  sm: 'h-8 px-3 text-xs rounded-xl gap-1.5 font-medium',
+  md: 'h-9 px-4 text-xs sm:text-sm rounded-2xl gap-2 font-medium',
+  lg: 'h-11 px-5 text-sm sm:text-base rounded-2xl gap-2.5 font-semibold',
 }
 
 /**
- * Reusable Button Component
- *
- * @param {Object} props
- * @param {'primary'|'secondary'|'outline'|'ghost'|'danger'|'success'} [props.variant='primary']
- * @param {'sm'|'md'|'lg'} [props.size='md']
- * @param {boolean} [props.isLoading=false]
- * @param {React.ReactNode} [props.leftIcon]
- * @param {React.ReactNode} [props.rightIcon]
- * @param {boolean} [props.disabled]
- * @param {string} [props.className]
- * @param {React.ReactNode} [props.children]
+ * Apple iOS 27 Button Component
  */
 export function Button({
   variant = 'primary',
@@ -54,7 +44,7 @@ export function Button({
     <button
       type={type}
       disabled={isDisabled}
-      className={`inline-flex items-center justify-center font-medium transition-colors select-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950 disabled:opacity-50 disabled:pointer-events-none cursor-pointer ${variantStyles} ${sizeStyles} ${className}`}
+      className={`inline-flex items-center justify-center transition-all duration-150 select-none active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-white disabled:opacity-50 disabled:pointer-events-none cursor-pointer ${variantStyles} ${sizeStyles} ${className}`}
       {...rest}
     >
       {isLoading ? (

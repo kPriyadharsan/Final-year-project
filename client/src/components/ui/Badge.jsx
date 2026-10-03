@@ -1,45 +1,37 @@
 const BADGE_VARIANTS = {
   success: {
-    container: 'bg-emerald-500/10 text-emerald-300 border-emerald-500/25',
-    dot: 'bg-emerald-400',
+    container: 'bg-emerald-50/90 text-emerald-700 border-emerald-200/70',
+    dot: 'bg-emerald-500',
   },
   warning: {
-    container: 'bg-amber-500/10 text-amber-300 border-amber-500/25',
-    dot: 'bg-amber-400',
+    container: 'bg-amber-50/90 text-amber-700 border-amber-200/70',
+    dot: 'bg-amber-500',
   },
   danger: {
-    container: 'bg-rose-500/10 text-rose-300 border-rose-500/25',
-    dot: 'bg-rose-400',
+    container: 'bg-rose-50/90 text-rose-700 border-rose-200/70',
+    dot: 'bg-rose-500',
   },
   info: {
-    container: 'bg-cyan-500/10 text-cyan-300 border-cyan-500/25',
-    dot: 'bg-cyan-400',
+    container: 'bg-sky-50/90 text-sky-700 border-sky-200/70',
+    dot: 'bg-sky-500',
   },
   purple: {
-    container: 'bg-purple-500/10 text-purple-300 border-purple-500/25',
-    dot: 'bg-purple-400',
+    container: 'bg-purple-50/90 text-purple-700 border-purple-200/70',
+    dot: 'bg-purple-500',
   },
   neutral: {
-    container: 'bg-slate-800 text-slate-300 border-slate-700/80',
-    dot: 'bg-slate-400',
+    container: 'bg-slate-100/90 text-slate-700 border-slate-200/70',
+    dot: 'bg-slate-500',
   },
 }
 
 const BADGE_SIZES = {
-  sm: 'text-[11px] px-2 py-0.5 rounded-md gap-1.5',
-  md: 'text-xs px-2.5 py-1 rounded-lg gap-2',
+  sm: 'text-[11px] px-2.5 py-0.5 rounded-full gap-1.5 font-medium',
+  md: 'text-xs px-3 py-1 rounded-full gap-2 font-semibold',
 }
 
 /**
- * Reusable Status Badge Component
- *
- * @param {Object} props
- * @param {'success'|'warning'|'danger'|'info'|'purple'|'neutral'} [props.variant='neutral']
- * @param {'sm'|'md'} [props.size='sm']
- * @param {boolean} [props.dot=false]
- * @param {boolean} [props.pulse=false]
- * @param {string} [props.className]
- * @param {React.ReactNode} [props.children]
+ * Apple iOS 27 Status Pill Badge Component
  */
 export function Badge({
   variant = 'neutral',
@@ -55,7 +47,7 @@ export function Badge({
 
   return (
     <span
-      className={`inline-flex items-center font-medium border font-mono tracking-tight select-none ${currentVariant.container} ${currentSize} ${className}`}
+      className={`inline-flex items-center border select-none tracking-tight shadow-[0_1px_2px_rgba(0,0,0,0.02)] ${currentVariant.container} ${currentSize} ${className}`}
       {...rest}
     >
       {dot && (

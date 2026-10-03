@@ -1,7 +1,223 @@
 @import "tailwindcss";
 
 @layer base {
+  :root {
+    --ios-bg: #f8fafc;
+    --ios-card: rgba(255, 255, 255, 0.85);
+    --ios-border: rgba(226, 232, 240, 0.8);
+    --ios-text-primary: #0f172a;
+    --ios-text-secondary: #64748b;
+    --ios-blue: #0071e3;
+  }
+
+  * {
+    border-color: rgba(226, 232, 240, 0.8);
+  }
+
   body {
-    @apply m-0 min-h-screen bg-slate-950 text-slate-100 antialiased font-sans;
+    background-color: #f8fafc;
+    color: #0f172a;
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Plus Jakarta Sans", sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    min-height: 100vh;
+    margin: 0;
   }
 }
+
+/* =========================================================================
+   Apple iOS 27 / macOS Liquid Glass Global Utilities & Theme Overrides
+   Ensures entire application renders as a luminous, spacious light theme.
+   ========================================================================= */
+
+/* Background conversions */
+.bg-slate-950 {
+  background-color: #f8fafc !important;
+}
+
+.bg-slate-950\/90,
+.bg-slate-950\/80,
+.bg-slate-950\/70,
+.bg-slate-950\/60,
+.bg-slate-950\/50,
+.bg-slate-950\/40 {
+  background-color: rgba(248, 250, 252, 0.85) !important;
+}
+
+.bg-slate-900 {
+  background-color: #ffffff !important;
+}
+
+.bg-slate-900\/95,
+.bg-slate-900\/90,
+.bg-slate-900\/80,
+.bg-slate-900\/70,
+.bg-slate-900\/60,
+.bg-slate-900\/50,
+.bg-slate-900\/40,
+.bg-slate-900\/30,
+.bg-slate-900\/20 {
+  background-color: rgba(255, 255, 255, 0.85) !important;
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+}
+
+.bg-slate-850,
+.bg-slate-800 {
+  background-color: #f1f5f9 !important;
+}
+
+.bg-slate-800\/90,
+.bg-slate-800\/80,
+.bg-slate-800\/70,
+.bg-slate-800\/60,
+.bg-slate-800\/50,
+.bg-slate-800\/40,
+.bg-slate-800\/30 {
+  background-color: rgba(241, 245, 249, 0.85) !important;
+}
+
+/* Border conversions */
+.border-slate-800,
+.border-slate-800\/90,
+.border-slate-800\/80,
+.border-slate-800\/70,
+.border-slate-800\/60,
+.border-slate-800\/50,
+.border-slate-700,
+.border-slate-700\/90,
+.border-slate-700\/80,
+.border-slate-700\/60 {
+  border-color: rgba(226, 232, 240, 0.8) !important;
+}
+
+/* Text color conversions */
+.text-white:not([class*="bg-indigo-"]):not([class*="bg-blue-"]):not([class*="bg-purple-"]):not([class*="bg-rose-"]):not([class*="bg-emerald-"]):not([class*="bg-amber-"]):not([class*="bg-slate-9"]):not([class*="from-"]):not([class*="to-"]):not(.no-light-override) {
+  color: #0f172a !important;
+}
+
+.text-slate-100 {
+  color: #0f172a !important;
+}
+
+.text-slate-200 {
+  color: #1e293b !important;
+}
+
+.text-slate-300 {
+  color: #334155 !important;
+}
+
+.text-slate-400 {
+  color: #64748b !important;
+}
+
+.text-slate-500 {
+  color: #94a3b8 !important;
+}
+
+/* Safeguard white text on colored buttons, gradient badges, and tooltips */
+button.bg-indigo-600,
+button.bg-blue-600,
+button.bg-rose-600,
+button.bg-emerald-600,
+button.bg-purple-600,
+[class*="from-indigo-"] .text-white,
+[class*="from-blue-"] .text-white,
+[class*="from-purple-"] .text-white,
+[class*="from-rose-"] .text-white,
+[class*="from-emerald-"] .text-white,
+[class*="bg-indigo-600"] span,
+[class*="bg-blue-600"] span,
+[class*="bg-rose-600"] span,
+[class*="bg-emerald-600"] span,
+[class*="bg-purple-600"] span,
+.text-white.text-white {
+  /* Targeted preserving white */
+}
+
+/* Inputs, textareas, and selects styling */
+input, textarea, select {
+  color: #0f172a !important;
+}
+
+input::placeholder, textarea::placeholder {
+  color: #94a3b8 !important;
+}
+
+/* Apple Liquid Glass Utility */
+.liquid-glass {
+  background: rgba(255, 255, 255, 0.75);
+  backdrop-filter: blur(28px) saturate(180%);
+  -webkit-backdrop-filter: blur(28px) saturate(180%);
+  border: 1px solid rgba(255, 255, 255, 0.85);
+  box-shadow: 0 16px 40px -10px rgba(0, 0, 0, 0.05), 0 1px 0 0 rgba(255, 255, 255, 0.9) inset;
+}
+
+/* macOS Subtle Scrollbars */
+::-webkit-scrollbar {
+  width: 7px;
+  height: 7px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.35);
+  border-radius: 9999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(100, 116, 139, 0.55);
+}
+
+/* =========================================================================
+   Apple Siri / Apple Intelligence iOS 27 Glowing Perimeter Aura
+   ========================================================================= */
+@keyframes siri-perimeter {
+  0% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0% 50%;
+  }
+}
+
+.siri-aura {
+  position: relative;
+  border: 1px solid rgba(255, 255, 255, 0.95);
+}
+
+.siri-aura::before {
+  content: "";
+  position: absolute;
+  inset: -1.5px;
+  border-radius: inherit;
+  padding: 1.5px;
+  background: linear-gradient(
+    90deg,
+    #ff4b91,
+    #9d4edd,
+    #3a86ff,
+    #00f5d4,
+    #ff4b91
+  );
+  background-size: 300% 300%;
+  animation: siri-perimeter 8s ease-in-out infinite;
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  pointer-events: none;
+  opacity: 0.85;
+}
+
+.siri-glow {
+  box-shadow: 0 16px 40px -10px rgba(58, 134, 255, 0.15),
+              0 0 25px -5px rgba(255, 75, 145, 0.12);
+}
+

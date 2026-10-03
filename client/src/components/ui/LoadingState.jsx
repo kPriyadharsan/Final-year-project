@@ -1,8 +1,5 @@
 import { Loader2 } from 'lucide-react'
 
-/**
- * Standard Circular Spinner
- */
 export function LoadingSpinner({ size = 'md', className = '' }) {
   const sizeMap = {
     sm: 'w-4 h-4',
@@ -13,64 +10,55 @@ export function LoadingSpinner({ size = 'md', className = '' }) {
 
   return (
     <Loader2
-      className={`animate-spin text-indigo-400 shrink-0 ${sizeClass} ${className}`}
+      className={`animate-spin text-blue-600 shrink-0 ${sizeClass} ${className}`}
     />
   )
 }
 
-/**
- * Full page / panel loading state
- */
 export function PageLoading({
   message = 'Loading Smart Classroom data...',
   className = '',
 }) {
   return (
     <div
-      className={`min-h-[40vh] flex flex-col items-center justify-center p-8 space-y-3.5 text-center ${className}`}
+      className={`min-h-[40vh] flex flex-col items-center justify-center p-8 space-y-4 text-center ${className}`}
     >
-      <div className="w-12 h-12 rounded-2xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center">
+      <div className="w-12 h-12 rounded-2xl bg-blue-50 border border-blue-200/80 flex items-center justify-center shadow-sm">
         <LoadingSpinner size="lg" />
       </div>
-      <p className="text-xs font-mono text-slate-400 animate-pulse tracking-wide">
+      <p className="text-xs font-medium text-slate-500 animate-pulse tracking-wide">
         {message}
       </p>
     </div>
   )
 }
 
-/**
- * Skeleton Card Loading Placeholder
- */
 export function SkeletonCard({ className = '' }) {
   return (
     <div
-      className={`p-6 rounded-2xl bg-slate-900/60 border border-slate-800/80 animate-pulse space-y-4 ${className}`}
+      className={`p-6 rounded-3xl bg-white/70 border border-slate-200/70 animate-pulse space-y-4 shadow-sm ${className}`}
     >
       <div className="flex items-center justify-between">
-        <div className="h-4 w-28 bg-slate-800 rounded"></div>
-        <div className="h-8 w-8 bg-slate-800 rounded-lg"></div>
+        <div className="h-4 w-28 bg-slate-200/70 rounded-full"></div>
+        <div className="h-8 w-8 bg-slate-200/70 rounded-xl"></div>
       </div>
-      <div className="h-7 w-20 bg-slate-800 rounded"></div>
-      <div className="h-3 w-40 bg-slate-800/60 rounded"></div>
+      <div className="h-7 w-20 bg-slate-200/70 rounded-xl"></div>
+      <div className="h-3 w-40 bg-slate-200/50 rounded-full"></div>
     </div>
   )
 }
 
-/**
- * Skeleton Table Placeholder
- */
 export function SkeletonTable({ rows = 4, className = '' }) {
   return (
     <div
-      className={`rounded-2xl border border-slate-800/80 bg-slate-900/40 p-4 space-y-3 animate-pulse ${className}`}
+      className={`rounded-3xl border border-slate-200/70 bg-white/70 p-5 space-y-3.5 animate-pulse shadow-sm ${className}`}
     >
-      <div className="h-7 bg-slate-800/80 rounded w-full mb-4"></div>
+      <div className="h-8 bg-slate-200/70 rounded-xl w-full mb-4"></div>
       {Array.from({ length: rows }).map((_, i) => (
         <div key={i} className="flex gap-4 items-center">
-          <div className="h-4 bg-slate-800 rounded flex-1"></div>
-          <div className="h-4 bg-slate-800/70 rounded w-24"></div>
-          <div className="h-4 bg-slate-800/60 rounded w-16"></div>
+          <div className="h-4 bg-slate-200/70 rounded-full flex-1"></div>
+          <div className="h-4 bg-slate-200/60 rounded-full w-24"></div>
+          <div className="h-4 bg-slate-200/50 rounded-full w-16"></div>
         </div>
       ))}
     </div>

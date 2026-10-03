@@ -40,7 +40,7 @@ import {
 import { useAuth } from '../context/AuthContext'
 import { useSocket } from '../context/SocketContext'
 import { testProtectedRoute } from '../services/auth.service'
-import { DashboardLayout, PageContainer } from '../components/layout'
+import { DashboardLayout } from '../components/layout'
 import {
   Button,
   Badge,
@@ -56,6 +56,9 @@ import {
   SkeletonCard,
   EmptyState,
   AlertBanner,
+  SiriCard,
+  BentoContainer,
+  ContiguousStatGrid,
 } from '../components/ui'
 import { VoiceAssistant } from '../components/voice'
 
@@ -548,51 +551,29 @@ export function TeacherPage() {
     }, 800)
   }
 
-  return (
-    <DashboardLayout pageTitle="Faculty Workspace">
-      <PageContainer
-        title={`Welcome back, ${user?.name || 'Prof. Faculty'}`}
-        subtitle="Manage live lecture halls, automated IoT relays, voice commands, and instructional materials."
-        badge={
-          <div className="flex items-center gap-2">
-            <Badge variant="info" dot pulse size="md">
-              TEACHER
-            </Badge>
-            <Badge variant="purple" size="sm">
-              {user?.department || 'Computer Science & Engineering'}
-            </Badge>
-          </div>
-        }
-        breadcrumbs={[
-          { label: 'Faculty Hub', href: '/teacher' },
-          { label: 'Dashboard' },
-          { label: 'Room 302' },
-        ]}
-        actions={
-          <>
-            {/* Prominent Voice Assistant Button */}
-            <Button
-              variant="primary"
-              size="md"
-              leftIcon={<Mic className="w-4 h-4 text-purple-200 animate-pulse" />}
-              onClick={() => setActiveModal('voice')}
-              className="bg-gradient-to-r from-indigo-600 via-purple-600 to-indigo-700 hover:from-indigo-500 hover:to-purple-500 shadow-md shadow-indigo-600/30 font-semibold"
-            >
-              Voice Assistant
-            </Button>
+  const [activeTab, setActiveTab] = useState('overview')
 
-            <Button
-              variant="outline"
-              size="md"
-              leftIcon={<Terminal className="w-3.5 h-3.5" />}
-              onClick={handleTestTeacherRoute}
-              isLoading={isTesting}
-            >
-              Verify Token
-            </Button>
-          </>
-        }
-      >
+  const handleTabChange = (tabId) => {
+    setActiveTab(tabId)
+    if (tabId === 'voice') {
+      setActiveModal('voice')
+    } else if (tabId === 'devices' || tabId === 'relays') {
+      document.getElementById('device-controls-section')?.scrollIntoView({ behavior: 'smooth' })
+    } else if (tabId === 'classes' || tabId === 'schedule') {
+      document.getElementById('classes-section')?.scrollIntoView({ behavior: 'smooth' })
+    } else if (tabId === 'overview') {
+      window.scrollTo({ top: 0, behavior: 'smooth' })
+    }
+  }
+
+  return (
+    <DashboardLayout
+      pageTitle="Faculty Workspace"
+      activeTab={activeTab}
+      onTabChange={handleTabChange}
+      onTriggerVoice={() => setActiveModal('voice')}
+    >
+      <div className="w-full space-y-5">
         {/* Dynamic Action Alert Notification */}
         {actionAlert && (
           <AlertBanner
@@ -603,19 +584,65 @@ export function TeacherPage() {
           />
         )}
 
-        {/* ---------------- 1. QUICK ACTIONS SECTION ---------------- */}
-        <div className="space-y-3">
-          <div className="flex items-center justify-between">
-            <h2 className="text-xs font-semibold text-slate-300 uppercase tracking-wider flex items-center gap-2">
-              <Zap className="w-3.5 h-3.5 text-amber-400" />
-              <span>Quick Actions</span>
-            </h2>
-            <span className="text-[11px] text-slate-400 font-mono">
-              Classroom & Content Shortcuts
-            </span>
+        {/* Apple Intelligence / Siri iOS 27 Master Bento Container (Contiguous, Gap-Free) */}
+        <SiriCard className="overflow-hidden">
+          {/* 1. Siri Header with Faculty Details & Quick Actions */}
+          <div className="p-4 sm:p-5 flex flex-col md:flex-row md:items-center justify-between gap-3 bg-white/70">
+            <div className="flex items-center gap-3.5">
+              <div className="w-11 h-11 rounded-2xl bg-gradient-to-tr from-purple-500 via-indigo-500 to-pink-500 flex items-center justify-center text-white shadow-md shadow-purple-500/25 shrink-0">
+                <Sparkles className="w-5 h-5 animate-pulse" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <h2 className="text-base sm:text-lg font-bold text-slate-900 tracking-tight">
+                    Welcome back, {user?.name || 'Prof. Faculty'}
+                  </h2>
+                  <Badge variant="purple" dot pulse size="sm">
+                    iOS 27 Vision
+                  </Badge>
+                  <span className="hidden sm:inline-flex text-[11px] font-medium text-slate-500">
+                    &bull; {user?.department || 'Computer Science & Engineering'}
+                  </span>
+                </div>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Smart lecture hall Lab 302 &bull; Automated IoT relays, bilingual voice commands & instructional tools.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
+              <Button
+                variant="outline"
+                size="sm"
+                leftIcon={<Terminal className="w-3.5 h-3.5" />}
+                onClick={handleTestTeacherRoute}
+                isLoading={isTesting}
+                className="rounded-xl h-8 px-3 text-xs"
+              >
+                Verify Token
+              </Button>
+              <Button
+                variant="primary"
+                size="sm"
+                leftIcon={<Mic className="w-3.5 h-3.5 text-purple-200 animate-pulse" />}
+                onClick={() => setActiveModal('voice')}
+                className="bg-gradient-to-r from-purple-600 via-indigo-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 shadow-md shadow-purple-500/20 text-white font-semibold rounded-xl h-8 px-3 text-xs"
+              >
+                Voice Assistant
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setActiveModal('notes')}
+                className="rounded-xl h-8 px-3 text-xs"
+              >
+                Summarize Class
+              </Button>
+            </div>
           </div>
 
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+          {/* 2. Siri Shortcuts & Quick Actions Strip (Contiguous, Hairline Divider, Zero Gaps!) */}
+          <div className="border-t border-slate-100/90 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 divide-y sm:divide-y-0 sm:divide-x divide-slate-100/90 bg-white/50">
             {/* Action 1: Control Devices */}
             <button
               type="button"
@@ -623,16 +650,16 @@ export function TeacherPage() {
                 const el = document.getElementById('device-controls-section')
                 el?.scrollIntoView({ behavior: 'smooth' })
               }}
-              className="p-3.5 rounded-2xl bg-slate-900/70 border border-slate-800/90 hover:border-cyan-500/50 hover:bg-slate-800/80 transition-all text-left flex flex-col justify-between group cursor-pointer shadow-sm hover:scale-[1.02]"
+              className="p-4 flex flex-col justify-between hover:bg-slate-50/70 transition-colors group cursor-pointer text-left focus:outline-none"
             >
-              <div className="w-9 h-9 rounded-xl bg-cyan-500/10 border border-cyan-500/20 text-cyan-400 flex items-center justify-center group-hover:bg-cyan-500/20 transition-colors">
+              <div className="w-9 h-9 rounded-2xl bg-cyan-50 border border-cyan-100 flex items-center justify-center text-cyan-600 group-hover:scale-110 transition-transform shadow-2xs">
                 <Power className="w-4 h-4" />
               </div>
               <div className="mt-3">
-                <div className="text-xs font-bold text-white group-hover:text-cyan-300 transition-colors">
+                <div className="text-xs font-bold text-slate-900 group-hover:text-cyan-700 transition-colors">
                   Control Devices
                 </div>
-                <div className="text-[10px] text-slate-400 mt-0.5">Lights, Fan, Projector</div>
+                <div className="text-[10px] text-slate-400 mt-0.5 font-medium">Lights, Fan, Projector</div>
               </div>
             </button>
 
@@ -640,16 +667,16 @@ export function TeacherPage() {
             <button
               type="button"
               onClick={() => setActiveModal('voice')}
-              className="p-3.5 rounded-2xl bg-slate-900/70 border border-slate-800/90 hover:border-purple-500/50 hover:bg-slate-800/80 transition-all text-left flex flex-col justify-between group cursor-pointer shadow-sm hover:scale-[1.02]"
+              className="p-4 flex flex-col justify-between hover:bg-slate-50/70 transition-colors group cursor-pointer text-left focus:outline-none"
             >
-              <div className="w-9 h-9 rounded-xl bg-purple-500/10 border border-purple-500/20 text-purple-400 flex items-center justify-center group-hover:bg-purple-500/20 transition-colors">
+              <div className="w-9 h-9 rounded-2xl bg-purple-50 border border-purple-100 flex items-center justify-center text-purple-600 group-hover:scale-110 transition-transform shadow-2xs">
                 <Mic className="w-4 h-4" />
               </div>
               <div className="mt-3">
-                <div className="text-xs font-bold text-white group-hover:text-purple-300 transition-colors">
+                <div className="text-xs font-bold text-slate-900 group-hover:text-purple-700 transition-colors">
                   Voice Control
                 </div>
-                <div className="text-[10px] text-slate-400 mt-0.5">English & Tamil Audio</div>
+                <div className="text-[10px] text-slate-400 mt-0.5 font-medium">English & Tamil Audio</div>
               </div>
             </button>
 
@@ -657,16 +684,16 @@ export function TeacherPage() {
             <button
               type="button"
               onClick={() => setActiveModal('notes')}
-              className="p-3.5 rounded-2xl bg-slate-900/70 border border-slate-800/90 hover:border-emerald-500/50 hover:bg-slate-800/80 transition-all text-left flex flex-col justify-between group cursor-pointer shadow-sm hover:scale-[1.02]"
+              className="p-4 flex flex-col justify-between hover:bg-slate-50/70 transition-colors group cursor-pointer text-left focus:outline-none"
             >
-              <div className="w-9 h-9 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 flex items-center justify-center group-hover:bg-emerald-500/20 transition-colors">
+              <div className="w-9 h-9 rounded-2xl bg-emerald-50 border border-emerald-100 flex items-center justify-center text-emerald-600 group-hover:scale-110 transition-transform shadow-2xs">
                 <FileText className="w-4 h-4" />
               </div>
               <div className="mt-3">
-                <div className="text-xs font-bold text-white group-hover:text-emerald-300 transition-colors">
+                <div className="text-xs font-bold text-slate-900 group-hover:text-emerald-700 transition-colors">
                   Create Notes
                 </div>
-                <div className="text-[10px] text-slate-400 mt-0.5">Classroom Summary</div>
+                <div className="text-[10px] text-slate-400 mt-0.5 font-medium">Classroom Summary</div>
               </div>
             </button>
 
@@ -674,16 +701,16 @@ export function TeacherPage() {
             <button
               type="button"
               onClick={() => setActiveModal('quiz')}
-              className="p-3.5 rounded-2xl bg-slate-900/70 border border-slate-800/90 hover:border-amber-500/50 hover:bg-slate-800/80 transition-all text-left flex flex-col justify-between group cursor-pointer shadow-sm hover:scale-[1.02]"
+              className="p-4 flex flex-col justify-between hover:bg-slate-50/70 transition-colors group cursor-pointer text-left focus:outline-none"
             >
-              <div className="w-9 h-9 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-400 flex items-center justify-center group-hover:bg-amber-500/20 transition-colors">
+              <div className="w-9 h-9 rounded-2xl bg-amber-50 border border-amber-100 flex items-center justify-center text-amber-600 group-hover:scale-110 transition-transform shadow-2xs">
                 <HelpCircle className="w-4 h-4" />
               </div>
               <div className="mt-3">
-                <div className="text-xs font-bold text-white group-hover:text-amber-300 transition-colors">
+                <div className="text-xs font-bold text-slate-900 group-hover:text-amber-700 transition-colors">
                   Generate Quiz
                 </div>
-                <div className="text-[10px] text-slate-400 mt-0.5">Gemini AI Test Bank</div>
+                <div className="text-[10px] text-slate-400 mt-0.5 font-medium">Gemini AI Test Bank</div>
               </div>
             </button>
 
@@ -691,16 +718,16 @@ export function TeacherPage() {
             <button
               type="button"
               onClick={() => setActiveModal('image')}
-              className="p-3.5 rounded-2xl bg-slate-900/70 border border-slate-800/90 hover:border-pink-500/50 hover:bg-slate-800/80 transition-all text-left flex flex-col justify-between group cursor-pointer shadow-sm hover:scale-[1.02]"
+              className="p-4 flex flex-col justify-between hover:bg-slate-50/70 transition-colors group cursor-pointer text-left focus:outline-none"
             >
-              <div className="w-9 h-9 rounded-xl bg-pink-500/10 border border-pink-500/20 text-pink-400 flex items-center justify-center group-hover:bg-pink-500/20 transition-colors">
+              <div className="w-9 h-9 rounded-2xl bg-pink-50 border border-pink-100 flex items-center justify-center text-pink-600 group-hover:scale-110 transition-transform shadow-2xs">
                 <ImageIcon className="w-4 h-4" />
               </div>
               <div className="mt-3">
-                <div className="text-xs font-bold text-white group-hover:text-pink-300 transition-colors">
+                <div className="text-xs font-bold text-slate-900 group-hover:text-pink-700 transition-colors">
                   Generate Image
                 </div>
-                <div className="text-[10px] text-slate-400 mt-0.5">Educational Diagrams</div>
+                <div className="text-[10px] text-slate-400 mt-0.5 font-medium">Educational Diagrams</div>
               </div>
             </button>
 
@@ -708,176 +735,115 @@ export function TeacherPage() {
             <button
               type="button"
               onClick={() => setActiveModal('ppt')}
-              className="p-3.5 rounded-2xl bg-slate-900/70 border border-slate-800/90 hover:border-blue-500/50 hover:bg-slate-800/80 transition-all text-left flex flex-col justify-between group cursor-pointer shadow-sm hover:scale-[1.02]"
+              className="p-4 flex flex-col justify-between hover:bg-slate-50/70 transition-colors group cursor-pointer text-left focus:outline-none"
             >
-              <div className="w-9 h-9 rounded-xl bg-blue-500/10 border border-blue-500/20 text-blue-400 flex items-center justify-center group-hover:bg-blue-500/20 transition-colors">
+              <div className="w-9 h-9 rounded-2xl bg-blue-50 border border-blue-100 flex items-center justify-center text-blue-600 group-hover:scale-110 transition-transform shadow-2xs">
                 <Presentation className="w-4 h-4" />
               </div>
               <div className="mt-3">
-                <div className="text-xs font-bold text-white group-hover:text-blue-300 transition-colors">
+                <div className="text-xs font-bold text-slate-900 group-hover:text-blue-700 transition-colors">
                   Generate PPT
                 </div>
-                <div className="text-[10px] text-slate-400 mt-0.5">Lecture Slide Outlines</div>
+                <div className="text-[10px] text-slate-400 mt-0.5 font-medium">Lecture Slide Outlines</div>
               </div>
             </button>
           </div>
-        </div>
 
-        {/* ---------------- 2. SYSTEM INFRASTRUCTURE STATUS ---------------- */}
-        <section className="space-y-3">
-          <div className="flex items-center justify-between">
-            <h2 className="text-xs font-semibold text-slate-300 uppercase tracking-wider flex items-center gap-2">
-              <Activity className="w-3.5 h-3.5 text-cyan-400" />
-              <span>System Infrastructure Status</span>
-            </h2>
-            <div className="flex items-center gap-2">
-              {lastHealthCheck && (
-                <span className="text-[11px] text-slate-500 font-mono hidden sm:inline">
-                  Checked: {lastHealthCheck.toLocaleTimeString()}
-                </span>
-              )}
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={fetchSystemStatus}
-                isLoading={healthLoading}
-                className="h-7 px-2 text-xs text-slate-400 hover:text-white"
-                title="Refresh system status"
-              >
-                <RefreshCw className={`w-3 h-3 mr-1.5 ${healthLoading ? 'animate-spin' : ''}`} />
-                Refresh
-              </Button>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+          {/* 3. System Infrastructure Health (Contiguous, Hairline Divider, Zero Gaps!) */}
+          <div className="border-t border-slate-100/90 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 divide-y sm:divide-y-0 sm:divide-x divide-slate-100/90 bg-slate-50/40 text-xs">
             {/* 1. Backend */}
-            <div className="p-3.5 rounded-xl bg-slate-900/80 border border-slate-800/90 flex flex-col justify-between">
-              <div className="flex items-center justify-between">
-                <div className="w-8 h-8 rounded-lg bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 flex items-center justify-center">
-                  <Server className="w-4 h-4" />
+            <div className="p-3.5 sm:p-4 flex items-center justify-between gap-2 hover:bg-white/60 transition-colors">
+              <div className="flex items-center gap-2.5">
+                <div className="w-7 h-7 rounded-xl bg-indigo-50 border border-indigo-100 text-indigo-600 flex items-center justify-center shrink-0">
+                  <Server className="w-3.5 h-3.5" />
                 </div>
-                <Badge
-                  variant={systemHealth?.backend?.status === 'online' ? 'success' : 'danger'}
-                  dot
-                  pulse={systemHealth?.backend?.status === 'online'}
-                  size="sm"
-                >
-                  {systemHealth?.backend?.status === 'online' ? 'Online' : 'Offline'}
-                </Badge>
-              </div>
-              <div className="mt-2.5">
-                <div className="text-xs font-bold text-white">Backend</div>
-                <div className="text-[10px] text-slate-400 font-mono truncate">
-                  {systemHealth?.backend?.uptimeFormatted ? `Up ${systemHealth.backend.uptimeFormatted}` : (systemHealth?.backend?.details || 'Node.js Express')}
+                <div>
+                  <span className="font-bold text-slate-800 block text-[11px]">Backend API</span>
+                  <span className="text-[10px] text-slate-400 font-mono truncate max-w-[90px] block">
+                    {systemHealth?.backend?.uptimeFormatted ? `Up ${systemHealth.backend.uptimeFormatted}` : 'Port 5000'}
+                  </span>
                 </div>
               </div>
+              <Badge variant={systemHealth?.backend?.status === 'online' ? 'success' : 'danger'} dot size="sm">
+                {systemHealth?.backend?.status === 'online' ? 'Online' : 'Offline'}
+              </Badge>
             </div>
 
             {/* 2. MongoDB */}
-            <div className="p-3.5 rounded-xl bg-slate-900/80 border border-slate-800/90 flex flex-col justify-between">
-              <div className="flex items-center justify-between">
-                <div className="w-8 h-8 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 flex items-center justify-center">
-                  <Database className="w-4 h-4" />
+            <div className="p-3.5 sm:p-4 flex items-center justify-between gap-2 hover:bg-white/60 transition-colors">
+              <div className="flex items-center gap-2.5">
+                <div className="w-7 h-7 rounded-xl bg-emerald-50 border border-emerald-100 text-emerald-600 flex items-center justify-center shrink-0">
+                  <Database className="w-3.5 h-3.5" />
                 </div>
-                <Badge
-                  variant={systemHealth?.mongodb?.connected ? 'success' : 'danger'}
-                  dot
-                  pulse={systemHealth?.mongodb?.connected}
-                  size="sm"
-                >
-                  {systemHealth?.mongodb?.connected ? 'Connected' : 'Offline'}
-                </Badge>
-              </div>
-              <div className="mt-2.5">
-                <div className="text-xs font-bold text-white">MongoDB</div>
-                <div className="text-[10px] text-slate-400 font-mono truncate">
-                  {systemHealth?.mongodb?.details || (systemHealth?.mongodb?.connected ? 'Atlas Active' : 'Disconnected')}
+                <div>
+                  <span className="font-bold text-slate-800 block text-[11px]">MongoDB</span>
+                  <span className="text-[10px] text-slate-400 font-mono">Atlas Live</span>
                 </div>
               </div>
+              <Badge variant={systemHealth?.mongodb?.connected ? 'success' : 'danger'} dot size="sm">
+                {systemHealth?.mongodb?.connected ? 'Live' : 'Offline'}
+              </Badge>
             </div>
 
             {/* 3. MQTT */}
-            <div className="p-3.5 rounded-xl bg-slate-900/80 border border-slate-800/90 flex flex-col justify-between">
-              <div className="flex items-center justify-between">
-                <div className="w-8 h-8 rounded-lg bg-cyan-500/10 border border-cyan-500/20 text-cyan-400 flex items-center justify-center">
-                  <Wifi className="w-4 h-4" />
+            <div className="p-3.5 sm:p-4 flex items-center justify-between gap-2 hover:bg-white/60 transition-colors">
+              <div className="flex items-center gap-2.5">
+                <div className="w-7 h-7 rounded-xl bg-cyan-50 border border-cyan-100 text-cyan-600 flex items-center justify-center shrink-0">
+                  <Wifi className="w-3.5 h-3.5" />
                 </div>
-                <Badge
-                  variant={systemHealth?.mqtt?.connected ? 'success' : 'danger'}
-                  dot
-                  pulse={systemHealth?.mqtt?.connected}
-                  size="sm"
-                >
-                  {systemHealth?.mqtt?.connected ? 'Broker Live' : 'Offline'}
-                </Badge>
-              </div>
-              <div className="mt-2.5">
-                <div className="text-xs font-bold text-white">MQTT</div>
-                <div className="text-[10px] text-slate-400 font-mono truncate">
-                  {systemHealth?.mqtt?.brokerUrl || (systemHealth?.mqtt?.connected ? 'Active Broker' : 'Broker Down')}
+                <div>
+                  <span className="font-bold text-slate-800 block text-[11px]">MQTT Broker</span>
+                  <span className="text-[10px] text-slate-400 font-mono">1883</span>
                 </div>
               </div>
+              <Badge variant={systemHealth?.mqtt?.connected ? 'success' : 'danger'} dot size="sm">
+                {systemHealth?.mqtt?.connected ? 'Live' : 'Offline'}
+              </Badge>
             </div>
 
             {/* 4. Gemini */}
-            <div className="p-3.5 rounded-xl bg-slate-900/80 border border-slate-800/90 flex flex-col justify-between">
-              <div className="flex items-center justify-between">
-                <div className="w-8 h-8 rounded-lg bg-purple-500/10 border border-purple-500/20 text-purple-400 flex items-center justify-center">
-                  <Sparkles className="w-4 h-4" />
+            <div className="p-3.5 sm:p-4 flex items-center justify-between gap-2 hover:bg-white/60 transition-colors">
+              <div className="flex items-center gap-2.5">
+                <div className="w-7 h-7 rounded-xl bg-purple-50 border border-purple-100 text-purple-600 flex items-center justify-center shrink-0">
+                  <Sparkles className="w-3.5 h-3.5" />
                 </div>
-                <Badge
-                  variant={systemHealth?.gemini?.status === 'online' ? 'purple' : systemHealth?.gemini?.status === 'degraded' ? 'warning' : 'danger'}
-                  dot
-                  size="sm"
-                >
-                  {systemHealth?.gemini?.status === 'online' ? 'Online' : systemHealth?.gemini?.status === 'degraded' ? 'Fallback' : 'Offline'}
-                </Badge>
-              </div>
-              <div className="mt-2.5">
-                <div className="text-xs font-bold text-white">Gemini</div>
-                <div className="text-[10px] text-slate-400 font-mono truncate">
-                  {systemHealth?.gemini?.model || (systemHealth?.gemini?.configured ? 'gemini-2.5-flash' : 'Rule Fallback')}
+                <div>
+                  <span className="font-bold text-slate-800 block text-[11px]">Gemini AI</span>
+                  <span className="text-[10px] text-slate-400 font-mono">2.5-flash</span>
                 </div>
               </div>
+              <Badge variant={systemHealth?.gemini?.status === 'online' ? 'purple' : 'warning'} dot size="sm">
+                {systemHealth?.gemini?.status === 'online' ? 'Online' : 'Degraded'}
+              </Badge>
             </div>
 
             {/* 5. ESP32 */}
-            <div className="p-3.5 rounded-xl bg-slate-900/80 border border-slate-800/90 flex flex-col justify-between">
-              <div className="flex items-center justify-between">
-                <div className="w-8 h-8 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-400 flex items-center justify-center">
-                  <Cpu className="w-4 h-4" />
+            <div className="p-3.5 sm:p-4 flex items-center justify-between gap-2 hover:bg-white/60 transition-colors">
+              <div className="flex items-center gap-2.5">
+                <div className="w-7 h-7 rounded-xl bg-amber-50 border border-amber-100 text-amber-600 flex items-center justify-center shrink-0">
+                  <Cpu className="w-3.5 h-3.5" />
                 </div>
-                <Badge
-                  variant={systemHealth?.esp32?.connected ? 'success' : 'danger'}
-                  dot
-                  pulse={systemHealth?.esp32?.connected}
-                  size="sm"
-                >
-                  {systemHealth?.esp32?.connected ? 'Hardware Up' : 'Offline'}
-                </Badge>
-              </div>
-              <div className="mt-2.5">
-                <div className="text-xs font-bold text-white">ESP32</div>
-                <div className="text-[10px] text-slate-400 font-mono truncate">
-                  {systemHealth?.esp32?.connected
-                    ? `${systemHealth.esp32.onlineDevices || 3}/${systemHealth.esp32.totalDevices || 3} Relays Sync`
-                    : 'LWT Disconnected'}
+                <div>
+                  <span className="font-bold text-slate-800 block text-[11px]">ESP32 Relays</span>
+                  <span className="text-[10px] text-slate-400 font-mono">RM-302</span>
                 </div>
               </div>
+              <Badge variant={systemHealth?.esp32?.connected ? 'success' : 'danger'} dot size="sm">
+                {systemHealth?.esp32?.connected ? 'Active' : 'Offline'}
+              </Badge>
             </div>
           </div>
-        </section>
+        </SiriCard>
 
         {/* ---------------- 3. CLASSROOM DEVICE STATUS (Light, Fan, Projector) ---------------- */}
         <section id="device-controls-section" className="space-y-4">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div>
               <div className="flex items-center gap-2.5">
-                <h3 className="text-base font-bold text-white tracking-tight">
+                <h3 className="text-base font-bold text-slate-900 tracking-tight">
                   Classroom Device Status & Relays
                 </h3>
-                <span className="text-xs font-mono px-2 py-0.5 rounded bg-indigo-500/10 border border-indigo-500/20 text-indigo-300">
+                <span className="text-xs font-mono px-2 py-0.5 rounded bg-indigo-50 border border-indigo-200/70 text-indigo-700">
                   Room 302
                 </span>
               </div>
@@ -915,17 +881,15 @@ export function TeacherPage() {
             </div>
           </div>
 
-          {/* 3 Core Device Cards: Light, Fan, Projector */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          {/* 3 Core Device Cards: Light, Fan, Projector (Gap-Free Bento Container) */}
+          <BentoContainer className="grid grid-cols-1 md:grid-cols-3 divide-y md:divide-y-0 md:divide-x divide-slate-100/90">
             {devices.map((device) => {
               const IconComponent = device.icon
               return (
-                <Card
+                <div
                   key={device.id}
-                  className={`p-5 space-y-4 border transition-all ${
-                    device.isOn
-                      ? 'border-indigo-500/40 bg-slate-900/80 shadow-md shadow-indigo-500/5'
-                      : 'border-slate-800/80 bg-slate-900/40'
+                  className={`p-6 space-y-4 transition-all hover:bg-slate-50/40 ${
+                    device.isOn ? 'bg-blue-50/20' : ''
                   }`}
                 >
                   {/* Top Bar: Icon, Name, and Status Badges */}
@@ -934,17 +898,17 @@ export function TeacherPage() {
                       <div
                         className={`w-11 h-11 rounded-2xl flex items-center justify-center transition-colors ${
                           device.isOn
-                            ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/30'
-                            : 'bg-slate-800 text-slate-400 border border-slate-700/80'
+                            ? 'bg-blue-600 text-white shadow-md shadow-blue-500/20'
+                            : 'bg-slate-100 text-slate-500 border border-slate-200/80'
                         }`}
                       >
                         <IconComponent className="w-5 h-5" />
                       </div>
                       <div>
-                        <h4 className="text-sm font-bold text-white tracking-tight">
+                        <h4 className="text-sm font-bold text-slate-900 tracking-tight">
                           {device.name}
                         </h4>
-                        <span className="text-[11px] text-slate-400 font-mono block">
+                        <span className="text-[11px] text-slate-400 font-medium block">
                           {device.type}
                         </span>
                       </div>
@@ -962,40 +926,40 @@ export function TeacherPage() {
                   </div>
 
                   {/* Device Telemetry Specs */}
-                  <div className="p-3 rounded-xl bg-slate-950/60 border border-slate-800/80 space-y-1 text-xs">
-                    <div className="flex justify-between items-center text-slate-400">
+                  <div className="p-3.5 rounded-2xl bg-white/90 border border-slate-200/70 space-y-1.5 text-xs shadow-xs">
+                    <div className="flex justify-between items-center text-slate-500">
                       <span>Operating State:</span>
                       <span
-                        className={`font-mono font-bold ${
-                          device.isOn ? 'text-emerald-400' : 'text-slate-400'
+                        className={`font-semibold ${
+                          device.isOn ? 'text-emerald-600' : 'text-slate-400'
                         }`}
                       >
                         {device.isOn ? '● ACTIVE (ON)' : '○ STANDBY (OFF)'}
                       </span>
                     </div>
-                    <div className="flex justify-between items-center text-slate-400">
+                    <div className="flex justify-between items-center text-slate-500">
                       <span>Parameters:</span>
-                      <span className="text-slate-200 font-medium truncate max-w-[150px]">
+                      <span className="text-slate-800 font-medium truncate max-w-[150px]">
                         {device.details}
                       </span>
                     </div>
-                    <div className="flex justify-between items-center text-slate-400">
+                    <div className="flex justify-between items-center text-slate-500">
                       <span>Relay Channel:</span>
-                      <span className="text-cyan-300 font-mono text-[10px]">
+                      <span className="text-blue-600 font-mono text-[10px] font-semibold">
                         {device.relayChannel}
                       </span>
                     </div>
                   </div>
 
                   {/* Control Button (ON/OFF Toggle) & Real-time Simulation */}
-                  <div className="pt-2 border-t border-slate-800/60 flex items-center justify-between gap-3">
+                  <div className="pt-2 border-t border-slate-100 flex items-center justify-between gap-3">
                     <div className="flex items-center gap-1.5">
                       <span
                         className={`w-2 h-2 rounded-full ${
-                          device.isOn ? 'bg-emerald-400 animate-pulse' : 'bg-slate-600'
+                          device.isOn ? 'bg-emerald-500 animate-pulse' : 'bg-slate-300'
                         }`}
                       ></span>
-                      <span className="text-[11px] text-slate-400 font-mono">
+                      <span className="text-[11px] text-slate-500 font-medium">
                         Power: {device.isOn ? 'ON' : 'OFF'}
                       </span>
                     </div>
@@ -1004,33 +968,34 @@ export function TeacherPage() {
                       <Button
                         variant="ghost"
                         size="sm"
-                        className="text-[11px] h-8 px-2 text-slate-400 hover:text-indigo-300"
+                        className="text-[11px] h-8 px-2 text-slate-500 hover:text-blue-600"
                         title="Simulate incoming MQTT status message from ESP32"
                         onClick={() => handleSimulateStatus(device)}
                       >
-                        Simulate MQTT
+                        Simulate
                       </Button>
                       <Button
                         variant={device.isOn ? 'danger' : 'primary'}
                         size="sm"
                         leftIcon={<Power className="w-3.5 h-3.5" />}
                         onClick={() => handleToggleDevice(device)}
+                        className="rounded-xl"
                       >
                         {device.isOn ? 'Turn OFF' : 'Turn ON'}
                       </Button>
                     </div>
                   </div>
-                </Card>
+                </div>
               )
             })}
-          </div>
+          </BentoContainer>
         </section>
 
         {/* ---------------- 3. TODAY'S CLASSES & RECENT NOTES ---------------- */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Today's Classes List (Left 2 Columns) */}
-          <div className="lg:col-span-2 space-y-4">
-            <Card>
+          <div id="classes-section" className="lg:col-span-2 space-y-4">
+            <Card id="schedule-section">
               <CardHeader className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div>
                   <CardTitle className="flex items-center gap-2">
@@ -1570,7 +1535,7 @@ export function TeacherPage() {
             )}
           </div>
         </Modal>
-      </PageContainer>
+      </div>
     </DashboardLayout>
   )
 }

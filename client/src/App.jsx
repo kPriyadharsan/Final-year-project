@@ -15,9 +15,9 @@ function HomeRedirect() {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center space-y-4">
-        <div className="w-12 h-12 rounded-full border-2 border-indigo-500/20 border-t-indigo-500 animate-spin"></div>
-        <p className="text-slate-400 text-xs font-mono animate-pulse">
+      <div className="min-h-screen bg-[#f8fafc] flex flex-col items-center justify-center space-y-4">
+        <div className="w-12 h-12 rounded-full border-2 border-blue-500/20 border-t-blue-600 animate-spin"></div>
+        <p className="text-slate-500 text-xs font-medium animate-pulse">
           Initializing Smart Classroom session...
         </p>
       </div>
@@ -40,24 +40,24 @@ function HomeRedirect() {
 }
 
 /**
- * Clean wrapper layout for public authentication and 404 pages
+ * Clean wrapper layout for public authentication and 404 pages (Apple iOS 27 Theme)
  */
 function PublicLayout({ children }) {
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col justify-between selection:bg-indigo-500 selection:text-white">
-      {/* Background Glow Accents */}
+    <div className="min-h-screen bg-[#f8fafc] text-slate-800 flex flex-col justify-between selection:bg-blue-500/20 selection:text-blue-900 relative">
+      {/* iOS 27 Background Fluid Glow Accents */}
       <div className="fixed inset-0 overflow-hidden pointer-events-none -z-10">
-        <div className="absolute -top-40 -left-40 w-96 h-96 bg-indigo-600/20 rounded-full blur-3xl"></div>
-        <div className="absolute top-1/3 -right-40 w-96 h-96 bg-purple-600/20 rounded-full blur-3xl"></div>
-        <div className="absolute -bottom-40 left-1/3 w-96 h-96 bg-blue-600/20 rounded-full blur-3xl"></div>
+        <div className="absolute -top-40 -left-40 w-[500px] h-[500px] bg-gradient-to-br from-blue-300/25 to-indigo-300/20 rounded-full blur-3xl opacity-70"></div>
+        <div className="absolute top-1/3 -right-40 w-[500px] h-[500px] bg-gradient-to-br from-purple-300/20 via-pink-200/20 to-transparent rounded-full blur-3xl opacity-60"></div>
+        <div className="absolute -bottom-40 left-1/3 w-[500px] h-[500px] bg-gradient-to-tr from-cyan-300/20 to-blue-200/20 rounded-full blur-3xl opacity-60"></div>
       </div>
 
       <div className="flex-1 flex items-center justify-center p-4">
         {children}
       </div>
 
-      <footer className="border-t border-slate-800/80 bg-slate-900/30 py-4 text-center text-xs text-slate-500">
-        <p>AI Voice-Controlled Smart Classroom &bull; Final Year Project</p>
+      <footer className="border-t border-slate-200/70 bg-white/50 backdrop-blur-md py-4 text-center text-xs text-slate-500">
+        <p>AI Voice-Controlled Smart Classroom &bull; Apple iOS 27 Vision Theme</p>
       </footer>
     </div>
   )

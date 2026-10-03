@@ -35,7 +35,7 @@ import {
 } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import { testProtectedRoute } from '../services/auth.service'
-import { DashboardLayout, PageContainer } from '../components/layout'
+import { DashboardLayout } from '../components/layout'
 import {
   Button,
   Badge,
@@ -53,6 +53,9 @@ import {
   EmptyState,
   ErrorState,
   AlertBanner,
+  SiriCard,
+  BentoContainer,
+  ContiguousStatGrid,
 } from '../components/ui'
 
 export function AdminPage() {
@@ -502,120 +505,199 @@ export function AdminPage() {
       pageTitle="Super Admin Console"
       activeTab={activeTab}
       onTabChange={handleTabChange}
+      onTriggerVoice={() => handleTabChange('ai-system')}
     >
-      <PageContainer
-        title="Super Admin Dashboard"
-        subtitle="Manage faculty accounts, lecture facilities, IoT relay nodes, and Gemini voice engine telemetry."
-        badge={
-          <Badge variant="purple" dot pulse size="md">
-            SUPER_ADMIN
-          </Badge>
-        }
-        breadcrumbs={[
-          { label: 'Campus Admin', href: '/admin#overview' },
-          { label: activeTab.toUpperCase() },
-        ]}
-        actions={
-          <>
-            <Button
-              variant="outline"
-              size="sm"
-              leftIcon={<RefreshCw className={`w-3.5 h-3.5 ${isRefreshing ? 'animate-spin' : ''}`} />}
-              onClick={fetchDashboardData}
-              disabled={isRefreshing}
-            >
-              Refresh
-            </Button>
-            <Button
-              variant="primary"
-              size="sm"
-              leftIcon={<Sliders className="w-3.5 h-3.5" />}
-              onClick={() => {
-                setModalType('settings')
-                setIsModalOpen(true)
-              }}
-            >
-              System Config
-            </Button>
-          </>
-        }
-      >
-        {/* Navigation Tab Bar matching specifications */}
-        <div className="flex items-center gap-1.5 overflow-x-auto pb-1 border-b border-slate-800/80 scrollbar-none">
-          {[
-            { id: 'overview', label: 'Overview', icon: <LayoutDashboard className="w-4 h-4" /> },
-            { id: 'teachers', label: 'Teachers', icon: <Users className="w-4 h-4" /> },
-            { id: 'classes', label: 'Classes', icon: <School className="w-4 h-4" /> },
-            { id: 'devices', label: 'Devices', icon: <Cpu className="w-4 h-4" /> },
-            { id: 'ai-system', label: 'AI / System', icon: <Sparkles className="w-4 h-4" /> },
-            { id: 'settings', label: 'Settings', icon: <Settings className="w-4 h-4" /> },
-          ].map((tab) => {
-            const isCurrent = activeTab === tab.id
-            return (
-              <button
-                key={tab.id}
-                type="button"
-                onClick={() => handleTabChange(tab.id)}
-                className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-medium whitespace-nowrap transition-all cursor-pointer ${
-                  isCurrent
-                    ? 'bg-indigo-600 text-white shadow-sm shadow-indigo-600/25'
-                    : 'text-slate-400 hover:text-white hover:bg-slate-800/70'
-                }`}
-              >
-                {tab.icon}
-                <span>{tab.label}</span>
-              </button>
-            )
-          })}
-        </div>
+      <div className="w-full space-y-4">
+        {/* Apple Intelligence / Siri iOS 27 Master Bento Container (Contiguous, Gap-Free) */}
+        <SiriCard className="overflow-hidden">
+          {/* 1. Siri Header with Live Status & Quick Action Buttons */}
+          <div className="p-4 sm:p-5 flex flex-col md:flex-row md:items-center justify-between gap-3 bg-white/70">
+            <div className="flex items-center gap-3.5">
+              <div className="w-11 h-11 rounded-2xl bg-gradient-to-tr from-purple-500 via-indigo-500 to-pink-500 flex items-center justify-center text-white shadow-md shadow-purple-500/25 shrink-0">
+                <Sparkles className="w-5 h-5 animate-pulse" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <h2 className="text-base sm:text-lg font-bold text-slate-900 tracking-tight">
+                    Siri Intelligence & Campus Telemetry
+                  </h2>
+                  <Badge variant="purple" dot pulse size="sm">
+                    iOS 27 Vision
+                  </Badge>
+                </div>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Automated facility orchestration, MQTT relay bus & Gemini bilingual engine.
+                </p>
+              </div>
+            </div>
 
-        {/* Global Core Metrics Banner (Visible across top of dashboard) */}
-        <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          <StatCard
-            title="Total Teachers"
-            value={metrics.totalTeachers}
-            description="Registered faculty accounts"
-            icon={<Users className="w-5 h-5 text-indigo-400" />}
-            badge={
-              <Badge variant="purple" size="sm">
-                Role RBAC
+            <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
+              <Button
+                variant="outline"
+                size="sm"
+                leftIcon={<RefreshCw className={`w-3.5 h-3.5 ${isRefreshing ? 'animate-spin' : ''}`} />}
+                onClick={fetchDashboardData}
+                disabled={isRefreshing}
+                className="rounded-xl h-8 px-3 text-xs"
+              >
+                Refresh
+              </Button>
+              <Button
+                variant="primary"
+                size="sm"
+                leftIcon={<Sparkles className="w-3.5 h-3.5 text-purple-200 animate-pulse" />}
+                onClick={() => handleTabChange('ai-system')}
+                className="bg-gradient-to-r from-purple-600 via-indigo-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 shadow-md shadow-purple-500/20 text-white font-semibold rounded-xl h-8 px-3 text-xs"
+              >
+                AI Voice Simulator
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                leftIcon={<Sliders className="w-3.5 h-3.5" />}
+                onClick={() => {
+                  setModalType('settings')
+                  setIsModalOpen(true)
+                }}
+                className="rounded-xl h-8 px-3 text-xs"
+              >
+                Config
+              </Button>
+            </div>
+          </div>
+
+          {/* 2. Core Metrics Strip (Contiguous, Hairline Divider, Zero Gaps!) */}
+          <div className="border-t border-slate-100/90 grid grid-cols-2 lg:grid-cols-4 divide-y sm:divide-y-0 sm:divide-x divide-slate-100/90 bg-white/50">
+            <div className="p-4 sm:p-5 flex items-start justify-between gap-3 hover:bg-slate-50/50 transition-colors">
+              <div>
+                <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider block">Total Faculty</span>
+                <div className="mt-1 text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">{metrics.totalTeachers}</div>
+                <span className="text-[11px] text-slate-400 mt-1 block font-medium">Registered accounts</span>
+              </div>
+              <div className="w-10 h-10 rounded-2xl bg-indigo-50 border border-indigo-100/80 flex items-center justify-center text-indigo-600 shrink-0 shadow-2xs">
+                <Users className="w-5 h-5" />
+              </div>
+            </div>
+
+            <div className="p-4 sm:p-5 flex items-start justify-between gap-3 hover:bg-slate-50/50 transition-colors">
+              <div>
+                <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider block">Classrooms</span>
+                <div className="mt-1 text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">{metrics.totalClasses}</div>
+                <span className="text-[11px] text-slate-400 mt-1 block font-medium">8 Active lecture halls</span>
+              </div>
+              <div className="w-10 h-10 rounded-2xl bg-cyan-50 border border-cyan-100/80 flex items-center justify-center text-cyan-600 shrink-0 shadow-2xs">
+                <School className="w-5 h-5" />
+              </div>
+            </div>
+
+            <div className="p-4 sm:p-5 flex items-start justify-between gap-3 hover:bg-slate-50/50 transition-colors">
+              <div>
+                <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider block">Students</span>
+                <div className="mt-1 text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">{metrics.totalStudents}</div>
+                <span className="text-[11px] text-slate-400 mt-1 block font-medium">Enrolled active roster</span>
+              </div>
+              <div className="w-10 h-10 rounded-2xl bg-amber-50 border border-amber-100/80 flex items-center justify-center text-amber-600 shrink-0 shadow-2xs">
+                <GraduationCap className="w-5 h-5" />
+              </div>
+            </div>
+
+            <div className="p-4 sm:p-5 flex items-start justify-between gap-3 hover:bg-slate-50/50 transition-colors">
+              <div>
+                <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider block">IoT Nodes</span>
+                <div className="mt-1 text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">{metrics.connectedDevices}</div>
+                <span className="text-[11px] text-emerald-600 font-medium mt-1 block flex items-center gap-1">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-ping inline-block" /> 24 Online
+                </span>
+              </div>
+              <div className="w-10 h-10 rounded-2xl bg-emerald-50 border border-emerald-100/80 flex items-center justify-center text-emerald-600 shrink-0 shadow-2xs">
+                <Cpu className="w-5 h-5" />
+              </div>
+            </div>
+          </div>
+
+          {/* 3. System Infrastructure Health (Contiguous, Hairline Divider, Zero Gaps!) */}
+          <div className="border-t border-slate-100/90 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 divide-y sm:divide-y-0 sm:divide-x divide-slate-100/90 bg-slate-50/40 text-xs">
+            {/* 1. Backend */}
+            <div className="p-3.5 sm:p-4 flex items-center justify-between gap-2 hover:bg-white/60 transition-colors">
+              <div className="flex items-center gap-2.5">
+                <div className="w-7 h-7 rounded-xl bg-indigo-50 border border-indigo-100 text-indigo-600 flex items-center justify-center shrink-0">
+                  <Server className="w-3.5 h-3.5" />
+                </div>
+                <div>
+                  <span className="font-bold text-slate-800 block text-[11px]">Backend API</span>
+                  <span className="text-[10px] text-slate-400 font-mono">{systemHealth?.backend?.uptimeFormatted ? `Up ${systemHealth.backend.uptimeFormatted}` : 'Port 5000'}</span>
+                </div>
+              </div>
+              <Badge variant={systemHealth?.backend?.status === 'online' ? 'success' : 'danger'} dot size="sm">
+                {systemHealth?.backend?.status === 'online' ? 'Online' : 'Offline'}
               </Badge>
-            }
-          />
-          <StatCard
-            title="Total Classes"
-            value={metrics.totalClasses}
-            description="Smart lecture halls"
-            icon={<School className="w-5 h-5 text-cyan-400" />}
-            badge={
-              <Badge variant="info" size="sm">
-                8 Active Rooms
+            </div>
+
+            {/* 2. MongoDB */}
+            <div className="p-3.5 sm:p-4 flex items-center justify-between gap-2 hover:bg-white/60 transition-colors">
+              <div className="flex items-center gap-2.5">
+                <div className="w-7 h-7 rounded-xl bg-emerald-50 border border-emerald-100 text-emerald-600 flex items-center justify-center shrink-0">
+                  <Database className="w-3.5 h-3.5" />
+                </div>
+                <div>
+                  <span className="font-bold text-slate-800 block text-[11px]">MongoDB</span>
+                  <span className="text-[10px] text-slate-400 font-mono">Atlas Live</span>
+                </div>
+              </div>
+              <Badge variant={systemHealth?.mongodb?.connected ? 'success' : 'danger'} dot size="sm">
+                {systemHealth?.mongodb?.connected ? 'Live' : 'Offline'}
               </Badge>
-            }
-          />
-          <StatCard
-            title="Total Students"
-            value={metrics.totalStudents}
-            description="Enrolled student accounts"
-            icon={<GraduationCap className="w-5 h-5 text-amber-400" />}
-            badge={
-              <Badge variant="neutral" size="sm">
-                Database Synced
+            </div>
+
+            {/* 3. MQTT */}
+            <div className="p-3.5 sm:p-4 flex items-center justify-between gap-2 hover:bg-white/60 transition-colors">
+              <div className="flex items-center gap-2.5">
+                <div className="w-7 h-7 rounded-xl bg-cyan-50 border border-cyan-100 text-cyan-600 flex items-center justify-center shrink-0">
+                  <Wifi className="w-3.5 h-3.5" />
+                </div>
+                <div>
+                  <span className="font-bold text-slate-800 block text-[11px]">MQTT Broker</span>
+                  <span className="text-[10px] text-slate-400 font-mono">1883</span>
+                </div>
+              </div>
+              <Badge variant={systemHealth?.mqtt?.connected ? 'info' : 'danger'} dot size="sm">
+                {systemHealth?.mqtt?.connected ? 'Broker' : 'Offline'}
               </Badge>
-            }
-          />
-          <StatCard
-            title="Connected IoT Devices"
-            value={metrics.connectedDevices}
-            description="Relay modules & hubs"
-            icon={<Cpu className="w-5 h-5 text-emerald-400" />}
-            badge={
-              <Badge variant="success" dot pulse size="sm">
-                24 Nodes Online
+            </div>
+
+            {/* 4. Gemini */}
+            <div className="p-3.5 sm:p-4 flex items-center justify-between gap-2 hover:bg-white/60 transition-colors">
+              <div className="flex items-center gap-2.5">
+                <div className="w-7 h-7 rounded-xl bg-purple-50 border border-purple-100 text-purple-600 flex items-center justify-center shrink-0">
+                  <Sparkles className="w-3.5 h-3.5" />
+                </div>
+                <div>
+                  <span className="font-bold text-slate-800 block text-[11px]">Gemini AI</span>
+                  <span className="text-[10px] text-slate-400 font-mono">2.5 Flash</span>
+                </div>
+              </div>
+              <Badge variant={systemHealth?.gemini?.status === 'online' ? 'purple' : 'warning'} dot size="sm">
+                {systemHealth?.gemini?.status === 'online' ? 'Active' : 'Fallback'}
               </Badge>
-            }
-          />
-        </div>
+            </div>
+
+            {/* 5. ESP32 */}
+            <div className="p-3.5 sm:p-4 flex items-center justify-between gap-2 hover:bg-white/60 transition-colors">
+              <div className="flex items-center gap-2.5">
+                <div className="w-7 h-7 rounded-xl bg-amber-50 border border-amber-100 text-amber-600 flex items-center justify-center shrink-0">
+                  <Cpu className="w-3.5 h-3.5" />
+                </div>
+                <div>
+                  <span className="font-bold text-slate-800 block text-[11px]">ESP32</span>
+                  <span className="text-[10px] text-slate-400 font-mono">24 Nodes</span>
+                </div>
+              </div>
+              <Badge variant={systemHealth?.esp32?.connected ? 'success' : 'danger'} dot size="sm">
+                {systemHealth?.esp32?.connected ? 'Sync' : 'Offline'}
+              </Badge>
+            </div>
+          </div>
+        </SiriCard>
 
         {/* Dynamic Admin Notification Banner */}
         {adminAlert && (
@@ -626,125 +708,6 @@ export function AdminPage() {
             onDismiss={() => setAdminAlert(null)}
           />
         )}
-
-        {/* 5 Core System Infrastructure Health Cards */}
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
-          {/* 1. System Health / Backend API */}
-          <Card className="p-3.5 sm:p-4 flex flex-col justify-between">
-            <div className="flex items-start justify-between gap-2">
-              <div className="w-8 h-8 rounded-lg bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 flex items-center justify-center shrink-0">
-                <Server className="w-4 h-4" />
-              </div>
-              <Badge
-                variant={systemHealth?.backend?.status === 'online' ? 'success' : 'danger'}
-                dot
-                pulse={systemHealth?.backend?.status === 'online'}
-                size="sm"
-              >
-                {systemHealth?.backend?.status === 'online' ? 'Online' : 'Offline'}
-              </Badge>
-            </div>
-            <div className="mt-2.5">
-              <div className="text-xs font-bold text-white">Backend API</div>
-              <div className="text-[10px] text-slate-400 font-mono truncate">
-                {systemHealth?.backend?.uptimeFormatted ? `Up ${systemHealth.backend.uptimeFormatted}` : 'Port 5000 Active'}
-              </div>
-            </div>
-          </Card>
-
-          {/* 2. MongoDB Database */}
-          <Card className="p-3.5 sm:p-4 flex flex-col justify-between">
-            <div className="flex items-start justify-between gap-2">
-              <div className="w-8 h-8 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 flex items-center justify-center shrink-0">
-                <Database className="w-4 h-4" />
-              </div>
-              <Badge
-                variant={systemHealth?.mongodb?.connected ? 'success' : 'danger'}
-                dot
-                pulse={systemHealth?.mongodb?.connected}
-                size="sm"
-              >
-                {systemHealth?.mongodb?.connected ? 'Connected' : 'Offline'}
-              </Badge>
-            </div>
-            <div className="mt-2.5">
-              <div className="text-xs font-bold text-white">MongoDB Atlas</div>
-              <div className="text-[10px] text-slate-400 font-mono truncate">
-                {systemHealth?.mongodb?.details || 'Database Active'}
-              </div>
-            </div>
-          </Card>
-
-          {/* 3. MQTT Broker Status */}
-          <Card className="p-3.5 sm:p-4 flex flex-col justify-between">
-            <div className="flex items-start justify-between gap-2">
-              <div className="w-8 h-8 rounded-lg bg-cyan-500/10 border border-cyan-500/20 text-cyan-400 flex items-center justify-center shrink-0">
-                <Wifi className="w-4 h-4" />
-              </div>
-              <Badge
-                variant={systemHealth?.mqtt?.connected ? 'info' : 'danger'}
-                dot
-                pulse={systemHealth?.mqtt?.connected}
-                size="sm"
-              >
-                {systemHealth?.mqtt?.connected ? 'Broker Live' : 'Offline'}
-              </Badge>
-            </div>
-            <div className="mt-2.5">
-              <div className="text-xs font-bold text-white">MQTT Broker</div>
-              <div className="text-[10px] text-slate-400 font-mono truncate">
-                {systemHealth?.mqtt?.brokerUrl || 'mqtt://127.0.0.1:1883'}
-              </div>
-            </div>
-          </Card>
-
-          {/* 4. Gemini AI Engine */}
-          <Card className="p-3.5 sm:p-4 flex flex-col justify-between">
-            <div className="flex items-start justify-between gap-2">
-              <div className="w-8 h-8 rounded-lg bg-purple-500/10 border border-purple-500/20 text-purple-400 flex items-center justify-center shrink-0">
-                <Sparkles className="w-4 h-4" />
-              </div>
-              <Badge
-                variant={systemHealth?.gemini?.status === 'online' ? 'purple' : 'warning'}
-                dot
-                size="sm"
-              >
-                {systemHealth?.gemini?.status === 'online' ? 'AI Ready' : 'Fallback'}
-              </Badge>
-            </div>
-            <div className="mt-2.5">
-              <div className="text-xs font-bold text-white">Gemini AI</div>
-              <div className="text-[10px] text-slate-400 font-mono truncate">
-                {systemHealth?.gemini?.model || 'gemini-2.5-flash'}
-              </div>
-            </div>
-          </Card>
-
-          {/* 5. ESP32 Hardware Status */}
-          <Card className="p-3.5 sm:p-4 flex flex-col justify-between">
-            <div className="flex items-start justify-between gap-2">
-              <div className="w-8 h-8 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-400 flex items-center justify-center shrink-0">
-                <Cpu className="w-4 h-4" />
-              </div>
-              <Badge
-                variant={systemHealth?.esp32?.connected ? 'success' : 'danger'}
-                dot
-                pulse={systemHealth?.esp32?.connected}
-                size="sm"
-              >
-                {systemHealth?.esp32?.connected ? 'Hardware Up' : 'Offline'}
-              </Badge>
-            </div>
-            <div className="mt-2.5">
-              <div className="text-xs font-bold text-white">ESP32 Hardware</div>
-              <div className="text-[10px] text-slate-400 font-mono truncate">
-                {systemHealth?.esp32?.connected
-                  ? `${systemHealth.esp32.onlineDevices || 3}/${systemHealth.esp32.totalDevices || 3} Relays Sync`
-                  : 'LWT Disconnected'}
-              </div>
-            </div>
-          </Card>
-        </div>
 
         {/* ----------------- TAB CONTENT ROUTING ----------------- */}
 
@@ -1037,8 +1000,8 @@ export function AdminPage() {
           <div className="space-y-6">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
               <div>
-                <h3 className="text-lg font-bold text-white tracking-tight">Smart Classroom Facilities</h3>
-                <p className="text-xs text-slate-400">
+                <h3 className="text-lg font-bold text-slate-900 tracking-tight">Smart Classroom Facilities</h3>
+                <p className="text-xs text-slate-500">
                   Automated lecture halls with scheduled IoT relays, microphones, and projector cast.
                 </p>
               </div>
@@ -1057,13 +1020,13 @@ export function AdminPage() {
 
             {/* Search Bar for Classes */}
             <div className="relative">
-              <Search className="w-4 h-4 text-slate-500 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+              <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
               <input
                 type="text"
                 value={classSearchQuery}
                 onChange={(e) => setClassSearchQuery(e.target.value)}
                 placeholder="Search classrooms by hall name, department, or active course..."
-                className="w-full pl-10 pr-4 py-2.5 bg-slate-950/80 border border-slate-800 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500"
+                className="w-full pl-10 pr-4 py-2.5 bg-slate-100/80 border border-slate-200/80 rounded-xl text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:border-indigo-500"
               />
             </div>
 
@@ -1073,8 +1036,8 @@ export function AdminPage() {
                   <Card key={cls.id} className="p-5 space-y-4">
                     <div className="flex items-start justify-between gap-3">
                       <div>
-                        <h4 className="text-base font-bold text-white tracking-tight">{cls.name}</h4>
-                        <p className="text-xs text-slate-400 mt-0.5">{cls.department}</p>
+                        <h4 className="text-base font-bold text-slate-900 tracking-tight">{cls.name}</h4>
+                        <p className="text-xs text-slate-500 mt-0.5">{cls.department}</p>
                       </div>
                       <Badge
                         variant={cls.status === 'In Session' ? 'success' : 'info'}
@@ -1086,14 +1049,14 @@ export function AdminPage() {
                       </Badge>
                     </div>
 
-                    <div className="grid grid-cols-3 gap-2.5 p-3 rounded-xl bg-slate-950/60 border border-slate-800/80 text-xs">
+                    <div className="grid grid-cols-3 gap-2.5 p-3 rounded-xl bg-slate-50 border border-slate-200/70 text-xs">
                       <div>
-                        <span className="text-[10px] text-slate-400 block uppercase">Capacity</span>
-                        <span className="font-semibold text-white font-mono">{cls.capacity} seats</span>
+                        <span className="text-[10px] text-slate-400 block uppercase font-medium">Capacity</span>
+                        <span className="font-semibold text-slate-800 font-mono">{cls.capacity} seats</span>
                       </div>
                       <div>
-                        <span className="text-[10px] text-slate-400 block uppercase">Relays</span>
-                        <span className="font-semibold text-cyan-300 font-mono">{cls.relays} Relays</span>
+                        <span className="text-[10px] text-slate-400 block uppercase font-medium">Relays</span>
+                        <span className="font-semibold text-indigo-600 font-mono">{cls.relays} Relays</span>
                       </div>
                       <div>
                         <span className="text-[10px] text-slate-400 block uppercase">Hardware</span>
@@ -1722,7 +1685,7 @@ export function AdminPage() {
             )}
           </div>
         </Modal>
-      </PageContainer>
+      </div>
     </DashboardLayout>
   )
 }

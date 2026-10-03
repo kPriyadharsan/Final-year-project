@@ -1,48 +1,38 @@
-import { useState } from 'react'
-import { Sidebar } from './Sidebar'
 import { TopNav } from './TopNav'
+import { MacDock } from './MacDock'
 
 export function DashboardLayout({
   children,
   pageTitle = 'Dashboard',
   activeTab,
   onTabChange,
+  onTriggerVoice,
 }) {
-  // Desktop sidebar expanded vs collapsed
-  const [isSidebarOpen, setIsSidebarOpen] = useState(true)
-  // Mobile drawer sidebar open vs closed
-  const [isMobileOpen, setIsMobileOpen] = useState(false)
-
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans selection:bg-indigo-500/30 selection:text-indigo-200">
-      {/* Dynamic Sidebar (Desktop drawer + Mobile slideover) */}
-      <Sidebar
-        isOpen={isSidebarOpen}
-        setIsOpen={setIsSidebarOpen}
-        isMobileOpen={isMobileOpen}
-        setIsMobileOpen={setIsMobileOpen}
+    <div className="min-h-screen bg-[#f8fafc] text-slate-800 flex flex-col font-sans selection:bg-blue-500/20 selection:text-blue-900 relative">
+      {/* iOS 27 Fluid Ambient Lighting Glow (Subtle frosted iridescent background orbs) */}
+      <div className="fixed inset-0 overflow-hidden pointer-events-none -z-10 select-none">
+        <div className="absolute -top-32 -left-32 w-[550px] h-[550px] bg-gradient-to-br from-blue-300/20 to-indigo-300/20 rounded-full blur-3xl opacity-70" />
+        <div className="absolute top-1/4 -right-32 w-[600px] h-[600px] bg-gradient-to-br from-purple-300/15 via-pink-200/15 to-transparent rounded-full blur-3xl opacity-60" />
+        <div className="absolute -bottom-32 left-1/3 w-[500px] h-[500px] bg-gradient-to-tr from-cyan-300/15 to-blue-200/15 rounded-full blur-3xl opacity-60" />
+      </div>
+
+      {/* Top macOS/iOS Navigation Bar */}
+      <TopNav pageTitle={pageTitle} />
+
+      {/* Full-Width Spacious Main Viewport with Generous Bottom Clearance for Dock */}
+      <main className="flex-1 w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-6 sm:pt-8 pb-48 sm:pb-56 space-y-6">
+        {children}
+        {/* Bottom clearance spacer ensuring no card is ever obscured by the floating Mac Dock */}
+        <div className="h-12 w-full pointer-events-none" aria-hidden="true" />
+      </main>
+
+      {/* Bottom Liquid Glass macOS Dock */}
+      <MacDock
         activeTab={activeTab}
         onTabChange={onTabChange}
+        onTriggerVoice={onTriggerVoice}
       />
-
-      {/* Main Content Area: dynamically offsets margin according to sidebar state */}
-      <div
-        className={`flex-1 flex flex-col transition-all duration-300 ease-in-out ${
-          isSidebarOpen ? 'lg:pl-64' : 'lg:pl-20'
-        }`}
-      >
-        {/* Top Navigation */}
-        <TopNav
-          isSidebarOpen={isSidebarOpen}
-          onToggleMobileSidebar={() => setIsMobileOpen(true)}
-          pageTitle={pageTitle}
-        />
-
-        {/* Content Viewport */}
-        <main className="flex-1 overflow-x-hidden">
-          {children}
-        </main>
-      </div>
     </div>
   )
 }
