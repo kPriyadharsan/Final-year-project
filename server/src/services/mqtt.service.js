@@ -24,10 +24,11 @@ const env = require('../config/env')
 const brokerUrl = env.MQTT_BROKER_URL || process.env.MQTT_BROKER_URL || 'mqtt://127.0.0.1:1883'
 const username = env.MQTT_USERNAME || process.env.MQTT_USERNAME || ''
 const password = env.MQTT_PASSWORD || process.env.MQTT_PASSWORD || ''
-const clientId =
+const baseClientId =
   env.MQTT_CLIENT_ID ||
   process.env.MQTT_CLIENT_ID ||
-  `smart_classroom_backend_${Math.random().toString(16).slice(2, 8)}`
+  'smart_classroom_backend'
+const clientId = `${baseClientId}_srv_${Math.random().toString(16).slice(2, 8)}`
 
 const isTls = brokerUrl.startsWith('mqtts://') || brokerUrl.startsWith('ssl://') || brokerUrl.startsWith('wss://')
 
