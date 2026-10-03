@@ -97,15 +97,8 @@ function emitDeviceStatus(device) {
     updatedAt: device.updatedAt ? new Date(device.updatedAt).toISOString() : new Date().toISOString(),
   }
 
-  // 1. Broadcast to all connected clients
+  // Broadcast real-time status update to all connected dashboard clients
   io.emit('device:status', payload)
-
-  // 2. Also emit to specific classroom room if subscribed
-  if (device.classroom) {
-    const roomName = `classroom:${device.classroom.trim().toLowerCase()}`
-    io.to(roomName).emit('device:status', payload)
-  }
-
   console.log(`[Socket.IO] 📡 Emitted "device:status" for [${device.deviceId}] -> ${device.state} (Online: ${payload.isOnline})`)
 }
 

@@ -79,7 +79,8 @@ const deviceLogSchema = new mongoose.Schema(
     user: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'User',
-      required: [true, 'Authenticated user reference is required'],
+      required: false,
+      default: null,
       index: true,
     },
     userName: {

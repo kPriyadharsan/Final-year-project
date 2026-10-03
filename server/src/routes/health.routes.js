@@ -80,8 +80,12 @@ router.get('/system/status', async (req, res) => {
 
     if (mongoose.connection.readyState === 1) {
       try {
-        const devices = await Device.find({ classroom: 'Room 302', isActive: true })
-          .select('deviceId name isOnline type state')
+        const classroomFilter = req.query.classroom
+          ? { classroom: { $regex: new RegExp(`^${req.query.classroom.trim()}$`, 'i') }, isActive: true }
+          : { isActive: true }
+
+        const devices = await Device.find(classroomFilter)
+          .select('deviceId name isOnline type state classroom')
           .lean()
 
         totalDevices = devices.length

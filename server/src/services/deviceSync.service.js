@@ -141,13 +141,29 @@ function initDeviceSync() {
       const isOnline = statusText === 'online'
       console.log(`[DeviceSync] 📡 Board availability event on [${topic}]: "${statusText}" (isOnline=${isOnline})`)
 
-      const devices = await Device.find({ classroom: 'Room 302', isActive: true })
+      // Extract optional classroom filter from payload or topic pattern
+      let targetClassroom = null
+      if (payload && typeof payload === 'object' && payload.classroom) {
+        targetClassroom = payload.classroom
+      } else if (topic) {
+        const topicParts = topic.split('/')
+        if (topicParts.length >= 2 && topicParts[0] === 'smartclassroom') {
+          targetClassroom = topicParts[1]
+        }
+      }
+
+      const query = { isActive: true }
+      if (targetClassroom) {
+        query.classroom = { $regex: new RegExp(`^${targetClassroom.trim()}$`, 'i') }
+      }
+
+      const devices = await Device.find(query)
       for (const dev of devices) {
         dev.isOnline = isOnline
         await dev.save()
         emitDeviceStatus(dev)
       }
-      console.log(`[DeviceSync] 🔄 Updated ${devices.length} Room 302 devices to isOnline=${isOnline} and dispatched real-time Socket.IO events.`)
+      console.log(`[DeviceSync] 🔄 Updated ${devices.length} device(s) ${targetClassroom ? `in ${targetClassroom} ` : ''}to isOnline=${isOnline} and dispatched real-time Socket.IO events.`)
     } catch (err) {
       console.error(`[DeviceSync] Error handling availability event on [${topic}]:`, err)
     }

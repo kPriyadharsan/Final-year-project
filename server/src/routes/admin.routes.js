@@ -2,6 +2,7 @@ const express = require('express')
 const router = express.Router()
 const { requireAuth, requireRole } = require('../middleware/auth.middleware')
 const { User, ROLES } = require('../models/User')
+const { Device } = require('../models/Device')
 const { getMongoStatus } = require('../config/db')
 const { getMQTTStatus } = require('../services/mqtt.service')
 const env = require('../config/env')
@@ -42,7 +43,7 @@ router.get(
   requireRole(ROLES.SUPER_ADMIN),
   async (req, res) => {
     try {
-      const [teachersCount, studentsCount, teachersList] = await Promise.all([
+      const [teachersCount, studentsCount, teachersList, connectedDevicesCount, distinctClassrooms] = await Promise.all([
         User.countDocuments({ role: ROLES.TEACHER }),
         User.countDocuments({ role: ROLES.STUDENT }),
         User.find({ role: ROLES.TEACHER })
@@ -50,15 +51,16 @@ router.get(
           .sort({ createdAt: -1 })
           .limit(10)
           .lean(),
+        Device.countDocuments({ isOnline: true }),
+        Device.distinct('classroom'),
       ])
 
       const mongoStatus = getMongoStatus()
       const diagnostics = env.getDiagnostics()
       const liveMqtt = getMQTTStatus()
 
-      // Module safe defaults where database collections are not yet created
-      const totalClasses = 8
-      const connectedDevices = 24
+      const totalClasses = distinctClassrooms.length > 0 ? distinctClassrooms.length : 1
+      const connectedDevices = connectedDevicesCount
 
       // Derived service statuses
       const mqttStatus = liveMqtt.connected ? 'connected' : (liveMqtt.status || 'offline')

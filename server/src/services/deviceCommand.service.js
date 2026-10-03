@@ -302,23 +302,29 @@ async function executeDeviceCommand({
   emitDeviceStatus(device)
 
   // 11. Record in DeviceLog
-  const log = await DeviceLog.create({
-    device: device._id,
-    deviceId: device.deviceId,
-    deviceName: device.name,
-    classroom: device.classroom,
-    action: newState,
-    previousState,
-    newState,
-    topic: mqttTopic,
-    payload: mqttPayload,
-    mqttStatus: MQTT_DELIVERY_STATUS.PUBLISHED,
-    user: user?._id || user?.id || null,
-    userName: user?.name || (source === 'VOICE_COMMAND' ? 'Voice Assistant' : 'Teacher'),
-    userRole: user?.role || 'TEACHER',
-    source,
-    errorMessage: null,
-  })
+  let logId = null
+  try {
+    const log = await DeviceLog.create({
+      device: device._id,
+      deviceId: device.deviceId,
+      deviceName: device.name,
+      classroom: device.classroom,
+      action: newState,
+      previousState,
+      newState,
+      topic: mqttTopic,
+      payload: mqttPayload,
+      mqttStatus: MQTT_DELIVERY_STATUS.PUBLISHED,
+      user: user?._id || user?.id || null,
+      userName: user?.name || (source === 'VOICE_COMMAND' ? 'Voice Assistant' : 'Teacher'),
+      userRole: user?.role || 'TEACHER',
+      source,
+      errorMessage: null,
+    })
+    logId = log._id
+  } catch (logErr) {
+    console.warn(`[DeviceCommandService] Notice: Could not record DeviceLog: ${logErr.message}`)
+  }
 
   // Format execution message: "Fan ON command sent.", "Light OFF command sent.", etc.
   const deviceLabel = getDeviceLabel(device)
@@ -348,7 +354,7 @@ async function executeDeviceCommand({
       published: true,
       payload: mqttPayload,
     },
-    logId: log._id,
+    logId,
     timestamp: new Date().toISOString(),
   }
 }
