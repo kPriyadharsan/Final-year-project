@@ -172,11 +172,18 @@ function emitDeviceStatus(device) {
     return
   }
 
+  const isNode = device.entityType === 'NODE' || device.deviceCategory === 'NODE' || device.type === 'OTHER'
+  const entityType = device.entityType || (isNode ? 'NODE' : 'CHANNEL')
+  const deviceCategory = device.deviceCategory || (isNode ? 'NODE' : 'CHANNEL')
+
   const payload = {
     id: device._id ? device._id.toString() : device.id,
     deviceId: device.deviceId,
     name: device.name,
     type: device.type,
+    entityType,
+    deviceCategory,
+    nodeId: device.nodeId || null,
     classroom: device.classroom,
     state: device.state,
     requestedState: device.requestedState || null,
@@ -193,10 +200,23 @@ function emitDeviceStatus(device) {
 
   // 1. Universal Broadcast: All connected teacher/admin dashboards
   io.emit('device:status', payload)
+  io.emit('device:state', payload)
 
-  // Emit device:color event specifically for RGB listeners
+  // Dedicated node availability broadcast
+  if (isNode) {
+    io.emit('node:status', payload)
+    io.emit('device:availability', {
+      deviceId: payload.deviceId,
+      classroom: payload.classroom,
+      isOnline: payload.isOnline,
+      lastSeenAt: payload.lastSeenAt,
+      entityType: 'NODE',
+    })
+  }
+
+  // Emit device:color / device:rgb events specifically for RGB listeners
   if (device.type === 'PROJECTOR' || device.color) {
-    io.emit('device:color', {
+    const colorPayload = {
       deviceId: device.deviceId,
       id: device._id ? device._id.toString() : device.id,
       classroom: device.classroom,
@@ -204,12 +224,16 @@ function emitDeviceStatus(device) {
       colorPower: device.colorPower || 'OFF',
       color: device.color || { r: 255, g: 0, b: 255 },
       timestamp: new Date().toISOString(),
-    })
+    }
+    io.emit('device:color', colorPayload)
+    io.emit('device:rgb', colorPayload)
+    io.emit('projector:color', colorPayload)
   }
 
   // 2. Device-Specific Event: Targeted listeners for this hardware deviceId
   if (payload.deviceId) {
     io.emit(`device:${payload.deviceId}:status`, payload)
+    io.emit(`device:${payload.deviceId}:state`, payload)
   }
 
   // 3. Classroom-Specific Room & Event: Targeted listeners for this classroom
@@ -223,7 +247,7 @@ function emitDeviceStatus(device) {
 
   console.log(
     `[Socket.IO] 📡 Emitted "device:status" for [${device.deviceId}] -> ${device.state} ` +
-    `(Req: ${payload.requestedState || 'none'}, Conf: ${payload.confirmedState || 'none'}, Online: ${payload.isOnline}, ColorPower: ${payload.colorPower})`
+    `(Entity: ${entityType}, Online: ${payload.isOnline}, LastSeen: ${payload.lastSeenAt || 'none'})`
   )
 }
 

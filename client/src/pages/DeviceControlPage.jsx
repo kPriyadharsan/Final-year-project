@@ -67,7 +67,7 @@ export function DeviceControlPage() {
 
   // State: Controller Node
   const [controllerNode, setControllerNode] = useState(null)
-  const [isNodeOnline, setIsNodeOnline] = useState(true)
+  const [isNodeOnline, setIsNodeOnline] = useState(false)
 
   // State: Control Channels (LIGHT, FAN, PROJECTOR)
   const [channels, setChannels] = useState([])
@@ -190,24 +190,25 @@ export function DeviceControlPage() {
     fetchRoomDevices()
   }, [fetchRoomDevices])
 
-  // Real-Time Socket.IO Listener: Listen for "device:status"
-  useSocketEvent('device:status', (incoming) => {
-    if (!incoming || !incoming.deviceId) return
-    console.log('[DeviceControl] ⚡ Socket update:', incoming.deviceId, incoming.state, incoming.isOnline)
+  // Centralized Socket.IO Event Handler for Device & Node Status Updates
+  const handleDeviceUpdate = useCallback((incoming) => {
+    if (!incoming || (!incoming.deviceId && !incoming.id)) return
+    console.log('[DeviceControl] ⚡ Socket update:', incoming.deviceId || incoming.id, incoming.state, incoming.isOnline)
 
     // A. Check if the incoming update is for the physical controller node
-    if (
-      incoming.type === 'OTHER' ||
+    const isNode =
       incoming.entityType === 'NODE' ||
       incoming.deviceCategory === 'NODE' ||
+      incoming.type === 'OTHER' ||
       (controllerNode && (incoming.deviceId === controllerNode.deviceId || incoming.id === controllerNode._id))
-    ) {
+
+    if (isNode) {
       const nodeOnline = typeof incoming.isOnline === 'boolean' ? incoming.isOnline : false
       setIsNodeOnline(nodeOnline)
       setControllerNode((prev) => ({
         ...prev,
         isOnline: nodeOnline,
-        lastSeenAt: incoming.lastSeenAt || new Date().toISOString(),
+        lastSeenAt: incoming.lastSeenAt || (nodeOnline ? new Date().toISOString() : prev?.lastSeenAt || null),
       }))
 
       // Also cascade online/availability to channels
@@ -220,8 +221,8 @@ export function DeviceControlPage() {
 
       setNotification({
         type: nodeOnline ? 'success' : 'warning',
-        title: nodeOnline ? 'Controller Online' : 'Controller Offline',
-        message: `Hardware Controller [${incoming.deviceId || 'ESP32'}] is now ${nodeOnline ? 'ONLINE' : 'OFFLINE'}.`,
+        title: nodeOnline ? '🟢 Controller Online' : '🔴 Controller Offline',
+        message: `Hardware Controller [${incoming.deviceId || controllerNode?.deviceId || 'ESP32'}] is now ${nodeOnline ? 'ONLINE' : 'OFFLINE'}.`,
       })
       return
     }
@@ -251,8 +252,8 @@ export function DeviceControlPage() {
             if (incoming.color) {
               setProjectorColor(incoming.color)
             }
-            if (incoming.colorPower) {
-              setProjectorColorPower(incoming.colorPower)
+            if (incoming.colorPower || incoming.power) {
+              setProjectorColorPower(incoming.colorPower || incoming.power)
             }
           }
 
@@ -264,16 +265,16 @@ export function DeviceControlPage() {
             lastConfirmedAt: incoming.lastConfirmedAt || new Date().toISOString(),
             lastSeenAt: incoming.lastSeenAt || new Date().toISOString(),
             color: incoming.color || ch.color,
-            colorPower: incoming.colorPower || ch.colorPower,
+            colorPower: incoming.colorPower || incoming.power || ch.colorPower,
           }
         }
         return ch
       })
     )
-  })
+  }, [controllerNode])
 
-  // Real-time listener for dedicated "device:color" Socket.IO event
-  useSocketEvent('device:color', (incoming) => {
+  // Centralized Socket.IO Event Handler for Projector RGB Telemetry
+  const handleColorUpdate = useCallback((incoming) => {
     if (!incoming) return
     console.log('[DeviceControl] 🎨 Projector RGB socket telemetry:', incoming)
     if (incoming.color && !isInteractingColorRef.current) {
@@ -283,7 +284,31 @@ export function DeviceControlPage() {
       setProjectorColorPower(incoming.power || incoming.colorPower)
     }
     setColorSyncStatus('synced')
-  })
+
+    setChannels((prev) =>
+      prev.map((ch) =>
+        ch.type === 'PROJECTOR'
+          ? {
+              ...ch,
+              color: incoming.color || ch.color,
+              colorPower: incoming.power || incoming.colorPower || ch.colorPower,
+              lastConfirmedAt: incoming.timestamp || new Date().toISOString(),
+            }
+          : ch
+      )
+    )
+  }, [])
+
+  // Listen to all standardized Socket.IO state & availability events
+  useSocketEvent('device:status', handleDeviceUpdate)
+  useSocketEvent('device:state', handleDeviceUpdate)
+  useSocketEvent('node:status', handleDeviceUpdate)
+  useSocketEvent('device:availability', handleDeviceUpdate)
+
+  // Listen to all standardized Socket.IO RGB events
+  useSocketEvent('device:color', handleColorUpdate)
+  useSocketEvent('device:rgb', handleColorUpdate)
+  useSocketEvent('projector:color', handleColorUpdate)
 
   // Dispatch Projector RGB Color Command via Node backend REST API -> MQTT -> EMQX -> ESP32
   const dispatchProjectorColor = useCallback(
@@ -532,13 +557,13 @@ export function DeviceControlPage() {
 
   // Helper: Format timestamps gracefully
   const formatTime = (isoString) => {
-    if (!isoString) return 'Just now'
+    if (!isoString) return 'Never'
     try {
       const date = new Date(isoString)
-      if (isNaN(date.getTime())) return 'Just now'
+      if (isNaN(date.getTime())) return 'Never'
       return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
     } catch {
-      return 'Just now'
+      return 'Never'
     }
   }
 
@@ -652,8 +677,9 @@ export function DeviceControlPage() {
                     dot
                     pulse={isNodeOnline}
                     size="sm"
+                    className="font-bold text-xs"
                   >
-                    {isNodeOnline ? 'Online' : 'Offline'}
+                    {isNodeOnline ? '🟢 Controller Online' : '🔴 Controller Offline'}
                   </Badge>
                 </div>
                 <div className="flex items-center gap-3 text-xs text-slate-500 mt-1 flex-wrap font-mono">
@@ -695,7 +721,9 @@ export function DeviceControlPage() {
           <div className="border-t border-slate-100/90 grid grid-cols-2 sm:grid-cols-4 divide-y sm:divide-y-0 sm:divide-x divide-slate-100/90 bg-white/40 text-xs">
             <div className="p-3.5 sm:p-4">
               <span className="text-[10px] uppercase font-semibold text-slate-400 block tracking-wider">Physical IoT Nodes</span>
-              <span className="text-sm font-bold text-slate-900 mt-0.5 block">1 Physical Node</span>
+              <span className="text-sm font-bold text-slate-900 mt-0.5 block">
+                {isNodeOnline ? '1 Online' : '0 Online'}
+              </span>
             </div>
             <div className="p-3.5 sm:p-4">
               <span className="text-[10px] uppercase font-semibold text-slate-400 block tracking-wider">Active Channels</span>
@@ -706,7 +734,7 @@ export function DeviceControlPage() {
             <div className="p-3.5 sm:p-4">
               <span className="text-[10px] uppercase font-semibold text-slate-400 block tracking-wider">Node Status</span>
               <span className={`text-sm font-bold mt-0.5 block ${isNodeOnline ? 'text-emerald-600' : 'text-rose-600'}`}>
-                {isNodeOnline ? 'Online (Heartbeat Active)' : 'Offline (Disconnected)'}
+                {isNodeOnline ? '🟢 Controller Online' : '🔴 Controller Offline'}
               </span>
             </div>
             <div className="p-3.5 sm:p-4">

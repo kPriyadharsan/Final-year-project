@@ -217,7 +217,7 @@ async function executeDeviceCommand({
 
   const mqttStatus = getMQTTStatus()
   const isMqttConnected = Boolean(mqttStatus && mqttStatus.connected)
-  const isDeviceOnline = isNodeOnline
+  const isDeviceOnline = isNodeOnline && device.isOnline !== false
 
   if (!isMqttConnected || !isDeviceOnline) {
     const failureCode = !isMqttConnected ? 'MQTT_DISCONNECTED' : 'DEVICE_OFFLINE'
@@ -563,7 +563,7 @@ async function executeDeviceColorCommand({
 
   const mqttStatus = getMQTTStatus()
   const isMqttConnected = Boolean(mqttStatus && mqttStatus.connected)
-  const isDeviceOnline = isNodeOnline
+  const isDeviceOnline = isNodeOnline && device.isOnline !== false
 
   if (!isMqttConnected || !isDeviceOnline) {
     const failureCode = !isMqttConnected ? 'MQTT_DISCONNECTED' : 'DEVICE_OFFLINE'

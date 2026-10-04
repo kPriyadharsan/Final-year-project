@@ -121,6 +121,24 @@ async function processDeviceStatusMessage(topic, payload) {
     // 4. Emit real-time Socket.IO event to all connected dashboards
     emitDeviceStatus(device)
 
+    // 5. Telemetry arrival from a classroom channel confirms the parent controller node is active
+    if (device.classroom) {
+      try {
+        const parentNode = await Device.findOne({
+          classroom: device.classroom,
+          $or: [{ entityType: 'NODE' }, { deviceCategory: 'NODE' }, { type: 'OTHER' }],
+        })
+        if (parentNode && (!parentNode.isOnline || (new Date() - new Date(parentNode.lastSeenAt || 0) > 15000))) {
+          parentNode.isOnline = true
+          parentNode.lastSeenAt = new Date()
+          await parentNode.save()
+          emitDeviceStatus(parentNode)
+        }
+      } catch (nodeErr) {
+        // Non-fatal
+      }
+    }
+
     return device
   } catch (err) {
     console.error(`[DeviceSync] Error processing status message on [${topic}]:`, err)
@@ -135,6 +153,9 @@ async function processDeviceStatusMessage(topic, payload) {
  * Expected payload:
  *   { "deviceId": "ESP32-RM302-01", "status": "online" }
  *   { "deviceId": "ESP32-RM302-01", "status": "offline" }
+ *   { "classroom": "room302", "status": "online" }
+ *   { "classroom": "room302", "status": "offline" }
+ *   "online" | "offline"
  *
  * @param {string} topic
  * @param {Object|string} payload
@@ -145,14 +166,21 @@ async function handleAvailability(topic, payload, rawPayload) {
   try {
     let data = payload
 
-    // If payload is a string or Buffer, parse JSON safely
+    // If payload is a string or Buffer, handle plain string ("online" / "offline") or parse JSON
     if (typeof payload === 'string' || Buffer.isBuffer(payload)) {
       const str = payload.toString().trim()
-      try {
-        data = JSON.parse(str)
-      } catch (parseErr) {
-        console.error(`[DeviceSync] ❌ Invalid JSON payload received on availability topic [${topic}]: "${str}". Error: ${parseErr.message}`)
-        return null
+      const lower = str.toLowerCase()
+      if (lower === 'online' || lower === '1' || lower === 'true') {
+        data = { status: 'online' }
+      } else if (lower === 'offline' || lower === '0' || lower === 'false') {
+        data = { status: 'offline' }
+      } else {
+        try {
+          data = JSON.parse(str)
+        } catch (parseErr) {
+          console.error(`[DeviceSync] ❌ Invalid payload received on availability topic [${topic}]: "${str}". Error: ${parseErr.message}`)
+          return null
+        }
       }
     }
 
@@ -217,7 +245,7 @@ async function handleAvailability(topic, payload, rawPayload) {
       return device
     }
 
-    // Backward-compatibility fallback: legacy payload without deviceId (e.g. { classroom: "Room 302", status: "offline" })
+    // Classroom-based availability fallback (ESP32 LWT standard payload: { status: "offline", classroom: "room302" })
     let targetClassroom = null
     if (data.classroom && typeof data.classroom === 'string') {
       targetClassroom = data.classroom
@@ -243,7 +271,7 @@ async function handleAvailability(topic, payload, rawPayload) {
         await dev.save()
         emitDeviceStatus(dev)
       }
-      console.log(`[DeviceSync] 🔄 Updated ${devices.length} device(s) in ${targetClassroom} to isOnline=${isOnline} (legacy topic format)`)
+      console.log(`[DeviceSync] 🔄 Updated ${devices.length} device(s) in ${targetClassroom} to isOnline=${isOnline}`)
       return devices
     }
 
@@ -305,16 +333,17 @@ async function handleProjectorColorStateMessage(topic, payload) {
       return null
     }
 
-    // Update colorPower and color
+    // Update colorPower and color (supports nested { color: { r, g, b } } and flat { r, g, b })
     if (data.power) {
       device.colorPower = String(data.power).toUpperCase() === 'ON' ? 'ON' : 'OFF'
     }
 
-    if (data.color && typeof data.color === 'object') {
+    const colorObj = data.color && typeof data.color === 'object' ? data.color : data
+    if (colorObj && (colorObj.r !== undefined || colorObj.g !== undefined || colorObj.b !== undefined)) {
       device.color = {
-        r: Math.max(0, Math.min(255, Math.round(Number(data.color.r) || 0))),
-        g: Math.max(0, Math.min(255, Math.round(Number(data.color.g) || 0))),
-        b: Math.max(0, Math.min(255, Math.round(Number(data.color.b) || 0))),
+        r: Math.max(0, Math.min(255, Math.round(Number(colorObj.r) || 0))),
+        g: Math.max(0, Math.min(255, Math.round(Number(colorObj.g) || 0))),
+        b: Math.max(0, Math.min(255, Math.round(Number(colorObj.b) || 0))),
       }
     }
 
@@ -328,6 +357,24 @@ async function handleProjectorColorStateMessage(topic, payload) {
     // Broadcast in real-time to all connected dashboards
     emitDeviceStatus(device)
     emitDeviceColor(device)
+
+    // Also ensure parent controller node is marked online
+    if (device.classroom) {
+      try {
+        const parentNode = await Device.findOne({
+          classroom: device.classroom,
+          $or: [{ entityType: 'NODE' }, { deviceCategory: 'NODE' }, { type: 'OTHER' }],
+        })
+        if (parentNode && (!parentNode.isOnline || (new Date() - new Date(parentNode.lastSeenAt || 0) > 15000))) {
+          parentNode.isOnline = true
+          parentNode.lastSeenAt = new Date()
+          await parentNode.save()
+          emitDeviceStatus(parentNode)
+        }
+      } catch (nodeErr) {
+        // Non-fatal
+      }
+    }
 
     return device
   } catch (err) {
@@ -348,9 +395,21 @@ function initDeviceSync() {
     processDeviceStatusMessage(topic, payload)
   })
 
-  // 1b. Projector RGB color state topic: smartclassroom/+/projector/color/state
+  // 1b. Relay command topics: smartclassroom/+/relay/+/command (from MQTTX / external commands)
+  onMessage(TOPIC_PATTERNS.ALL_COMMANDS, (topic, payload, rawPayload) => {
+    console.log(`[DeviceSync] 📩 Received MQTT relay command on [${topic}]`)
+    processDeviceStatusMessage(topic, payload)
+  })
+
+  // 1c. Projector RGB color state topic: smartclassroom/+/projector/color/state
   onMessage(TOPIC_PATTERNS.PROJECTOR_COLOR_STATE, (topic, payload, rawPayload) => {
     console.log(`[DeviceSync] 📩 Received MQTT projector color state on [${topic}]`)
+    handleProjectorColorStateMessage(topic, payload)
+  })
+
+  // 1d. Projector RGB color command topic: smartclassroom/+/projector/color/command (from MQTTX / external)
+  onMessage(TOPIC_PATTERNS.PROJECTOR_COLOR_COMMAND, (topic, payload, rawPayload) => {
+    console.log(`[DeviceSync] 📩 Received MQTT projector color command on [${topic}]`)
     handleProjectorColorStateMessage(topic, payload)
   })
 
