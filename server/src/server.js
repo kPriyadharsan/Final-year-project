@@ -79,7 +79,11 @@ app.get('/', (req, res) => {
     voiceEndpoints: {
       command: 'POST /api/voice/command',
       history: 'GET /api/voice/history',
+      liveToken: 'POST /api/voice/live/token',
+      liveCommand: 'POST /api/voice/live/command',
     },
+
+
     protectedTestEndpoints: {
       adminTest: 'GET /api/admin/test (SUPER_ADMIN only)',
       teacherTest: 'GET /api/teacher/test (TEACHER & SUPER_ADMIN)',

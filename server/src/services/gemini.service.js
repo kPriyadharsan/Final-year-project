@@ -233,6 +233,90 @@ async function generateText(prompt, options = {}) {
   }
 }
 
+// Live API preview model for real-time bidirectional audio sessions
+const DEFAULT_LIVE_MODEL = 'gemini-2.5-flash-native-audio-preview-12-2025'
+
+// Standard Tool Declaration for controlling classroom appliances
+const CONTROL_CLASSROOM_DEVICES_TOOL = {
+  functionDeclarations: [
+    {
+      name: 'control_classroom_devices',
+      description: 'Control one or more smart classroom appliances (light, fan, projector) to turn them ON or OFF.',
+      parameters: {
+        type: 'OBJECT',
+        properties: {
+          actions: {
+            type: 'ARRAY',
+            description: 'List of device control actions to execute',
+            items: {
+              type: 'OBJECT',
+              properties: {
+                device: {
+                  type: 'STRING',
+                  enum: ['light', 'fan', 'projector'],
+                  description: 'The target appliance to control',
+                },
+                action: {
+                  type: 'STRING',
+                  enum: ['ON', 'OFF'],
+                  description: 'The target state: ON or OFF',
+                },
+              },
+              required: ['device', 'action'],
+            },
+          },
+        },
+        required: ['actions'],
+      },
+    },
+  ],
+}
+
+/**
+ * Creates a short-lived ephemeral authentication token for Gemini Live API WebSocket sessions.
+ * Constrains the session to real-time audio modality and enables session resumption.
+ *
+ * @param {Object} [options]
+ * @param {string} [options.model] - Live API model name override
+ * @param {number} [options.validityMinutes=30] - Ephemeral token lifespan (minutes)
+ * @param {number} [options.sessionStartWindowMinutes=5] - Time window in minutes to initiate session
+ * @returns {Promise<{ token: string, model: string }>}
+ */
+async function createLiveSessionToken(options = {}) {
+  const ai = getClient()
+  const model = options.model || DEFAULT_LIVE_MODEL
+
+  const now = Date.now()
+  const expireTime = new Date(now + (options.validityMinutes || 30) * 60 * 1000).toISOString()
+  const newSessionExpireTime = new Date(now + (options.sessionStartWindowMinutes || 5) * 60 * 1000).toISOString()
+
+  const tokenResponse = await ai.authTokens.create({
+    config: {
+      uses: 1,
+      expireTime,
+      newSessionExpireTime,
+      liveConnectConstraints: {
+        model,
+        config: {
+          responseModalities: ['AUDIO'],
+          sessionResumption: {},
+          tools: [CONTROL_CLASSROOM_DEVICES_TOOL],
+        },
+      },
+    },
+  })
+
+  if (!tokenResponse || !tokenResponse.name) {
+    throw new Error('Gemini API did not return an auth token name.')
+  }
+
+  return {
+    token: tokenResponse.name,
+    model,
+  }
+}
+
+
 /**
  * Returns safe diagnostic metrics on Gemini service configuration
  */
@@ -244,6 +328,7 @@ function getStatus() {
     configured: isConfigured(),
     maskedKey: maskApiKey(currentKey),
     defaultModel: getDefaultModel(),
+    defaultLiveModel: DEFAULT_LIVE_MODEL,
   }
 }
 
@@ -252,7 +337,10 @@ module.exports = {
   getClient,
   isConfigured,
   getDefaultModel,
+  DEFAULT_LIVE_MODEL,
+  createLiveSessionToken,
   getStatus,
   maskApiKey,
   parseGeminiError,
 }
+

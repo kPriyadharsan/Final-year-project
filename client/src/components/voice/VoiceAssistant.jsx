@@ -17,6 +17,140 @@ import {
 import { Button, Badge } from '../ui'
 import { useAuth } from '../../context/AuthContext'
 import { API_BASE_URL } from '../../config/api'
+import { GoogleGenAI } from '@google/genai'
+import audioProcessorUrl from './geminiLiveAudioProcessor.js?url'
+
+/**
+ * Feature Flag: Enable Gemini Live real-time bidirectional audio session
+ */
+export const LIVE_VOICE_ENABLED = true
+
+/**
+ * Gemini Live Configuration
+ */
+const LIVE_MODEL = 'gemini-2.5-flash-native-audio-preview-12-2025'
+
+const LIVE_SYSTEM_INSTRUCTION = `You control a smart classroom.
+
+Supported devices:
+- light
+- fan
+- projector
+
+Supported actions:
+- ON
+- OFF
+
+When the user requests a device action, call control_classroom_devices.
+
+For multiple requested devices, include every requested device in the actions array.
+
+Examples:
+
+User: Turn on the fan.
+Tool call:
+actions = [
+  { device: "fan", action: "ON" }
+]
+
+User: Turn on the fan and light.
+Tool call:
+actions = [
+  { device: "fan", action: "ON" },
+  { device: "light", action: "ON" }
+]
+
+User: Turn everything off.
+Tool call:
+actions = [
+  { device: "fan", action: "OFF" },
+  { device: "light", action: "OFF" },
+  { device: "projector", action: "OFF" }
+]
+
+Never invent unsupported devices.
+
+Keep responses short and natural.`
+
+/**
+ * Tool Declaration for Gemini Live device control
+ */
+const CONTROL_CLASSROOM_DEVICES_TOOL = {
+  functionDeclarations: [
+    {
+      name: 'control_classroom_devices',
+      description: 'Control one or more smart classroom appliances (light, fan, projector) to turn them ON or OFF.',
+      parameters: {
+        type: 'OBJECT',
+        properties: {
+          actions: {
+            type: 'ARRAY',
+            description: 'List of device control actions to execute',
+            items: {
+              type: 'OBJECT',
+              properties: {
+                device: {
+                  type: 'STRING',
+                  enum: ['light', 'fan', 'projector'],
+                  description: 'The target appliance to control',
+                },
+                action: {
+                  type: 'STRING',
+                  enum: ['ON', 'OFF'],
+                  description: 'The target state: ON or OFF',
+                },
+              },
+              required: ['device', 'action'],
+            },
+          },
+        },
+        required: ['actions'],
+      },
+    },
+  ],
+}
+
+// AudioWorklet inline definition fallback in case URL resolution fails in specific environments
+const WORKLET_INLINE_CODE = `
+class GeminiLiveAudioProcessor extends AudioWorkletProcessor {
+  constructor() {
+    super();
+    this.bufferSize = 2048;
+    this.buffer = new Int16Array(this.bufferSize);
+    this.bufferIndex = 0;
+  }
+  process(inputs) {
+    const input = inputs[0];
+    if (!input || input.length === 0) return true;
+    const channelData = input[0];
+    for (let i = 0; i < channelData.length; i++) {
+      const sample = Math.max(-1, Math.min(1, channelData[i]));
+      this.buffer[this.bufferIndex++] = sample < 0 ? sample * 0x8000 : sample * 0x7fff;
+      if (this.bufferIndex >= this.bufferSize) {
+        const chunk = this.buffer.slice(0, this.bufferSize);
+        this.port.postMessage(chunk.buffer, [chunk.buffer]);
+        this.buffer = new Int16Array(this.bufferSize);
+        this.bufferIndex = 0;
+      }
+    }
+    return true;
+  }
+}
+registerProcessor('gemini-live-audio-processor', GeminiLiveAudioProcessor);
+`
+
+/**
+ * Helper to convert an ArrayBuffer to a Base64 string
+ */
+function arrayBufferToBase64(buffer) {
+  let binary = ''
+  const bytes = new Uint8Array(buffer)
+  const len = bytes.byteLength
+  for (let i = 0; i < len; i++) {
+    binary += String.fromCharCode(bytes[i])
+  }
+  return window.btoa(binary)
+}
 
 /**
  * Supported Visual States of the Voice Assistant
@@ -33,16 +167,17 @@ const SAMPLE_COMMANDS = [
   'Turn on the fan',
   'Switch off classroom lights',
   'Turn on projector',
-  'Turn off the fan',
-  'Create revision notes for physics',
-  'Generate quiz with 5 questions',
+  'Turn on the fan and light',
+  'Turn off the fan and projector',
+  'Please switch off everything',
 ]
 
 /**
  * Reusable VoiceAssistant Component for the Smart Classroom
  *
- * Captures English voice input through browser Web Speech API (laptop or Bluetooth mic),
- * validates audio locally, and transmits text transcript to POST /api/voice/command.
+ * Supports Gemini Multimodal Live API real-time microphone streaming,
+ * bidirectional function calling (control_classroom_devices),
+ * with graceful fallback to browser Web Speech API.
  *
  * @param {Object} props
  * @param {string} [props.classroom='Room 302'] - Active classroom identifier
@@ -67,11 +202,462 @@ export function VoiceAssistant({
   const [resultData, setResultData] = useState(null)
   const [isSupported, setIsSupported] = useState(true)
   const [manualText, setManualText] = useState('')
+  const [isLiveActive, setIsLiveActive] = useState(false)
+  const [liveStatusText, setLiveStatusText] = useState('')
 
+  // Web Speech API refs (Fallback mode)
   const recognitionRef = useRef(null)
   const isSpeechEndedRef = useRef(false)
 
-  // Initialize SpeechRecognition on mount
+  // Gemini Live API refs
+  const liveSessionRef = useRef(null)
+  const micStreamRef = useRef(null)
+  const inputAudioContextRef = useRef(null)
+  const outputAudioContextRef = useRef(null)
+  const workletNodeRef = useRef(null)
+  const nextPlaybackTimeRef = useRef(0)
+  const activeAudioSourcesRef = useRef([])
+  const isLiveModeActiveRef = useRef(false)
+
+  // Helper to schedule and play 24kHz PCM audio from Gemini
+  const playPcmChunk = useCallback((base64Data) => {
+    try {
+      if (!outputAudioContextRef.current) {
+        outputAudioContextRef.current = new (window.AudioContext || window.webkitAudioContext)({
+          sampleRate: 24000,
+        })
+      }
+      const ctx = outputAudioContextRef.current
+      if (ctx.state === 'suspended') {
+        ctx.resume()
+      }
+
+      const binaryString = window.atob(base64Data)
+      const len = binaryString.length
+      const bytes = new Uint8Array(len)
+      for (let i = 0; i < len; i++) {
+        bytes[i] = binaryString.charCodeAt(i)
+      }
+      const int16Array = new Int16Array(bytes.buffer)
+      const float32Array = new Float32Array(int16Array.length)
+      for (let i = 0; i < int16Array.length; i++) {
+        float32Array[i] = int16Array[i] / 32768.0
+      }
+
+      const audioBuffer = ctx.createBuffer(1, float32Array.length, 24000)
+      audioBuffer.getChannelData(0).set(float32Array)
+
+      const sourceNode = ctx.createBufferSource()
+      sourceNode.buffer = audioBuffer
+      sourceNode.connect(ctx.destination)
+
+      const currentTime = ctx.currentTime
+      const startTime = Math.max(currentTime, nextPlaybackTimeRef.current)
+      sourceNode.start(startTime)
+      nextPlaybackTimeRef.current = startTime + audioBuffer.duration
+      activeAudioSourcesRef.current.push(sourceNode)
+
+      sourceNode.onended = () => {
+        const idx = activeAudioSourcesRef.current.indexOf(sourceNode)
+        if (idx !== -1) {
+          activeAudioSourcesRef.current.splice(idx, 1)
+        }
+      }
+    } catch (e) {
+      console.warn('[GeminiLive] Error scheduling PCM playback:', e.message)
+    }
+  }, [])
+
+  // Stop currently playing audio (e.g. on user barge-in)
+  const stopAudioPlayback = useCallback(() => {
+    activeAudioSourcesRef.current.forEach((src) => {
+      try {
+        src.stop()
+      } catch {
+        // Source may already have ended
+      }
+    })
+    activeAudioSourcesRef.current = []
+    if (outputAudioContextRef.current) {
+      nextPlaybackTimeRef.current = outputAudioContextRef.current.currentTime
+    }
+  }, [])
+
+  // Safely stop Gemini Live session and tear down audio graph
+  const stopLiveSession = useCallback(async () => {
+    console.log('[GeminiLive] 🛑 Stopping Live voice session...')
+    stopAudioPlayback()
+
+    // 1. Stop mic tracks
+    if (micStreamRef.current) {
+      micStreamRef.current.getTracks().forEach((track) => {
+        try {
+          track.stop()
+        } catch {}
+      })
+      micStreamRef.current = null
+    }
+
+    // 2. Disconnect audio worklet
+    if (workletNodeRef.current) {
+      try {
+        workletNodeRef.current.disconnect()
+      } catch {}
+      workletNodeRef.current = null
+    }
+
+    // 3. Close input AudioContext
+    if (inputAudioContextRef.current) {
+      try {
+        if (inputAudioContextRef.current.state !== 'closed') {
+          await inputAudioContextRef.current.close()
+        }
+      } catch {}
+      inputAudioContextRef.current = null
+    }
+
+    // 4. Close output AudioContext
+    if (outputAudioContextRef.current) {
+      try {
+        if (outputAudioContextRef.current.state !== 'closed') {
+          await outputAudioContextRef.current.close()
+        }
+      } catch {}
+      outputAudioContextRef.current = null
+    }
+
+    // 5. Close Live WebSocket session
+    if (liveSessionRef.current) {
+      try {
+        if (liveSessionRef.current.conn && typeof liveSessionRef.current.conn.close === 'function') {
+          liveSessionRef.current.conn.close()
+        }
+      } catch {}
+      liveSessionRef.current = null
+    }
+
+    setIsLiveActive(false)
+    isLiveModeActiveRef.current = false
+    setLiveStatusText('')
+  }, [stopAudioPlayback])
+
+  // Handle Gemini Live tool call (control_classroom_devices)
+  const handleDeviceToolCall = useCallback(
+    async (call) => {
+      console.log('[GeminiLive] Function call: control_classroom_devices')
+      const { id, name, args } = call
+      const actions = args?.actions
+
+      const SUPPORTED_DEVICES = ['light', 'fan', 'projector']
+      const SUPPORTED_ACTIONS = ['ON', 'OFF']
+
+      // 1. Frontend validation: must be a non-empty array
+      if (!Array.isArray(actions) || actions.length === 0) {
+        console.warn('[GeminiLive] ⚠️ Rejected tool call: actions must be a non-empty array')
+        if (liveSessionRef.current) {
+          liveSessionRef.current.sendToolResponse({
+            functionResponses: [
+              {
+                id,
+                name,
+                response: { error: 'Actions must be a non-empty array' },
+              },
+            ],
+          })
+        }
+        return
+      }
+
+      // 2. Frontend validation: device and action allowlists
+      const validatedActions = []
+      for (const item of actions) {
+        if (
+          item &&
+          SUPPORTED_DEVICES.includes(String(item.device || '').toLowerCase()) &&
+          SUPPORTED_ACTIONS.includes(String(item.action || '').toUpperCase())
+        ) {
+          validatedActions.push({
+            device: String(item.device).toLowerCase(),
+            action: String(item.action).toUpperCase(),
+          })
+        }
+      }
+
+      if (validatedActions.length === 0) {
+        console.warn('[GeminiLive] ⚠️ Rejected tool call: no valid actions found')
+        if (liveSessionRef.current) {
+          liveSessionRef.current.sendToolResponse({
+            functionResponses: [
+              {
+                id,
+                name,
+                response: { error: 'No valid device actions found' },
+              },
+            ],
+          })
+        }
+        return
+      }
+
+      console.log(`[GeminiLive] Actions: ${validatedActions.length}`)
+
+      // 3. Dispatch to backend POST /api/voice/live/command
+      try {
+        const response = await fetch(`${apiBaseUrl}/api/voice/live/command`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
+          body: JSON.stringify({
+            actions: validatedActions,
+            classroom,
+          }),
+        })
+
+        const result = await response.json()
+
+        if (response.ok && result.status === 'success') {
+          const actionResults = result.data?.actions || []
+          actionResults.forEach((act) => {
+            console.log(
+              `[GeminiLive] Device command result: ${act.device} ${act.action} -> ${act.delivered ? 'delivered' : 'failed'}`
+            )
+          })
+
+          // Update UI state with action outcome
+          const allOk = actionResults.every((a) => a.success)
+          setResultData({
+            executionStatus: allOk ? 'EXECUTED' : 'FAILED',
+            message: actionResults
+              .map((a) => `${a.device.toUpperCase()} ${a.action} (${a.delivered ? 'Delivered' : 'Failed'})`)
+              .join(', '),
+            transcript: `[Live Action] ${validatedActions.map((a) => `${a.device} -> ${a.action}`).join(', ')}`,
+            intent: 'DEVICE_CONTROL',
+            device: validatedActions.map((a) => a.device).join(', '),
+            action: validatedActions.map((a) => a.action).join(', '),
+          })
+
+          if (onCommandExecuted) {
+            onCommandExecuted(result.data)
+          }
+
+          // 4. Return tool response to Gemini Live session
+          if (liveSessionRef.current) {
+            liveSessionRef.current.sendToolResponse({
+              functionResponses: [
+                {
+                  id,
+                  name,
+                  response: {
+                    actions: actionResults.map((a) => ({
+                      device: a.device,
+                      action: a.action,
+                      success: a.success,
+                    })),
+                  },
+                },
+              ],
+            })
+          }
+        } else {
+          throw new Error(result.message || 'Failed to execute device actions')
+        }
+      } catch (err) {
+        console.error('[GeminiLive] ❌ Error executing live device command:', err.message)
+        if (liveSessionRef.current) {
+          liveSessionRef.current.sendToolResponse({
+            functionResponses: [
+              {
+                id,
+                name,
+                response: { error: err.message },
+              },
+            ],
+          })
+        }
+      }
+    },
+    [apiBaseUrl, token, classroom, onCommandExecuted]
+  )
+
+  // Handle incoming messages from Gemini Live WebSocket
+  const handleLiveServerMessage = useCallback(
+    (msg) => {
+      // 1. Tool call received from server (primary path)
+      if (msg.toolCall?.functionCalls) {
+        for (const call of msg.toolCall.functionCalls) {
+          if (call.name === 'control_classroom_devices') {
+            handleDeviceToolCall(call)
+          }
+        }
+      }
+
+      // 2. User speech activity detected by server
+      if (msg.serverContent?.userTurn) {
+        console.log('[GeminiLive] 🗣️ User speech activity detected by model')
+        setLiveStatusText('Gemini is listening to your speech...')
+      }
+
+      // 3. Model response parts received
+      if (msg.serverContent?.modelTurn?.parts) {
+        console.log('[GeminiLive] 🤖 Gemini response received')
+        for (const part of msg.serverContent.modelTurn.parts) {
+          // Check for tool call embedded in model turn parts
+          if (part.functionCall && part.functionCall.name === 'control_classroom_devices') {
+            handleDeviceToolCall(part.functionCall)
+          }
+          if (part.inlineData && part.inlineData.data) {
+            console.log('[GeminiLive] 🔊 Gemini audio response received')
+            playPcmChunk(part.inlineData.data)
+          }
+          if (part.text) {
+            console.log('[GeminiLive] 📝 Gemini text output received')
+            setTranscript((prev) => (prev ? prev + ' ' : '') + part.text)
+          }
+        }
+      }
+
+      // 4. Model turn interrupted by user speech (barge-in)
+      if (msg.serverContent?.interrupted) {
+        console.log('[GeminiLive] ⚡ Gemini response interrupted by user speech')
+        stopAudioPlayback()
+        setLiveStatusText('Interrupted. Listening...')
+      }
+
+      // 5. Model turn complete
+      if (msg.serverContent?.turnComplete) {
+        console.log('[GeminiLive] ✅ Gemini response turn completed')
+        setLiveStatusText('Gemini response finished. You can speak again.')
+      }
+    },
+    [handleDeviceToolCall, playPcmChunk, stopAudioPlayback]
+  )
+
+  // Start Gemini Live API Session
+  const startLiveSession = useCallback(async () => {
+    console.log('[GeminiLive] 🚀 Initiating Gemini Live session with device control tools...')
+    setErrorMessage('')
+    setLiveStatusText('Requesting microphone access...')
+
+    // 1. Request microphone permission
+    const micStream = await navigator.mediaDevices.getUserMedia({
+      audio: {
+        channelCount: 1,
+        sampleRate: 16000,
+        echoCancellation: true,
+        noiseSuppression: true,
+      },
+    })
+    micStreamRef.current = micStream
+
+    setLiveStatusText('Requesting ephemeral Live API token from backend...')
+
+    // 2. Fetch short-lived ephemeral token from backend
+    const tokenRes = await fetch(`${apiBaseUrl}/api/voice/live/token`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+    })
+
+    const tokenData = await tokenRes.json()
+    if (!tokenRes.ok || tokenData.status !== 'success' || !tokenData.data?.token) {
+      throw new Error(tokenData.message || 'Failed to obtain Gemini Live session token from backend.')
+    }
+    const ephemeralToken = tokenData.data.token
+
+    setLiveStatusText('Connecting to Gemini Live WebSocket...')
+
+    // 3. Initialize GoogleGenAI with ephemeral token
+    const ai = new GoogleGenAI({
+      apiKey: ephemeralToken,
+      httpOptions: { apiVersion: 'v1alpha' },
+    })
+
+    // 4. Create and initialize input AudioContext (16kHz PCM capture)
+    const inputCtx = new (window.AudioContext || window.webkitAudioContext)({
+      sampleRate: 16000,
+    })
+    inputAudioContextRef.current = inputCtx
+
+    // Load AudioWorklet processor module
+    try {
+      await inputCtx.audioWorklet.addModule(audioProcessorUrl)
+    } catch {
+      // Fallback: load inline blob if external module fails to resolve
+      const blob = new Blob([WORKLET_INLINE_CODE], { type: 'application/javascript' })
+      const blobUrl = URL.createObjectURL(blob)
+      await inputCtx.audioWorklet.addModule(blobUrl)
+      URL.revokeObjectURL(blobUrl)
+    }
+
+    const sourceNode = inputCtx.createMediaStreamSource(micStream)
+    const workletNode = new AudioWorkletNode(inputCtx, 'gemini-live-audio-processor')
+    workletNodeRef.current = workletNode
+
+    // Stream PCM audio chunks continuously to Gemini Live session
+    workletNode.port.onmessage = (event) => {
+      if (!liveSessionRef.current) return
+      const pcmBuffer = event.data
+      const base64Data = arrayBufferToBase64(pcmBuffer)
+      try {
+        liveSessionRef.current.sendRealtimeInput({
+          media: {
+            mimeType: 'audio/pcm;rate=16000',
+            data: base64Data,
+          },
+        })
+      } catch (err) {
+        console.warn('[GeminiLive] Failed to send real-time audio chunk:', err.message)
+      }
+    }
+
+    // Connect to silent gain to keep AudioWorklet processing clock active
+    const silentGain = inputCtx.createGain()
+    silentGain.gain.value = 0
+    sourceNode.connect(workletNode)
+    workletNode.connect(silentGain)
+    silentGain.connect(inputCtx.destination)
+
+    // 5. Connect Gemini Live Session with control_classroom_devices tool
+    const session = await ai.live.connect({
+      model: LIVE_MODEL,
+      config: {
+        responseModalities: ['AUDIO'],
+        systemInstruction: {
+          parts: [{ text: LIVE_SYSTEM_INSTRUCTION }],
+        },
+        tools: [CONTROL_CLASSROOM_DEVICES_TOOL],
+        sessionResumption: {},
+      },
+      callbacks: {
+        onopen: () => {
+          console.log('[GeminiLive] 🌐 Gemini Live WebSocket connection opened successfully')
+          setIsLiveActive(true)
+          isLiveModeActiveRef.current = true
+          setCurrentState(VOICE_STATES.LISTENING)
+          setLiveStatusText('Connected to Gemini Live. Speak naturally...')
+        },
+        onmessage: (msg) => {
+          handleLiveServerMessage(msg)
+        },
+        onerror: (err) => {
+          console.warn('[GeminiLive] ⚠️ Gemini Live WebSocket error received')
+        },
+        onclose: (e) => {
+          console.log('[GeminiLive] 🔌 Gemini Live WebSocket connection closed')
+          setIsLiveActive(false)
+          isLiveModeActiveRef.current = false
+        },
+      },
+    })
+
+    liveSessionRef.current = session
+  }, [apiBaseUrl, token, handleLiveServerMessage])
+
+  // Initialize SpeechRecognition on mount (Fallback Engine)
   useEffect(() => {
     const SpeechRecognition =
       window.SpeechRecognition || window.webkitSpeechRecognition
@@ -169,10 +755,11 @@ export function VoiceAssistant({
           // Cleanup ignore
         }
       }
+      stopLiveSession()
     }
-  }, [])
+  }, [stopLiveSession])
 
-  // Send Transcript to Backend POST /api/voice/command
+  // Send Transcript to Backend POST /api/voice/command (Used by Fallback & Manual input)
   const sendTranscriptToBackend = useCallback(
     async (textToSend) => {
       const commandText = (textToSend || transcript).trim()
@@ -233,21 +820,15 @@ export function VoiceAssistant({
     [transcript, apiBaseUrl, classroom, token, onCommandExecuted]
   )
 
-  // When speech ends and we have captured transcript, automatically submit
+  // When Web Speech finishes and we have captured transcript, automatically submit
   useEffect(() => {
-    if (transcript && isSpeechEndedRef.current && currentState === VOICE_STATES.LISTENING) {
+    if (!isLiveModeActiveRef.current && transcript && isSpeechEndedRef.current && currentState === VOICE_STATES.LISTENING) {
       sendTranscriptToBackend(transcript)
     }
   }, [transcript, currentState, sendTranscriptToBackend])
 
-  // Start Voice Recognition
-  const handleStartListening = () => {
-    setErrorMessage('')
-    setResultData(null)
-    setTranscript('')
-    setInterimTranscript('')
-    isSpeechEndedRef.current = false
-
+  // Helper to trigger fallback Web Speech Recognition
+  const startWebSpeech = useCallback(() => {
     if (!recognitionRef.current) {
       setErrorMessage('Speech recognition is not available in this browser.')
       setCurrentState(VOICE_STATES.ERROR)
@@ -257,7 +838,7 @@ export function VoiceAssistant({
     try {
       recognitionRef.current.start()
     } catch (err) {
-      console.warn('[VoiceAssistant] Start error (attempting restart):', err.message)
+      console.warn('[VoiceAssistant] Web Speech start error (attempting restart):', err.message)
       try {
         recognitionRef.current.stop()
         setTimeout(() => recognitionRef.current?.start(), 150)
@@ -266,10 +847,45 @@ export function VoiceAssistant({
         setErrorMessage('Could not activate microphone. Please try again.')
       }
     }
+  }, [])
+
+  // Primary Start Listening Handler
+  const handleStartListening = async () => {
+    setErrorMessage('')
+    setResultData(null)
+    setTranscript('')
+    setInterimTranscript('')
+    isSpeechEndedRef.current = false
+
+    // Attempt Gemini Live API connection if enabled
+    if (LIVE_VOICE_ENABLED) {
+      try {
+        await startLiveSession()
+        return
+      } catch (err) {
+        console.warn('[VoiceAssistant] ⚠️ Gemini Live connection failed, engaging Web Speech fallback:', err.message)
+        await stopLiveSession()
+        setErrorMessage(`Live session unavailable: ${err.message}. Engaging browser speech recognition fallback.`)
+        // Fall back to Web Speech recognition
+      }
+    }
+
+    // Fallback: Web Speech API
+    startWebSpeech()
   }
 
-  // Stop Voice Recognition manually
-  const handleStopListening = () => {
+  // Primary Stop Listening Handler
+  const handleStopListening = async () => {
+    if (isLiveModeActiveRef.current) {
+      setCurrentState(VOICE_STATES.PROCESSING)
+      await stopLiveSession()
+      setTimeout(() => {
+        setCurrentState(VOICE_STATES.IDLE)
+      }, 500)
+      return
+    }
+
+    // Fallback: Web Speech Stop
     if (recognitionRef.current) {
       try {
         isSpeechEndedRef.current = true
@@ -294,6 +910,7 @@ export function VoiceAssistant({
     setTranscript('')
     setInterimTranscript('')
     setCurrentState(VOICE_STATES.IDLE)
+    stopLiveSession()
   }
 
   // Manual fallback execution
@@ -307,15 +924,22 @@ export function VoiceAssistant({
 
   return (
     <div className={`space-y-5 text-slate-800 ${isEmbedded ? '' : 'p-1'}`}>
-      {/* Mic Status & Bluetooth Awareness Badge */}
+      {/* Mic Status & Live Awareness Badge */}
       <div className="flex items-center justify-between px-3.5 py-2.5 rounded-2xl bg-slate-100/80 border border-slate-200/80 text-xs">
         <div className="flex items-center gap-2 text-slate-600 font-medium">
           <Bluetooth className="w-3.5 h-3.5 text-blue-600" />
-          <span>Microphone: Default System Audio (Built-in or Bluetooth)</span>
+          <span>Microphone: Default System Audio (16kHz PCM)</span>
         </div>
-        <Badge variant="info" size="sm">
-          en-US (English)
-        </Badge>
+        <div className="flex items-center gap-1.5">
+          {LIVE_VOICE_ENABLED && (
+            <Badge variant={isLiveActive ? 'purple' : 'neutral'} size="sm">
+              {isLiveActive ? 'Gemini Live Active' : 'Gemini Live Ready'}
+            </Badge>
+          )}
+          <Badge variant="info" size="sm">
+            en-US (English)
+          </Badge>
+        </div>
       </div>
 
       {/* Main Dynamic State Viewport */}
@@ -323,7 +947,7 @@ export function VoiceAssistant({
         {/* ================= STATE 1: IDLE ================= */}
         {currentState === VOICE_STATES.IDLE && (
           <div className="space-y-4 py-2">
-            {!isSupported && (
+            {!isSupported && !LIVE_VOICE_ENABLED && (
               <div className="p-3 rounded-2xl bg-amber-50 border border-amber-200 text-xs text-amber-800">
                 Speech recognition is unavailable in this browser. You can enter commands using the text input below.
               </div>
@@ -337,9 +961,13 @@ export function VoiceAssistant({
               <Mic className="w-9 h-9 group-hover:scale-110 transition-transform" />
             </button>
             <div>
-              <p className="text-base font-bold text-slate-900">Tap to Speak</p>
+              <p className="text-base font-bold text-slate-900">
+                {LIVE_VOICE_ENABLED ? 'Tap to Speak with Gemini Live' : 'Tap to Speak'}
+              </p>
               <p className="text-xs text-slate-500 mt-1 max-w-sm mx-auto">
-                Speak naturally in English. Your voice is captured locally and parsed by Gemini AI.
+                {LIVE_VOICE_ENABLED
+                  ? 'Real-time bidirectional voice assistant with smart appliance function calling.'
+                  : 'Speak naturally in English. Your voice is captured locally and parsed by Gemini AI.'}
               </p>
             </div>
           </div>
@@ -365,17 +993,17 @@ export function VoiceAssistant({
             <div>
               <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-purple-50 border border-purple-200 text-purple-700 text-xs font-semibold">
                 <span className="w-2 h-2 rounded-full bg-purple-500 animate-ping" />
-                Listening... Speak now
+                {isLiveActive ? 'Live Audio Session Active' : 'Listening... Speak now'}
               </div>
               <p className="text-xs text-slate-500 mt-2">
-                Recording will stop automatically when speech finishes.
+                {liveStatusText || (isLiveActive ? 'Streaming audio to Gemini Live. Tap when done.' : 'Recording will stop automatically when speech finishes.')}
               </p>
             </div>
 
             {/* Live Real-Time Transcript Display */}
             <div className="min-h-14 p-3.5 rounded-2xl bg-white border border-purple-200 text-xs text-left font-mono shadow-sm">
               <span className="text-slate-400 text-[11px] block uppercase font-sans font-bold mb-1">
-                Live Speech Transcript:
+                {isLiveActive ? 'Live Assistant Audio / Transcript:' : 'Live Speech Transcript:'}
               </span>
               <p className="text-slate-800 font-medium break-words">
                 {transcript || interimTranscript || (
@@ -401,19 +1029,25 @@ export function VoiceAssistant({
               <Loader2 className="w-8 h-8 animate-spin" />
             </div>
             <div>
-              <p className="text-base font-bold text-slate-900">Analyzing Voice Command...</p>
+              <p className="text-base font-bold text-slate-900">
+                {isLiveActive ? 'Completing Live Session...' : 'Analyzing Voice Command...'}
+              </p>
               <p className="text-xs text-slate-500 mt-1">
-                Gemini intent classification and backend allowlist validation in progress.
+                {isLiveActive
+                  ? 'Executing classroom appliance commands and finalizing response.'
+                  : 'Gemini intent classification and backend allowlist validation in progress.'}
               </p>
             </div>
 
             {/* Echoed Transcript */}
-            <div className="p-3.5 rounded-2xl bg-white border border-slate-200 text-xs text-left font-mono shadow-sm">
-              <span className="text-slate-400 text-[10px] block uppercase font-sans mb-1">
-                Transcribed Audio:
-              </span>
-              <p className="text-blue-600 font-semibold italic">"{transcript}"</p>
-            </div>
+            {transcript && (
+              <div className="p-3.5 rounded-2xl bg-white border border-slate-200 text-xs text-left font-mono shadow-sm">
+                <span className="text-slate-400 text-[10px] block uppercase font-sans mb-1">
+                  Transcribed Audio:
+                </span>
+                <p className="text-blue-600 font-semibold italic">"{transcript}"</p>
+              </div>
+            )}
           </div>
         )}
 
