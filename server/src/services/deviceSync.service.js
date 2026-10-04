@@ -1,3 +1,4 @@
+const mongoose = require('mongoose')
 const { Device, DEVICE_STATES } = require('../models/Device')
 const { onMessage } = require('./mqtt.service')
 const { emitDeviceStatus, emitDeviceColor } = require('./socket.service')
@@ -28,6 +29,10 @@ function normalizeState(rawState) {
  */
 async function processDeviceStatusMessage(topic, payload) {
   try {
+    if (mongoose.connection.readyState !== 1) {
+      return null
+    }
+
     let data = payload
     if (typeof payload === 'string') {
       try {
@@ -164,6 +169,10 @@ async function processDeviceStatusMessage(topic, payload) {
  */
 async function handleAvailability(topic, payload, rawPayload) {
   try {
+    if (mongoose.connection.readyState !== 1) {
+      return null
+    }
+
     let data = payload
 
     // If payload is a string or Buffer, handle plain string ("online" / "offline") or parse JSON
@@ -299,6 +308,10 @@ async function handleAvailability(topic, payload, rawPayload) {
  */
 async function handleProjectorColorStateMessage(topic, payload) {
   try {
+    if (mongoose.connection.readyState !== 1) {
+      return null
+    }
+
     let data = payload
     if (typeof payload === 'string' || Buffer.isBuffer(payload)) {
       try {
