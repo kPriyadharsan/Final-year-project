@@ -375,8 +375,13 @@ async function parseClassroomCommand(text, options = {}) {
   const sanitizedText = text.trim()
   console.log(`[CommandParser] 🎙️ Parsing command: "${sanitizedText}"`)
 
-  let aiRawResult = null
-  let parseSource = 'gemini'
+  // 1. Instant Fast-Path: If text clearly matches standard classroom device commands, execute in <1ms without cloud LLM round-trip!
+  const ruleResult = parseWithRuleFallback(sanitizedText)
+  if (ruleResult.isValid && ruleResult.intent === 'DEVICE_CONTROL' && ruleResult.device && ruleResult.action) {
+    console.log(`[CommandParser] ⚡ Fast-path matched in <1ms: ${ruleResult.device} -> ${ruleResult.action}`)
+    ruleResult.source = 'fast_path'
+    return ruleResult
+  }
 
   // Attempt to call Google Gemini using structured schema
   try {

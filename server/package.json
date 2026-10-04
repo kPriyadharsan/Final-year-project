@@ -24,6 +24,7 @@
     "test:live": "node scripts/test-gemini-live-commands.js",
     "test:rgb": "node scripts/test-rgb-assistant.js",
     "test:assistant": "node scripts/test-conversational-assistant.js",
+    "test:latency": "node scripts/test-rgb-latency.js",
     "test:state": "node scripts/test-state-assistant.js",
     "test:esp32": "node scripts/test-esp32-integration.js",
     "test:iot:audit": "node scripts/audit-e2e-iot.js",

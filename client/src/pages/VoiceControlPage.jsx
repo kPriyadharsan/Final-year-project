@@ -79,8 +79,19 @@ STRICT CAPABILITY ENFORCEMENT:
 - If user requests RGB on fan ("Make the fan purple"): Do NOT call tool. Respond: "The fan doesn't have RGB lighting."
 - If user requests speed control on fan: Do NOT call tool. Respond: "Fan speed control isn't available yet."
 
+CRITICAL COLOR & RGB VOICE RULES:
+- ALWAYS use human color names: "purple", "blue", "red", "green", "yellow", "cyan", "magenta", "pink", "orange", "white", "warm white", "cool white".
+- NEVER speak or expose raw RGB numbers or hex codes (e.g. NEVER say "225, 0, 0", "RGB: 255, 0, 0", or "#A855F7") in your spoken voice responses!
+- Speak: "Projector light is purple.", "Projector light is red.", "Projector light is off."
+- Only if the user explicitly asks "What RGB value did you use?" may you provide numeric values.
+
 RESPONSE STYLE:
-Keep voice responses extremely concise (1 short sentence max). Never give long explanations.`
+Keep voice responses extremely concise (1 short sentence max).
+- "Fan is on."
+- "Light is off."
+- "Projector light is purple."
+- "Yes, the fan is running."
+Never give long explanations or robotic confirmations.`
 
 const CONTROL_CLASSROOM_DEVICES_TOOL = {
   functionDeclarations: [
@@ -178,7 +189,7 @@ const WORKLET_INLINE_CODE = `
 class GeminiLiveAudioProcessor extends AudioWorkletProcessor {
   constructor() {
     super();
-    this.bufferSize = 2048;
+    this.bufferSize = 512;
     this.buffer = new Int16Array(this.bufferSize);
     this.bufferIndex = 0;
   }
@@ -187,7 +198,12 @@ class GeminiLiveAudioProcessor extends AudioWorkletProcessor {
     if (!input || input.length === 0) return true;
     const channelData = input[0];
     for (let i = 0; i < channelData.length; i++) {
-      const sample = Math.max(-1, Math.min(1, channelData[i]));
+      let sample = channelData[i];
+      // Intelligent Noise Gate: eliminate background hiss / static below -40dB
+      if (Math.abs(sample) < 0.01) {
+        sample = 0;
+      }
+      sample = Math.max(-1, Math.min(1, sample));
       this.buffer[this.bufferIndex++] = sample < 0 ? sample * 0x8000 : sample * 0x7fff;
       if (this.bufferIndex >= this.bufferSize) {
         const chunk = this.buffer.slice(0, this.bufferSize);
@@ -203,11 +219,11 @@ registerProcessor('gemini-live-audio-processor', GeminiLiveAudioProcessor);
 `
 
 function arrayBufferToBase64(buffer) {
-  let binary = ''
   const bytes = new Uint8Array(buffer)
-  const len = bytes.byteLength
-  for (let i = 0; i < len; i++) {
-    binary += String.fromCharCode(bytes[i])
+  const chunkSize = 8192
+  let binary = ''
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    binary += String.fromCharCode.apply(null, bytes.subarray(i, i + chunkSize))
   }
   return window.btoa(binary)
 }
@@ -323,13 +339,17 @@ export function VoiceControlPage() {
   const animFrameRef = useRef(null)
   const nextPlaybackTimeRef = useRef(0)
   const activeAudioSourcesRef = useRef([])
+  const activeTurnIdRef = useRef(0)
+  const isInterruptedRef = useRef(false)
   const isLiveModeActiveRef = useRef(false)
   const isMutedRef = useRef(false)
+  const userSpeakingRef = useRef(false)
+  const silenceTimerRef = useRef(null)
 
   // Web Speech Fallback Ref
   const recognitionRef = useRef(null)
 
-  // Real-time audio analyser loop to detect user voice amplitude
+  // Real-time audio analyser loop with Voice Activity Detection (VAD) & instant turn completion
   const startVolumeAnalyser = useCallback((stream) => {
     try {
       const audioCtx = new (window.AudioContext || window.webkitAudioContext)()
@@ -350,6 +370,36 @@ export function VoiceControlPage() {
         }
         const avg = sum / dataArray.length
         setMicVolume(Math.min(100, Math.round((avg / 128) * 100)))
+
+        // 1. Instant local barge-in: If user speaks while assistant is speaking, stop audio immediately!
+        if (avg > 15) {
+          if (activeAudioSourcesRef.current.length > 0) {
+            stopAudioPlayback()
+          }
+
+          // User is actively speaking
+          userSpeakingRef.current = true
+          if (silenceTimerRef.current) {
+            clearTimeout(silenceTimerRef.current)
+            silenceTimerRef.current = null
+          }
+        } else if (userSpeakingRef.current && !silenceTimerRef.current) {
+          // 2. Instant turnComplete trigger: when user stops speaking, after 500ms of silence,
+          // signal turnComplete immediately so Gemini replies in <300ms without waiting for slow server VAD timeout!
+          silenceTimerRef.current = setTimeout(() => {
+            silenceTimerRef.current = null
+            if (userSpeakingRef.current) {
+              userSpeakingRef.current = false
+              if (liveSessionRef.current && isLiveModeActiveRef.current) {
+                console.log('[GeminiLive] ⚡ Instant speech end detected: Signaling turnComplete for real-time reply')
+                try {
+                  liveSessionRef.current.sendClientContent({ turnComplete: true })
+                } catch {}
+              }
+            }
+          }, 500)
+        }
+
         animFrameRef.current = requestAnimationFrame(checkVolume)
       }
       checkVolume()
@@ -359,6 +409,11 @@ export function VoiceControlPage() {
   }, [])
 
   const stopVolumeAnalyser = useCallback(() => {
+    if (silenceTimerRef.current) {
+      clearTimeout(silenceTimerRef.current)
+      silenceTimerRef.current = null
+    }
+    userSpeakingRef.current = false
     if (animFrameRef.current) {
       cancelAnimationFrame(animFrameRef.current)
       animFrameRef.current = null
@@ -372,9 +427,37 @@ export function VoiceControlPage() {
     setMicVolume(0)
   }, [])
 
+  // Stop currently playing audio and cancel pending queue
+  const stopAudioPlayback = useCallback(() => {
+    isInterruptedRef.current = true
+    activeTurnIdRef.current++
+    if (silenceTimerRef.current) {
+      clearTimeout(silenceTimerRef.current)
+      silenceTimerRef.current = null
+    }
+    userSpeakingRef.current = false
+    activeAudioSourcesRef.current.forEach((src) => {
+      try {
+        src.stop()
+      } catch {}
+    })
+    activeAudioSourcesRef.current = []
+    if (outputAudioContextRef.current) {
+      nextPlaybackTimeRef.current = outputAudioContextRef.current.currentTime
+    }
+    if (isLiveModeActiveRef.current) {
+      setCurrentState(VOICE_STATES.LISTENING)
+    }
+  }, [])
+
   // Helper to schedule and play 24kHz PCM audio from Gemini
-  const playPcmChunk = useCallback((base64Data) => {
+  const playPcmChunk = useCallback((base64Data, turnId) => {
     try {
+      if (turnId !== undefined && turnId !== activeTurnIdRef.current) {
+        // Discard stale chunk from interrupted or superseded turn
+        return
+      }
+
       if (!outputAudioContextRef.current) {
         outputAudioContextRef.current = new (window.AudioContext || window.webkitAudioContext)({
           sampleRate: 24000,
@@ -424,22 +507,6 @@ export function VoiceControlPage() {
       }
     } catch (e) {
       console.warn('[VoiceControlPage] Error playing PCM chunk:', e.message)
-    }
-  }, [])
-
-  // Stop currently playing audio
-  const stopAudioPlayback = useCallback(() => {
-    activeAudioSourcesRef.current.forEach((src) => {
-      try {
-        src.stop()
-      } catch {}
-    })
-    activeAudioSourcesRef.current = []
-    if (outputAudioContextRef.current) {
-      nextPlaybackTimeRef.current = outputAudioContextRef.current.currentTime
-    }
-    if (isLiveModeActiveRef.current) {
-      setCurrentState(VOICE_STATES.LISTENING)
     }
   }, [])
 
@@ -728,6 +795,7 @@ export function VoiceControlPage() {
           )
 
           if (liveSessionRef.current) {
+            const humanColor = rgbData.colorName || (typeof rgbData.color === 'string' ? rgbData.color : rgbData.color?.name) || 'purple'
             liveSessionRef.current.sendToolResponse({
               functionResponses: [
                 {
@@ -737,7 +805,8 @@ export function VoiceControlPage() {
                     device: rgbData.device,
                     status: 'success',
                     power: rgbData.power,
-                    color: rgbData.color,
+                    color: humanColor,
+                    message: rgbData.message || (rgbData.power === 'OFF' ? 'Projector light is off.' : `Projector light is ${humanColor}.`),
                   },
                 },
               ],
@@ -868,7 +937,13 @@ export function VoiceControlPage() {
         }
       }
 
+      if (msg.serverContent?.interrupted) {
+        stopAudioPlayback()
+      }
+
       if (msg.serverContent?.modelTurn?.parts) {
+        isInterruptedRef.current = false
+        const currentTurnId = activeTurnIdRef.current
         for (const part of msg.serverContent.modelTurn.parts) {
           if (part.functionCall) {
             if (part.functionCall.name === 'set_classroom_rgb') {
@@ -880,16 +955,12 @@ export function VoiceControlPage() {
             }
           }
           if (part.inlineData && part.inlineData.data) {
-            playPcmChunk(part.inlineData.data)
+            playPcmChunk(part.inlineData.data, currentTurnId)
           }
           if (part.text) {
             setLiveTranscript(part.text)
           }
         }
-      }
-
-      if (msg.serverContent?.interrupted) {
-        stopAudioPlayback()
       }
 
       if (msg.serverContent?.turnComplete) {
@@ -932,6 +1003,67 @@ export function VoiceControlPage() {
           setStatusMessage('Listening (Ready) • Speak now')
         }
 
+        let commandDispatched = false
+        const dispatchVoiceCommand = async (commandText) => {
+          if (commandDispatched) return
+          commandDispatched = true
+          setCurrentState(VOICE_STATES.PROCESSING)
+          setStatusMessage(`Executing: "${commandText}"`)
+
+          try {
+            const res = await fetch(`${apiBaseUrl}/api/voice/command`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                ...(token ? { Authorization: `Bearer ${token}` } : {}),
+              },
+              body: JSON.stringify({ transcript: commandText, classroom }),
+            })
+            const data = await res.json()
+            if (res.ok && data.status === 'success') {
+              const dev = data.data?.device || 'device'
+              const act = data.data?.action || 'command'
+              setActionCards((prev) => [
+                {
+                  id: `${dev}-${Date.now()}`,
+                  device: dev,
+                  action: act,
+                  status: 'success',
+                  timestamp: Date.now(),
+                  oppositeAction: getOppositeAction(act),
+                  isReverting: false,
+                  error: null,
+                },
+                ...prev,
+              ].slice(0, 4))
+              const feedbackMsg = `${dev.toUpperCase()} switched ${act}`
+              setStatusMessage(feedbackMsg)
+
+              // Fast audible speech synthesis feedback
+              try {
+                if ('speechSynthesis' in window) {
+                  window.speechSynthesis.cancel()
+                  const utterance = new SpeechSynthesisUtterance(data.message || feedbackMsg)
+                  utterance.rate = 1.2
+                  window.speechSynthesis.speak(utterance)
+                }
+              } catch {}
+            } else {
+              setStatusMessage(data.message || 'Could not recognize command.')
+            }
+          } catch {
+            setStatusMessage('Command dispatch failed.')
+          } finally {
+            if (isLiveModeActiveRef.current) {
+              setTimeout(() => {
+                commandDispatched = false
+                setCurrentState(VOICE_STATES.LISTENING)
+                setStatusMessage('Listening... Speak now')
+              }, 1000)
+            }
+          }
+        }
+
         recognition.onresult = async (event) => {
           let interimTranscript = ''
           let finalTranscript = ''
@@ -950,50 +1082,10 @@ export function VoiceControlPage() {
             setStatusMessage(`Heard: "${currentWords}"`)
           }
 
-          if (finalTranscript.trim()) {
-            setCurrentState(VOICE_STATES.PROCESSING)
-            setStatusMessage(`Executing: "${finalTranscript.trim()}"`)
-
-            try {
-              const res = await fetch(`${apiBaseUrl}/api/voice/command`, {
-                method: 'POST',
-                headers: {
-                  'Content-Type': 'application/json',
-                  ...(token ? { Authorization: `Bearer ${token}` } : {}),
-                },
-                body: JSON.stringify({ transcript: finalTranscript.trim(), classroom }),
-              })
-              const data = await res.json()
-              if (res.ok && data.status === 'success') {
-                const dev = data.data?.device || 'device'
-                const act = data.data?.action || 'command'
-                setActionCards((prev) => [
-                  {
-                    id: `${dev}-${Date.now()}`,
-                    device: dev,
-                    action: act,
-                    status: 'success',
-                    timestamp: Date.now(),
-                    oppositeAction: getOppositeAction(act),
-                    isReverting: false,
-                    error: null,
-                  },
-                  ...prev,
-                ].slice(0, 4))
-                setStatusMessage(`${dev.toUpperCase()} switched ${act}`)
-              } else {
-                setStatusMessage(data.message || 'Could not recognize command.')
-              }
-            } catch {
-              setStatusMessage('Command dispatch failed.')
-            } finally {
-              if (isLiveModeActiveRef.current) {
-                setTimeout(() => {
-                  setCurrentState(VOICE_STATES.LISTENING)
-                  setStatusMessage('Listening... Speak now')
-                }, 1200)
-              }
-            }
+          const trimmed = currentWords.trim()
+          const isQuickCommand = /\b(turn\s+(on|off)|switch\s+(on|off)|power\s+(on|off)|make\s+it\s+\w+)\b/i.test(trimmed)
+          if (finalTranscript.trim() || isQuickCommand) {
+            dispatchVoiceCommand(finalTranscript.trim() || trimmed)
           }
         }
 
@@ -1037,9 +1129,10 @@ export function VoiceControlPage() {
         audio: {
           channelCount: 1,
           sampleRate: 16000,
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true,
+          echoCancellation: { ideal: true },
+          noiseSuppression: { ideal: true },
+          autoGainControl: { ideal: true },
+          latency: 0,
         },
       })
       micStreamRef.current = micStream

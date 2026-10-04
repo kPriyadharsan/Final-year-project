@@ -1,6 +1,7 @@
 const geminiService = require('../services/gemini.service')
 const deviceCommandService = require('../services/deviceCommand.service')
 const classroomStateService = require('../services/classroomState.service')
+const { Device } = require('../models/Device')
 const { VoiceCommand, EXECUTION_STATUSES } = require('../models/VoiceCommand')
 const {
   DEVICE_CAPABILITIES,
@@ -224,69 +225,87 @@ async function handleLiveDeviceCommand(req, res) {
     console.log(`[GeminiLive] Function call: control_classroom_devices`)
     console.log(`[GeminiLive] Actions: ${validatedActions.length}`)
 
-    // 3. Execute every action through the EXISTING deviceCommandService
-    const actionResults = []
+    // 3. Pre-fetch active classroom devices once to eliminate redundant queries
+    const activeDevices = await Device.find({
+      isActive: true,
+      ...(classroom ? { classroom: { $regex: new RegExp(`^${classroom.trim()}$`, 'i') } } : {}),
+    }).lean()
+    const deviceMap = new Map(activeDevices.map((d) => [String(d.type || '').toUpperCase(), d]))
+
+    // Group actions by device so independent appliances execute concurrently
+    // while actions on the same device execute sequentially (e.g. Projector ON then SET_COLOR)
+    const actionsByDevice = new Map()
     for (const act of validatedActions) {
-      // 3a. State-aware check: Avoid redundant MQTT commands if device is already in requested state
-      if (!act.capability || act.capability === 'power') {
-        const { Device } = require('../models/Device')
-        const currentDev = await Device.findOne({
-          type: act.device.toUpperCase(),
-          isActive: true,
-          ...(classroom ? { classroom: { $regex: new RegExp(`^${classroom.trim()}$`, 'i') } } : {}),
-        }).lean()
-
-        const currentPower = (currentDev?.state || currentDev?.confirmedState || '').toUpperCase()
-        if (currentDev && currentPower === act.action) {
-          console.log(`[GeminiLive] ⚡ State-aware: "${act.device}" is already ${act.action}. Avoiding redundant MQTT publish.`)
-          actionResults.push({
-            device: act.device,
-            action: act.action,
-            capability: 'power',
-            success: true,
-            delivered: true,
-            alreadyInState: true,
-            message: `${currentDev.name || act.device} is already ${act.action.toLowerCase()}.`,
-          })
-          continue
-        }
+      if (!actionsByDevice.has(act.device)) {
+        actionsByDevice.set(act.device, [])
       }
-
-      let cmdResult = null
-
-      if (act.capability === 'rgb' || act.action === 'SET_COLOR') {
-        cmdResult = await deviceCommandService.executeDeviceColorCommand({
-          deviceType: act.device,
-          classroom,
-          power: 'ON',
-          color: act.color,
-          user: currentUser,
-          source: 'VOICE_LIVE',
-        })
-      } else {
-        cmdResult = await deviceCommandService.executeDeviceCommand({
-          deviceType: act.device,
-          action: act.action,
-          classroom,
-          user: currentUser,
-          source: 'VOICE_LIVE',
-        })
-      }
-
-      const isSuccess = Boolean(cmdResult.success && cmdResult.delivered)
-      console.log(`[GeminiLive] Device command result: ${act.device} ${act.action} -> ${isSuccess ? 'delivered' : 'failed'}`)
-
-      actionResults.push({
-        device: act.device,
-        action: act.action,
-        capability: act.capability,
-        ...(act.color ? { color: act.color } : {}),
-        success: isSuccess,
-        delivered: Boolean(cmdResult.delivered),
-        message: cmdResult.message,
-        ...(cmdResult.code ? { code: cmdResult.code } : {}),
-      })
+      actionsByDevice.get(act.device).push(act)
     }
+
+    const executeDeviceQueue = async (deviceActions) => {
+      const results = []
+      for (const act of deviceActions) {
+        // State-aware check: Avoid redundant MQTT commands if device is already in requested state
+        if (!act.capability || act.capability === 'power') {
+          const currentDev = deviceMap.get(act.device.toUpperCase())
+          const currentPower = (currentDev?.state || currentDev?.confirmedState || '').toUpperCase()
+          if (currentDev && currentPower === act.action) {
+            console.log(`[GeminiLive] ⚡ State-aware: "${act.device}" is already ${act.action}. Avoiding redundant MQTT publish.`)
+            results.push({
+              device: act.device,
+              action: act.action,
+              capability: 'power',
+              success: true,
+              delivered: true,
+              alreadyInState: true,
+              message: `${currentDev.name || act.device} is already ${act.action.toLowerCase()}.`,
+            })
+            continue
+          }
+        }
+
+        let cmdResult = null
+        if (act.capability === 'rgb' || act.action === 'SET_COLOR') {
+          cmdResult = await deviceCommandService.executeDeviceColorCommand({
+            deviceType: act.device,
+            classroom,
+            power: 'ON',
+            color: act.color,
+            user: currentUser,
+            source: 'VOICE_LIVE',
+          })
+        } else {
+          cmdResult = await deviceCommandService.executeDeviceCommand({
+            deviceType: act.device,
+            action: act.action,
+            classroom,
+            user: currentUser,
+            source: 'VOICE_LIVE',
+          })
+        }
+
+        const isSuccess = Boolean(cmdResult.success && cmdResult.delivered)
+        console.log(`[GeminiLive] Device command result: ${act.device} ${act.action} -> ${isSuccess ? 'delivered' : 'failed'}`)
+
+        results.push({
+          device: act.device,
+          action: act.action,
+          capability: act.capability,
+          ...(act.color ? { color: act.color } : {}),
+          success: isSuccess,
+          delivered: Boolean(cmdResult.delivered),
+          message: cmdResult.message,
+          ...(cmdResult.code ? { code: cmdResult.code } : {}),
+        })
+      }
+      return results
+    }
+
+    // Execute independent device queues concurrently with Promise.all
+    const queueResults = await Promise.all(
+      Array.from(actionsByDevice.values()).map(executeDeviceQueue)
+    )
+    const actionResults = queueResults.flat()
 
     // 4. Record audit log in VoiceCommand
     const allSuccess = actionResults.every((r) => r.success)
@@ -442,6 +461,7 @@ async function handleLiveRgbCommand(req, res) {
         capability: 'rgb',
         power: targetPower,
         color: resolvedColor,
+        colorName: resolvedColor?.name || (targetPower === 'OFF' ? 'off' : 'custom'),
         delivered: Boolean(cmdResult.delivered),
         success: isSuccess,
         message: cmdResult.message,

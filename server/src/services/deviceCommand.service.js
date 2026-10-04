@@ -4,6 +4,7 @@ const { DeviceLog, MQTT_DELIVERY_STATUS } = require('../models/DeviceLog')
 const { publish, getMQTTStatus } = require('./mqtt.service')
 const { emitDeviceStatus, emitDeviceColor } = require('./socket.service')
 const { getCommandTopic, getProjectorColorCommandTopic, buildCommandPayload } = require('../utils/mqttTopics')
+const { resolveRgbColor } = require('../constants/deviceCapabilities')
 
 /**
  * Returns a human-friendly device label for execution messages.
@@ -550,14 +551,24 @@ async function executeDeviceColorCommand({
     }
   }
 
-  // 3. Normalize power & color (clamp 0-255, reject malformed payloads)
-  if (color && typeof color !== 'object') {
+  // 3. Normalize power & color (clamp 0-255, resolve strings / names)
+  let resolvedColorObj = null
+  if (color) {
+    if (typeof color === 'string' || (typeof color === 'object' && color.name)) {
+      resolvedColorObj = resolveRgbColor(color)
+    } else if (typeof color === 'object') {
+      resolvedColorObj = resolveRgbColor(color) || color
+    }
+  }
+
+  const effectiveColor = resolvedColorObj || color
+  if (effectiveColor && typeof effectiveColor !== 'object') {
     return {
       success: false,
       delivered: false,
       code: 'INVALID_COLOR_PAYLOAD',
       executionStatus: 'FAILED',
-      message: 'Malformed color payload. Expected object with numeric r, g, b fields (0-255).',
+      message: 'Malformed color payload. Expected valid color name (e.g. "purple") or numeric r, g, b fields (0-255).',
       timestamp: new Date().toISOString(),
     }
   }
@@ -583,10 +594,11 @@ async function executeDeviceColorCommand({
   }
 
   const prevColor = device.color || { r: 255, g: 255, b: 255 }
-  const r = color && typeof color.r !== 'undefined' ? Math.max(0, Math.min(255, Math.round(Number(color.r) || 0))) : prevColor.r
-  const g = color && typeof color.g !== 'undefined' ? Math.max(0, Math.min(255, Math.round(Number(color.g) || 0))) : prevColor.g
-  const b = color && typeof color.b !== 'undefined' ? Math.max(0, Math.min(255, Math.round(Number(color.b) || 0))) : prevColor.b
+  const r = effectiveColor && typeof effectiveColor.r !== 'undefined' ? Math.max(0, Math.min(255, Math.round(Number(effectiveColor.r) || 0))) : prevColor.r
+  const g = effectiveColor && typeof effectiveColor.g !== 'undefined' ? Math.max(0, Math.min(255, Math.round(Number(effectiveColor.g) || 0))) : prevColor.g
+  const b = effectiveColor && typeof effectiveColor.b !== 'undefined' ? Math.max(0, Math.min(255, Math.round(Number(effectiveColor.b) || 0))) : prevColor.b
   const targetColor = { r, g, b }
+  const colorName = (resolvedColorObj && resolvedColorObj.name) || (effectiveColor && effectiveColor.name) || (targetPower === 'OFF' ? 'off' : 'custom')
 
   // 4. Verify Controller Node Online Status (Strict Hardware Guard)
   let isNodeOnline = true
@@ -703,7 +715,7 @@ async function executeDeviceColorCommand({
     success: true,
     delivered: true,
     executionStatus: 'EXECUTED',
-    message: `Projector lighting set to ${targetPower} (RGB: ${r}, ${g}, ${b}).`,
+    message: targetPower === 'OFF' ? 'Projector light is off.' : `Projector light is ${colorName}.`,
     device: {
       id: device._id,
       deviceId: device.deviceId,
