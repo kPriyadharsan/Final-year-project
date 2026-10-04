@@ -1098,7 +1098,7 @@ export function DeviceControlPage() {
                               </div>
 
                               {/* Numeric Readout: R: 255, G: 255, B: 255 (or 0 when OFF) */}
-                              <div className="flex items-center gap-1.5 font-mono text-xs">
+                              <div className="flex items-center gap-1.5 font-mono text-xs flex-wrap">
                                 <span className={`px-2.5 py-1 rounded-lg font-bold border ${
                                   isOn ? 'bg-rose-50 text-rose-700 border-rose-200/80' : 'bg-slate-100 text-slate-400 border-slate-200'
                                 }`}>

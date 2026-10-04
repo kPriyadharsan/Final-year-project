@@ -59,7 +59,7 @@ function PublicLayout({ children }) {
         <div className="absolute -bottom-40 left-1/3 w-[500px] h-[500px] bg-gradient-to-tr from-cyan-300/20 to-blue-200/20 rounded-full blur-3xl opacity-60"></div>
       </div>
 
-      <div className="flex-1 flex items-center justify-center p-4">
+      <div className="flex-1 flex items-center justify-center p-2.5 sm:p-4 py-4 sm:py-8">
         {children}
       </div>
 

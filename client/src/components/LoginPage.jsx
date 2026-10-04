@@ -3,6 +3,30 @@ import { useNavigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { Sparkles, Lock, Mail, Eye, EyeOff, ShieldCheck } from 'lucide-react'
 
+const TEST_ACCOUNTS = {
+  admin: {
+    key: 'admin',
+    role: 'SUPER_ADMIN',
+    label: 'Admin',
+    email: 'dharsan2763@gmail.com',
+    password: '1234567890',
+  },
+  teacher: {
+    key: 'teacher',
+    role: 'TEACHER',
+    label: 'Teacher',
+    email: 'alakesanece@gmail.com',
+    password: '7418529630',
+  },
+  student: {
+    key: 'student',
+    role: 'STUDENT',
+    label: 'Student',
+    email: 'vidhya@gmail.com',
+    password: '147258369',
+  },
+}
+
 export function LoginPage() {
   const { login, authError, clearError, isLoading, isAuthenticated, user } = useAuth()
   const navigate = useNavigate()
@@ -12,6 +36,7 @@ export function LoginPage() {
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [fieldErrors, setFieldErrors] = useState({})
+  const [selectedRole, setSelectedRole] = useState(null)
 
   // Helper to determine destination route based on role
   const getRoleDestination = (role) => {
@@ -60,25 +85,29 @@ export function LoginPage() {
     }
   }
 
-  // Quick helper to populate initial seeded Super Admin credentials
-  const populateDemoAdmin = () => {
-    setEmail('admin@smartclassroom.edu')
-    setPassword('SuperAdminSecure2026!')
+  // Test account shortcut selector (populates fields, DOES NOT auto-submit)
+  const handleSelectTestAccount = (roleKey) => {
+    const account = TEST_ACCOUNTS[roleKey]
+    if (!account) return
+
+    setSelectedRole(roleKey)
+    setEmail(account.email)
+    setPassword(account.password)
     setFieldErrors({})
     clearError()
   }
 
   return (
-    <div className="w-full max-w-md mx-auto">
+    <div className="w-full max-w-md mx-auto px-2 sm:px-0">
       {/* iOS 27 Liquid Glass Login Card */}
-      <div className="bg-white/80 border border-white/90 rounded-[32px] p-7 sm:p-9 backdrop-blur-3xl shadow-[0_20px_50px_rgba(0,0,0,0.06),0_1px_1px_rgba(255,255,255,0.9)_inset] relative overflow-hidden">
+      <div className="bg-white/80 border border-white/90 rounded-2xl sm:rounded-[32px] p-5 sm:p-8 backdrop-blur-3xl shadow-[0_20px_50px_rgba(0,0,0,0.06),0_1px_1px_rgba(255,255,255,0.9)_inset] relative overflow-hidden">
         {/* Specular Liquid Top Glint */}
-        <div className="absolute inset-x-12 top-0 h-[1px] bg-gradient-to-r from-transparent via-white to-transparent pointer-events-none" />
+        <div className="absolute inset-x-8 sm:inset-x-12 top-0 h-[1px] bg-gradient-to-r from-transparent via-white to-transparent pointer-events-none" />
 
         {/* Card Header */}
-        <div className="text-center space-y-2 mb-8">
-          <div className="w-14 h-14 mx-auto rounded-3xl bg-gradient-to-tr from-blue-600 via-indigo-600 to-violet-600 flex items-center justify-center shadow-lg shadow-blue-500/25 text-white mb-4">
-            <Sparkles className="w-7 h-7 text-white" />
+        <div className="text-center space-y-2 mb-6 sm:mb-8">
+          <div className="w-12 h-12 sm:w-14 sm:h-14 mx-auto rounded-2xl sm:rounded-3xl bg-gradient-to-tr from-blue-600 via-indigo-600 to-violet-600 flex items-center justify-center shadow-lg shadow-blue-500/25 text-white mb-3 sm:mb-4">
+            <Sparkles className="w-6 h-6 sm:w-7 sm:h-7 text-white" />
           </div>
           <h2 className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">
             Smart Classroom
@@ -127,10 +156,11 @@ export function LoginPage() {
                 value={email}
                 onChange={(e) => {
                   setEmail(e.target.value)
+                  setSelectedRole(null)
                   if (fieldErrors.email) setFieldErrors({ ...fieldErrors, email: null })
                 }}
                 disabled={isLoading}
-                className={`w-full pl-10 pr-3.5 py-3 rounded-2xl bg-slate-100/80 hover:bg-slate-100 focus:bg-white border text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-4 focus:ring-blue-500/10 transition-all font-sans ${
+                className={`w-full pl-10 pr-3.5 py-2.5 sm:py-3 rounded-2xl bg-slate-100/80 hover:bg-slate-100 focus:bg-white border text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-4 focus:ring-blue-500/10 transition-all font-sans ${
                   fieldErrors.email
                     ? 'border-rose-400 focus:border-rose-500'
                     : 'border-slate-200/80 focus:border-blue-500'
@@ -161,10 +191,11 @@ export function LoginPage() {
                 value={password}
                 onChange={(e) => {
                   setPassword(e.target.value)
+                  setSelectedRole(null)
                   if (fieldErrors.password) setFieldErrors({ ...fieldErrors, password: null })
                 }}
                 disabled={isLoading}
-                className={`w-full pl-10 pr-10 py-3 rounded-2xl bg-slate-100/80 hover:bg-slate-100 focus:bg-white border text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-4 focus:ring-blue-500/10 transition-all font-sans ${
+                className={`w-full pl-10 pr-10 py-2.5 sm:py-3 rounded-2xl bg-slate-100/80 hover:bg-slate-100 focus:bg-white border text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-4 focus:ring-blue-500/10 transition-all font-sans ${
                   fieldErrors.password
                     ? 'border-rose-400 focus:border-rose-500'
                     : 'border-slate-200/80 focus:border-blue-500'
@@ -204,43 +235,60 @@ export function LoginPage() {
           </button>
         </form>
 
-        {/* Quick Demo Credentials Helper */}
-        <div className="mt-8 pt-6 border-t border-slate-100 text-center">
-          <p className="text-[11px] text-slate-400 mb-2.5 font-medium">Quick Role Testing</p>
-          <div className="flex flex-wrap items-center justify-center gap-2">
+        {/* Convenient Test Role Autofill Shortcuts (No Auto-submit) */}
+        <div className="mt-6 sm:mt-8 pt-5 sm:pt-6 border-t border-slate-100 text-center">
+          <p className="text-[11px] uppercase tracking-wider text-slate-400 mb-3 font-semibold">
+            Test Accounts
+          </p>
+
+          <div className="grid grid-cols-3 gap-2 sm:gap-2.5">
+            {/* Admin Test Button */}
             <button
               type="button"
-              onClick={populateDemoAdmin}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-blue-50 hover:bg-blue-100 border border-blue-200/80 text-blue-700 transition-all text-xs font-medium cursor-pointer shadow-sm"
+              onClick={() => handleSelectTestAccount('admin')}
+              className={`flex items-center justify-center gap-1.5 py-2 px-2.5 sm:px-3 rounded-xl border text-xs font-semibold transition-all cursor-pointer active:scale-95 ${
+                selectedRole === 'admin'
+                  ? 'bg-blue-600 text-white border-blue-600 shadow-md shadow-blue-500/25 ring-2 ring-blue-500/30'
+                  : 'bg-blue-50/80 hover:bg-blue-100/90 text-blue-700 border-blue-200/80'
+              }`}
+              title="Autofill Admin (dharsan2763@gmail.com)"
             >
-              <ShieldCheck className="w-3.5 h-3.5 text-blue-600" />
+              <ShieldCheck className="w-3.5 h-3.5 shrink-0" />
               <span>Admin</span>
             </button>
+
+            {/* Teacher Test Button */}
             <button
               type="button"
-              onClick={() => {
-                setEmail('teacher@smartclassroom.edu')
-                setPassword('TeacherSecure2026!')
-                setFieldErrors({})
-                clearError()
-              }}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-indigo-50 hover:bg-indigo-100 border border-indigo-200/80 text-indigo-700 transition-all text-xs font-medium cursor-pointer shadow-sm"
+              onClick={() => handleSelectTestAccount('teacher')}
+              className={`flex items-center justify-center gap-1.5 py-2 px-2.5 sm:px-3 rounded-xl border text-xs font-semibold transition-all cursor-pointer active:scale-95 ${
+                selectedRole === 'teacher'
+                  ? 'bg-indigo-600 text-white border-indigo-600 shadow-md shadow-indigo-500/25 ring-2 ring-indigo-500/30'
+                  : 'bg-indigo-50/80 hover:bg-indigo-100/90 text-indigo-700 border-indigo-200/80'
+              }`}
+              title="Autofill Teacher (alakesanece@gmail.com)"
             >
               <span>Teacher</span>
             </button>
+
+            {/* Student Test Button */}
             <button
               type="button"
-              onClick={() => {
-                setEmail('student@smartclassroom.edu')
-                setPassword('StudentSecure2026!')
-                setFieldErrors({})
-                clearError()
-              }}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-emerald-50 hover:bg-emerald-100 border border-emerald-200/80 text-emerald-700 transition-all text-xs font-medium cursor-pointer shadow-sm"
+              onClick={() => handleSelectTestAccount('student')}
+              className={`flex items-center justify-center gap-1.5 py-2 px-2.5 sm:px-3 rounded-xl border text-xs font-semibold transition-all cursor-pointer active:scale-95 ${
+                selectedRole === 'student'
+                  ? 'bg-emerald-600 text-white border-emerald-600 shadow-md shadow-emerald-500/25 ring-2 ring-emerald-500/30'
+                  : 'bg-emerald-50/80 hover:bg-emerald-100/90 text-emerald-700 border-emerald-200/80'
+              }`}
+              title="Autofill Student (vidhya@gmail.com)"
             >
               <span>Student</span>
             </button>
           </div>
+
+          <p className="text-[10px] text-slate-400 mt-2.5">
+            Clicking a role autofills the credentials. Click &ldquo;Sign In&rdquo; to log in.
+          </p>
         </div>
       </div>
     </div>

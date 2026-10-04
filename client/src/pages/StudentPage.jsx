@@ -56,25 +56,25 @@ export function StudentPage() {
       </div>
 
       {/* Top Navigation Bar */}
-      <header className="sticky top-0 z-30 border-b border-white/60 bg-white/70 backdrop-blur-2xl px-6 py-4 shadow-[0_4px_20px_rgba(0,0,0,0.03)]">
-        <div className="max-w-6xl mx-auto flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-blue-600 via-indigo-600 to-violet-600 flex items-center justify-center shadow-md shadow-blue-500/25 text-white">
-              <Sparkles className="w-5 h-5 text-white" />
+      <header className="sticky top-0 z-30 border-b border-white/60 bg-white/70 backdrop-blur-2xl px-3 sm:px-6 py-3 sm:py-4 shadow-[0_4px_20px_rgba(0,0,0,0.03)]">
+        <div className="max-w-6xl mx-auto flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
+            <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl sm:rounded-2xl bg-gradient-to-tr from-blue-600 via-indigo-600 to-violet-600 flex items-center justify-center shadow-md shadow-blue-500/25 text-white shrink-0">
+              <Sparkles className="w-4 h-4 sm:w-5 sm:h-5 text-white" />
             </div>
-            <div>
-              <h1 className="text-lg font-bold text-slate-900 tracking-tight flex items-center gap-2">
-                Smart Classroom
-                <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-blue-100 text-blue-800 border border-blue-200/60">
-                  Student Portal
+            <div className="min-w-0">
+              <h1 className="text-sm sm:text-lg font-bold text-slate-900 tracking-tight flex items-center gap-1.5 sm:gap-2">
+                <span className="truncate">Smart Classroom</span>
+                <span className="px-2 py-0.5 rounded-full text-[9px] sm:text-[10px] font-bold uppercase tracking-wider bg-blue-100 text-blue-800 border border-blue-200/60 shrink-0">
+                  Student
                 </span>
               </h1>
-              <p className="text-xs text-slate-500">Autonomous IoT &amp; AI Facility Platform</p>
+              <p className="text-[11px] text-slate-500 hidden sm:block">Autonomous IoT &amp; AI Facility Platform</p>
             </div>
           </div>
 
-          <div className="flex items-center gap-4">
-            <div className="hidden sm:flex items-center gap-2 text-right">
+          <div className="flex items-center gap-2 sm:gap-4 shrink-0">
+            <div className="hidden md:flex items-center gap-2 text-right">
               <div>
                 <p className="text-xs font-semibold text-slate-800">{user?.name || 'Student'}</p>
                 <p className="text-[11px] text-slate-500">{user?.email}</p>
@@ -83,7 +83,7 @@ export function StudentPage() {
 
             <button
               onClick={logout}
-              className="flex items-center gap-1.5 px-3.5 py-2 rounded-2xl bg-slate-100/80 hover:bg-rose-50 hover:text-rose-600 border border-slate-200/80 text-xs font-semibold text-slate-600 transition-all cursor-pointer shadow-sm active:scale-95"
+              className="flex items-center gap-1.5 px-3 py-1.5 sm:px-3.5 sm:py-2 rounded-xl sm:rounded-2xl bg-slate-100/80 hover:bg-rose-50 hover:text-rose-600 border border-slate-200/80 text-xs font-semibold text-slate-600 transition-all cursor-pointer shadow-sm active:scale-95"
               title="Sign Out"
             >
               <LogOut className="w-3.5 h-3.5" />
@@ -94,27 +94,27 @@ export function StudentPage() {
       </header>
 
       {/* Main Content Area */}
-      <main className="max-w-6xl mx-auto px-6 pt-8 space-y-6">
+      <main className="max-w-6xl mx-auto px-3 sm:px-6 pt-4 sm:pt-8 space-y-4 sm:space-y-6">
         {/* Welcome Banner Card */}
-        <div className="bg-white/80 border border-white/90 rounded-[28px] p-6 sm:p-8 backdrop-blur-2xl shadow-[0_10px_35px_rgba(0,0,0,0.04)] relative overflow-hidden">
+        <div className="bg-white/80 border border-white/90 rounded-2xl sm:rounded-[28px] p-5 sm:p-8 backdrop-blur-2xl shadow-[0_10px_35px_rgba(0,0,0,0.04)] relative overflow-hidden">
           <div className="max-w-2xl">
             <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-50 border border-blue-200/80 text-blue-700 text-xs font-medium mb-3">
               <GraduationCap className="w-3.5 h-3.5 text-blue-600" />
               <span>Enrolled Student Session</span>
             </div>
-            <h2 className="text-2xl font-extrabold text-slate-900 tracking-tight mb-2">
+            <h2 className="text-xl sm:text-2xl font-extrabold text-slate-900 tracking-tight mb-2">
               Welcome back, {user?.name || 'Student'}!
             </h2>
-            <p className="text-sm text-slate-600 leading-relaxed">
+            <p className="text-xs sm:text-sm text-slate-600 leading-relaxed">
               Your student account allows you to view active smart classroom facilities and schedule information. Device controls and administrative features are restricted to authorized Faculty and Super Administrators.
             </p>
           </div>
         </div>
 
         {/* Classroom Info Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
           {/* Enrolled Classes Card */}
-          <div className="bg-white/80 border border-white/90 rounded-[28px] p-6 backdrop-blur-2xl shadow-[0_10px_35px_rgba(0,0,0,0.04)]">
+          <div className="bg-white/80 border border-white/90 rounded-2xl sm:rounded-[28px] p-4 sm:p-6 backdrop-blur-2xl shadow-[0_10px_35px_rgba(0,0,0,0.04)]">
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-2">
                 <BookOpen className="w-4 h-4 text-blue-600" />
@@ -160,7 +160,7 @@ export function StudentPage() {
           </div>
 
           {/* Active Classrooms Card */}
-          <div className="bg-white/80 border border-white/90 rounded-[28px] p-6 backdrop-blur-2xl shadow-[0_10px_35px_rgba(0,0,0,0.04)]">
+          <div className="bg-white/80 border border-white/90 rounded-2xl sm:rounded-[28px] p-4 sm:p-6 backdrop-blur-2xl shadow-[0_10px_35px_rgba(0,0,0,0.04)]">
             <div className="flex items-center gap-2 mb-4">
               <Building2 className="w-4 h-4 text-indigo-600" />
               <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider">
@@ -171,7 +171,7 @@ export function StudentPage() {
             {loading ? (
               <div className="py-8 text-center text-xs text-slate-400">Checking campus classrooms...</div>
             ) : data?.availableClassrooms && data.availableClassrooms.length > 0 ? (
-              <div className="grid grid-cols-2 gap-2.5">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                 {data.availableClassrooms.map((room, idx) => (
                   <div
                     key={idx}

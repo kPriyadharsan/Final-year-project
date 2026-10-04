@@ -9,12 +9,13 @@ import {
   Sparkles,
   Clock,
   Wifi,
+  Menu,
 } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
 import { Badge } from '../ui/Badge'
 import { API_BASE_URL } from '../../config/api'
 
-export function TopNav({ pageTitle = 'Dashboard' }) {
+export function TopNav({ pageTitle = 'Dashboard', onToggleMobileMenu }) {
   const { user, logout } = useAuth()
   const [healthStatus, setHealthStatus] = useState('checking')
   const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false)
@@ -59,16 +60,27 @@ export function TopNav({ pageTitle = 'Dashboard' }) {
   }, [apiBaseUrl])
 
   return (
-    <header className="h-16 sticky top-0 z-30 bg-white/75 border-b border-slate-200/60 backdrop-blur-2xl px-4 sm:px-8 flex items-center justify-between gap-4 transition-all shadow-[0_1px_3px_rgba(0,0,0,0.02)]">
-      {/* Left: Brand Identity & Current Workspace Title */}
-      <div className="flex items-center gap-3.5">
-        <div className="w-9 h-9 rounded-2xl bg-gradient-to-tr from-blue-600 via-indigo-600 to-violet-600 flex items-center justify-center text-white shadow-md shadow-blue-500/20 shrink-0">
-          <Sparkles className="w-5 h-5 text-white" />
+    <header className="h-16 sticky top-0 z-30 bg-white/75 border-b border-slate-200/60 backdrop-blur-2xl px-3 sm:px-8 flex items-center justify-between gap-2 sm:gap-4 transition-all shadow-[0_1px_3px_rgba(0,0,0,0.02)]">
+      {/* Left: Mobile Menu Button & Brand Identity */}
+      <div className="flex items-center gap-2 sm:gap-3.5 min-w-0">
+        {onToggleMobileMenu && (
+          <button
+            type="button"
+            onClick={onToggleMobileMenu}
+            className="p-1.5 -ml-1 rounded-xl text-slate-600 hover:text-slate-900 hover:bg-slate-100 lg:hidden transition-colors cursor-pointer min-w-[36px] min-h-[36px] flex items-center justify-center active:scale-95 shrink-0"
+            aria-label="Toggle navigation menu"
+          >
+            <Menu className="w-5 h-5 text-slate-700" />
+          </button>
+        )}
+
+        <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl sm:rounded-2xl bg-gradient-to-tr from-blue-600 via-indigo-600 to-violet-600 flex items-center justify-center text-white shadow-md shadow-blue-500/20 shrink-0">
+          <Sparkles className="w-4 h-4 sm:w-5 sm:h-5 text-white" />
         </div>
 
-        <div>
-          <div className="flex items-center gap-2">
-            <h1 className="text-sm sm:text-base font-bold text-slate-900 tracking-tight leading-none">
+        <div className="min-w-0">
+          <div className="flex items-center gap-1.5 sm:gap-2">
+            <h1 className="text-xs sm:text-base font-bold text-slate-900 tracking-tight leading-none truncate max-w-[120px] sm:max-w-none">
               {pageTitle}
             </h1>
             <span className="hidden sm:inline-flex text-[10px] px-2 py-0.5 rounded-full font-semibold uppercase tracking-wider bg-slate-100 text-slate-600 border border-slate-200/60">

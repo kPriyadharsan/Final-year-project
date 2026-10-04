@@ -1,5 +1,7 @@
+import { useState } from 'react'
 import { TopNav } from './TopNav'
 import { MacDock } from './MacDock'
+import { Sidebar } from './Sidebar'
 
 export function DashboardLayout({
   children,
@@ -8,6 +10,8 @@ export function DashboardLayout({
   onTabChange,
   onTriggerVoice,
 }) {
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
+
   return (
     <div className="min-h-screen bg-[#f8fafc] text-slate-800 flex flex-col font-sans selection:bg-blue-500/20 selection:text-blue-900 relative">
       {/* iOS 27 Fluid Ambient Lighting Glow (Subtle frosted iridescent background orbs) */}
@@ -17,11 +21,27 @@ export function DashboardLayout({
         <div className="absolute -bottom-32 left-1/3 w-[500px] h-[500px] bg-gradient-to-tr from-cyan-300/15 to-blue-200/15 rounded-full blur-3xl opacity-60" />
       </div>
 
+      {/* Slide-over Mobile Navigation Drawer */}
+      <Sidebar
+        isOpen={true}
+        setIsOpen={() => {}}
+        isMobileOpen={isMobileMenuOpen}
+        setIsMobileOpen={setIsMobileMenuOpen}
+        activeTab={activeTab}
+        onTabChange={(tab) => {
+          setIsMobileMenuOpen(false)
+          onTabChange?.(tab)
+        }}
+      />
+
       {/* Top macOS/iOS Navigation Bar */}
-      <TopNav pageTitle={pageTitle} />
+      <TopNav
+        pageTitle={pageTitle}
+        onToggleMobileMenu={() => setIsMobileMenuOpen((prev) => !prev)}
+      />
 
       {/* Full-Width Spacious Main Viewport with Generous Bottom Clearance for Dock */}
-      <main className="flex-1 w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-6 sm:pt-8 pb-48 sm:pb-56 space-y-6">
+      <main className="flex-1 w-full max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 pt-4 sm:pt-8 pb-44 sm:pb-56 space-y-6">
         {children}
         {/* Bottom clearance spacer ensuring no card is ever obscured by the floating Mac Dock */}
         <div className="h-12 w-full pointer-events-none" aria-hidden="true" />

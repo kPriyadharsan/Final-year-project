@@ -1253,20 +1253,20 @@ export function VoiceControlPage() {
     : 1
 
   return (
-    <div className="chatgpt-voice-page min-h-screen bg-black text-white flex flex-col justify-between items-center px-6 py-8 select-none relative overflow-hidden">
+    <div className="chatgpt-voice-page min-h-screen bg-black text-white flex flex-col justify-between items-center px-3 sm:px-6 py-4 sm:py-8 select-none relative overflow-hidden">
       {/* Background ambient glow */}
       <div className="absolute inset-0 pointer-events-none overflow-hidden">
         <div className="absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[500px] h-[500px] bg-sky-500/10 rounded-full blur-[120px] pointer-events-none" />
       </div>
 
       {/* 1. TOP HEADER */}
-      <header className="w-full max-w-md flex items-center justify-between z-10">
+      <header className="w-full max-w-md flex items-center justify-between z-10 px-1 sm:px-0">
         <button
           onClick={() => navigate('/teacher')}
-          className="w-10 h-10 rounded-full bg-white/10 hover:bg-white/20 active:scale-95 flex items-center justify-center text-white/80 hover:text-white transition-all focus:outline-none cursor-pointer"
+          className="w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-white/10 hover:bg-white/20 active:scale-95 flex items-center justify-center text-white/80 hover:text-white transition-all focus:outline-none cursor-pointer shrink-0"
           title="Back to Dashboard"
         >
-          <ChevronLeft className="w-6 h-6" />
+          <ChevronLeft className="w-5 h-5 sm:w-6 sm:h-6" />
         </button>
 
         <div className="text-center">
@@ -1313,10 +1313,10 @@ export function VoiceControlPage() {
       </header>
 
       {/* 2. CENTER STAGE (Hero Celestial Orb + Minimal Ambient Feedback) */}
-      <main className="flex-1 flex flex-col items-center justify-center w-full max-w-md my-auto z-10 text-center px-2">
+      <main className="flex-1 flex flex-col items-center justify-center w-full max-w-md my-auto z-10 text-center px-1 sm:px-2">
         {/* Subtle Hardware Telemetry & Voice Pill */}
-        <div className="flex items-center gap-2 mb-6">
-          <div className="flex items-center gap-3 px-3.5 py-1 rounded-full bg-white/[0.04] border border-white/5 text-[11px] backdrop-blur-xs">
+        <div className="flex items-center justify-center gap-1.5 sm:gap-2 mb-4 sm:mb-6 flex-wrap">
+          <div className="flex items-center gap-2 sm:gap-3 px-3 sm:px-3.5 py-1 rounded-full bg-white/[0.04] border border-white/5 text-[11px] backdrop-blur-xs">
             <div className="flex items-center gap-1.5">
               <span className="text-white/40">Projector:</span>
               <span className={`font-semibold ${projectorState === 'ON' ? 'text-emerald-400' : 'text-white/40'}`}>
@@ -1412,7 +1412,7 @@ export function VoiceControlPage() {
 
           {/* Subtitle / Live Transcript preview (Clean & Translucent) */}
           {liveTranscript && (
-            <p className="text-xs text-white/70 italic px-3 py-1 bg-white/[0.04] rounded-full border border-white/5 max-w-xs truncate animate-fadeIn">
+            <p className="text-xs text-white/70 italic px-3 py-1 bg-white/[0.04] rounded-full border border-white/5 max-w-[280px] sm:max-w-xs truncate animate-fadeIn">
               &ldquo;{liveTranscript}&rdquo;
             </p>
           )}
@@ -1433,16 +1433,16 @@ export function VoiceControlPage() {
 
         {/* 3. COMPACT TRANSIENT ACTION NOTIFICATIONS */}
         {actionCards.length > 0 && (
-          <div className="w-full mt-5 space-y-2 max-h-36 overflow-y-auto px-1">
+          <div className="w-full mt-4 sm:mt-5 space-y-2 max-h-36 overflow-y-auto px-1">
             {actionCards.map((card) => {
               const isOn = String(card.action).toUpperCase() === 'ON'
               const isRgb = card.action === 'SET_COLOR'
               return (
                 <div
                   key={card.id}
-                  className="compact-action-badge w-full flex items-center justify-between px-3.5 py-1.5 rounded-full bg-white/[0.07] hover:bg-white/[0.10] border border-white/10 backdrop-blur-md shadow-sm transition-all"
+                  className="compact-action-badge w-full flex items-center justify-between px-3 py-1.5 sm:px-3.5 rounded-full bg-white/[0.07] hover:bg-white/[0.10] border border-white/10 backdrop-blur-md shadow-sm transition-all"
                 >
-                  <div className="flex items-center gap-2 text-xs font-medium text-white tracking-wide">
+                  <div className="flex items-center gap-1.5 sm:gap-2 text-xs font-medium text-white tracking-wide truncate mr-2">
                     {isRgb ? (
                       <span
                         className="w-2 h-2 rounded-full inline-block shrink-0"
@@ -1452,13 +1452,13 @@ export function VoiceControlPage() {
                         }}
                       />
                     ) : (
-                      <span className={isOn ? 'text-emerald-400 font-bold text-xs' : 'text-white/40 font-bold text-xs'}>
+                      <span className={isOn ? 'text-emerald-400 font-bold text-xs shrink-0' : 'text-white/40 font-bold text-xs shrink-0'}>
                         ✓
                       </span>
                     )}
-                    <span className="capitalize text-white/90">{card.device}</span>
+                    <span className="capitalize text-white/90 truncate">{card.device}</span>
                     <span
-                      className={`font-semibold uppercase text-[10px] ${
+                      className={`font-semibold uppercase text-[10px] shrink-0 ${
                         isOn
                           ? 'text-emerald-400'
                           : isRgb
@@ -1473,7 +1473,7 @@ export function VoiceControlPage() {
                   <button
                     onClick={() => handleRevertAction(card.id, card.device, card.oppositeAction)}
                     disabled={card.isReverting}
-                    className="px-2 py-0.5 rounded-full bg-white/10 hover:bg-white/20 active:scale-95 text-white/80 font-bold text-[10px] tracking-wider uppercase border border-white/10 transition-all cursor-pointer disabled:opacity-50"
+                    className="px-2.5 py-1 rounded-full bg-white/10 hover:bg-white/20 active:scale-95 text-white/80 font-bold text-[10px] tracking-wider uppercase border border-white/10 transition-all cursor-pointer disabled:opacity-50 shrink-0"
                   >
                     {card.isReverting ? (
                       <Loader2 className="w-2.5 h-2.5 animate-spin" />
@@ -1491,7 +1491,7 @@ export function VoiceControlPage() {
       </main>
 
       {/* 4. BOTTOM CONTROLS (Iconic ChatGPT Large White Pill Button "Done") */}
-      <footer className="w-full max-w-md flex items-center justify-center gap-4 pt-4 pb-2 z-10">
+      <footer className="w-full max-w-md flex items-center justify-center gap-3 sm:gap-4 pt-3 sm:pt-4 pb-2 z-10 px-1 sm:px-0">
         {/* Mic Mute / Unmute circular toggle */}
         <button
           onClick={() => {
@@ -1502,7 +1502,7 @@ export function VoiceControlPage() {
               return next
             })
           }}
-          className={`w-13 h-13 rounded-full border border-white/15 flex items-center justify-center transition-all active:scale-95 cursor-pointer ${
+          className={`w-12 h-12 sm:w-13 sm:h-13 rounded-full border border-white/15 flex items-center justify-center transition-all active:scale-95 cursor-pointer shrink-0 ${
             isMuted
               ? 'bg-rose-500/20 text-rose-400 border-rose-500/30'
               : 'bg-white/10 text-white hover:bg-white/20'
@@ -1518,7 +1518,7 @@ export function VoiceControlPage() {
             stopLiveSession()
             navigate('/teacher')
           }}
-          className="flex-1 py-3.5 px-8 rounded-full bg-white text-black font-semibold text-sm hover:bg-slate-100 active:scale-98 transition-all shadow-xl shadow-white/10 text-center cursor-pointer"
+          className="flex-1 py-3 sm:py-3.5 px-6 sm:px-8 rounded-full bg-white text-black font-semibold text-sm hover:bg-slate-100 active:scale-98 transition-all shadow-xl shadow-white/10 text-center cursor-pointer min-h-[44px]"
         >
           Done
         </button>

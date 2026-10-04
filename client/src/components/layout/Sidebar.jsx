@@ -1,3 +1,4 @@
+import { useEffect } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import {
   LayoutDashboard,
@@ -12,6 +13,7 @@ import {
   ChevronRight,
   ShieldAlert,
   Sparkles,
+  X,
 } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
 import { Badge } from '../ui/Badge'
@@ -26,6 +28,18 @@ export function Sidebar({
 }) {
   const { user, logout } = useAuth()
   const location = useLocation()
+
+  // Close mobile drawer on Escape key press
+  useEffect(() => {
+    if (!isMobileOpen) return
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape') {
+        setIsMobileOpen(false)
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [isMobileOpen, setIsMobileOpen])
 
   const isSuperAdmin = user?.role === 'SUPER_ADMIN'
 
@@ -131,38 +145,36 @@ export function Sidebar({
 
       {/* Sidebar Container */}
       <aside
-        className={`fixed top-0 bottom-0 left-0 z-40 bg-slate-900/95 border-r border-slate-800/90 backdrop-blur-xl flex flex-col transition-all duration-300 ease-in-out
-          ${isOpen ? 'w-64' : 'w-20'}
-          ${isMobileOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
+        className={`fixed top-0 bottom-0 left-0 z-50 bg-slate-900/95 border-r border-slate-800/90 backdrop-blur-2xl flex flex-col transition-transform duration-300 ease-in-out
+          w-72 max-w-[85vw]
+          ${isMobileOpen ? 'translate-x-0' : '-translate-x-full lg:hidden'}
         `}
       >
         {/* Sidebar Header / Brand */}
         <div className="h-16 flex items-center justify-between px-4 border-b border-slate-800/80">
-          <Link to="/" className="flex items-center gap-3 overflow-hidden">
+          <Link to="/" onClick={() => setIsMobileOpen(false)} className="flex items-center gap-3 overflow-hidden">
             <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-indigo-500 to-violet-600 flex items-center justify-center text-white shrink-0 shadow-md shadow-indigo-500/20">
               <Sparkles className="w-5 h-5 text-white" />
             </div>
 
-            {isOpen && (
-              <div className="flex flex-col truncate">
-                <span className="font-bold text-sm tracking-tight text-white leading-tight">
-                  SmartClassroom
-                </span>
-                <span className="text-[10px] text-indigo-400 font-mono">
-                  {isSuperAdmin ? 'ADMIN CONSOLE' : 'FACULTY OS'}
-                </span>
-              </div>
-            )}
+            <div className="flex flex-col truncate">
+              <span className="font-bold text-sm tracking-tight text-white leading-tight">
+                SmartClassroom
+              </span>
+              <span className="text-[10px] text-indigo-400 font-mono">
+                {isSuperAdmin ? 'ADMIN CONSOLE' : 'FACULTY OS'}
+              </span>
+            </div>
           </Link>
 
-          {/* Desktop Collapse Toggle */}
+          {/* Mobile Close Button */}
           <button
             type="button"
-            onClick={() => setIsOpen(!isOpen)}
-            className="hidden lg:flex p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors cursor-pointer"
-            title={isOpen ? 'Collapse sidebar' : 'Expand sidebar'}
+            onClick={() => setIsMobileOpen(false)}
+            className="p-2 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800 transition-colors cursor-pointer"
+            aria-label="Close menu"
           >
-            {isOpen ? <ChevronLeft className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+            <X className="w-5 h-5" />
           </button>
         </div>
 
