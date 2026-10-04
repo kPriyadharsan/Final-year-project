@@ -153,9 +153,9 @@ const deviceSchema = new mongoose.Schema(
       default: null,
     },
     color: {
-      r: { type: Number, min: 0, max: 255, default: 255 },
-      g: { type: Number, min: 0, max: 255, default: 0 },
-      b: { type: Number, min: 0, max: 255, default: 255 },
+      r: { type: Number, min: 0, max: 255, default: 59 },
+      g: { type: Number, min: 0, max: 255, default: 130 },
+      b: { type: Number, min: 0, max: 255, default: 246 },
     },
     colorPower: {
       type: String,

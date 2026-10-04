@@ -1,4 +1,4 @@
-import React, { useRef, useEffect, useCallback, useMemo } from 'react'
+import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 
 /**
  * Converts Hue (0-360), Saturation (0-1), Lightness (0-1) to RGB (0-255)
@@ -78,8 +78,41 @@ export function rgbToHex(r, g, b) {
  * 4. Shows live glow when power is ON.
  * 5. Fully disabled when hardware controller node is offline.
  */
+/**
+ * Checks if an RGB color is achromatic (white, gray, black where r === g === b)
+ */
+export function isAchromatic(r, g, b) {
+  const rNorm = Number(r) || 0
+  const gNorm = Number(g) || 0
+  const bNorm = Number(b) || 0
+  return Math.max(rNorm, gNorm, bNorm) === Math.min(rNorm, gNorm, bNorm)
+}
+
+/**
+ * Extracts hue (0-359) from an RGB color object, returning null if color is achromatic or invalid
+ */
+export function getHueFromColor(c) {
+  if (!c || typeof c !== 'object') return null
+  const r = Number(c.r) || 0
+  const g = Number(c.g) || 0
+  const b = Number(c.b) || 0
+  if (isAchromatic(r, g, b)) return null
+  return rgbToHue(r, g, b)
+}
+
+/**
+ * Circular Color Picker Component
+ *
+ * Requirements:
+ * 1. Circular color selector with visually simple, smooth selection.
+ * 2. User can click or drag to select any color around the spectrum.
+ * 3. Selected color shown inside the center circle/swatch.
+ * 4. Shows live glow when power is ON.
+ * 5. Dynamic and static synchronization: stays at current color without snapping to purple.
+ * 6. Fully disabled when hardware controller node is offline.
+ */
 export function CircularColorPicker({
-  color = { r: 255, g: 0, b: 255 },
+  color,
   power = 'ON',
   onChange,
   onDragEnd,
@@ -89,7 +122,7 @@ export function CircularColorPicker({
 }) {
   const canvasRef = useRef(null)
   const isDraggingRef = useRef(false)
-  const lastRgbRef = useRef(color)
+  const lastRgbRef = useRef(color || { r: 59, g: 130, b: 246 })
 
   const radius = size / 2
   const ringThickness = 18
@@ -97,17 +130,23 @@ export function CircularColorPicker({
   const innerRadius = outerRadius - ringThickness
   const centerRadius = innerRadius - 8
 
-  // Keep track of latest color
+  // Internal angle state ensures immediate, fluid thumb tracking during drag
+  // and stays firmly placed at the selected position without jumping
+  const [currentAngle, setCurrentAngle] = useState(() => {
+    const hue = getHueFromColor(color)
+    return hue !== null ? hue : 217 // Default Blue (217°) if initially achromatic or unassigned
+  })
+
+  // Sync angle dynamically when incoming prop color changes from outside (e.g. Quick Colors, DB fetch, voice)
+  // Preserves existing angle if incoming color is achromatic (e.g. White, Black, or device OFF)
   useEffect(() => {
-    if (!isDraggingRef.current) {
+    if (isDraggingRef.current) return
+    const incomingHue = getHueFromColor(color)
+    if (incomingHue !== null) {
+      setCurrentAngle(incomingHue)
       lastRgbRef.current = color
     }
-  }, [color])
-
-  // Calculate current angle from RGB color
-  const currentAngle = useMemo(() => {
-    return rgbToHue(color.r, color.g, color.b)
-  }, [color.r, color.g, color.b])
+  }, [color?.r, color?.g, color?.b])
 
   // Draw the smooth conical color wheel on the canvas
   useEffect(() => {
@@ -172,11 +211,15 @@ export function CircularColorPicker({
 
       let angle = Math.atan2(y, x) * (180 / Math.PI)
       if (angle < 0) angle += 360
+      const roundedAngle = Math.round(angle) % 360
 
-      const newRgb = hslToRgb(angle, 1, 0.5)
+      // Immediately update local angle so the thumb tracks 1:1 and stays in place
+      setCurrentAngle(roundedAngle)
+
+      const newRgb = hslToRgb(roundedAngle, 1, 0.5)
       lastRgbRef.current = newRgb
       if (onChange) {
-        onChange(newRgb, { isDragging: !isFinal, isFinal })
+        onChange(newRgb, { isDragging: !isFinal, isFinal, angle: roundedAngle })
       }
       return newRgb
     },
@@ -213,7 +256,7 @@ export function CircularColorPicker({
       if (onDragEnd && lastRgbRef.current) {
         onDragEnd(lastRgbRef.current)
       } else if (onChange && lastRgbRef.current) {
-        onChange(lastRgbRef.current, { isDragging: false, isFinal: true })
+        onChange(lastRgbRef.current, { isDragging: false, isFinal: true, angle: currentAngle })
       }
     }
   }
@@ -224,7 +267,18 @@ export function CircularColorPicker({
   const thumbX = size / 2 + thumbRadius * Math.cos(thumbAngleRad)
   const thumbY = size / 2 + thumbRadius * Math.sin(thumbAngleRad)
 
-  const currentColorHex = rgbToHex(color.r, color.g, color.b)
+  // Active color resolution for center circle preview
+  const displayColor = useMemo(() => {
+    if (isDraggingRef.current && lastRgbRef.current) {
+      return lastRgbRef.current
+    }
+    if (color && typeof color.r !== 'undefined' && typeof color.g !== 'undefined' && typeof color.b !== 'undefined') {
+      return color
+    }
+    return hslToRgb(currentAngle, 1, 0.5)
+  }, [color, currentAngle])
+
+  const currentColorHex = rgbToHex(displayColor.r, displayColor.g, displayColor.b)
   const isPowerOn = power === 'ON'
 
   return (
@@ -240,6 +294,8 @@ export function CircularColorPicker({
       role="slider"
       aria-label="Color Wheel Selector"
       aria-valuetext={currentColorHex}
+      data-testid="circular-color-picker"
+      data-angle={currentAngle}
     >
       {/* Conic Rainbow Spectrum Canvas */}
       <canvas
@@ -254,16 +310,16 @@ export function CircularColorPicker({
         style={{
           width: centerRadius * 2,
           height: centerRadius * 2,
-          backgroundColor: isPowerOn ? `rgb(${color.r}, ${color.g}, ${color.b})` : '#334155',
+          backgroundColor: isPowerOn ? `rgb(${displayColor.r}, ${displayColor.g}, ${displayColor.b})` : '#334155',
           boxShadow: isPowerOn
-            ? `0 0 28px rgba(${color.r}, ${color.g}, ${color.b}, 0.55), inset 0 2px 4px rgba(255,255,255,0.4)`
+            ? `0 0 28px rgba(${displayColor.r}, ${displayColor.g}, ${displayColor.b}, 0.55), inset 0 2px 4px rgba(255,255,255,0.4)`
             : 'inset 0 2px 4px rgba(0,0,0,0.4)',
         }}
       >
         <span
           className={`text-[10px] font-black uppercase tracking-wider drop-shadow-xs ${
             isPowerOn
-              ? (color.r * 0.299 + color.g * 0.587 + color.b * 0.114 > 150 ? 'text-slate-900' : 'text-white')
+              ? (displayColor.r * 0.299 + displayColor.g * 0.587 + displayColor.b * 0.114 > 150 ? 'text-slate-900' : 'text-white')
               : 'text-slate-400'
           }`}
         >
@@ -272,23 +328,30 @@ export function CircularColorPicker({
         <span
           className={`text-[9px] font-mono font-bold mt-0.5 tracking-tight ${
             isPowerOn
-              ? (color.r * 0.299 + color.g * 0.587 + color.b * 0.114 > 150 ? 'text-slate-800' : 'text-slate-100')
-              : 'text-slate-500'
+              ? (displayColor.r * 0.299 + displayColor.g * 0.587 + displayColor.b * 0.114 > 150 ? 'text-slate-800' : 'text-slate-100')
+              : 'text-slate-400'
           }`}
         >
           {currentColorHex}
         </span>
       </div>
 
-      {/* Thumb / Handle Indicator on the Ring */}
+      {/* Thumb / Handle Indicator on the Ring with inner hue indicator */}
       <div
-        className="absolute w-5 h-5 rounded-full bg-white border-2 border-slate-900 shadow-md pointer-events-none transition-transform duration-75"
+        className="absolute w-5 h-5 rounded-full bg-white border-2 border-slate-900 shadow-md pointer-events-none flex items-center justify-center transition-transform duration-75"
         style={{
           left: thumbX - 10,
           top: thumbY - 10,
-          boxShadow: '0 2px 6px rgba(0,0,0,0.3)',
+          boxShadow: '0 2px 8px rgba(0,0,0,0.35)',
         }}
-      />
+        data-testid="color-wheel-thumb"
+        data-thumb-angle={currentAngle}
+      >
+        <div
+          className="w-2 h-2 rounded-full"
+          style={{ backgroundColor: `hsl(${currentAngle}, 100%, 50%)` }}
+        />
+      </div>
     </div>
   )
 }

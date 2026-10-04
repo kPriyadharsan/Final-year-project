@@ -112,11 +112,11 @@ async function processDeviceStatusMessage(topic, payload) {
         if (confirmed === DEVICE_STATES.ON) {
           if (device.colorPower !== 'ON' || !device.color || (device.color.r === 0 && device.color.g === 0 && device.color.b === 0)) {
             device.colorPower = 'ON'
-            device.color = { r: 255, g: 255, b: 255 }
+            device.color = { r: 59, g: 130, b: 246 }
           }
         } else {
           device.colorPower = 'OFF'
-          device.color = { r: 0, g: 0, b: 0 }
+          // Preserve device.color instead of zeroing out hue
         }
       }
     }

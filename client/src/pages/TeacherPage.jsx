@@ -113,7 +113,7 @@ export function TeacherPage() {
             isOnline: typeof d.isOnline === 'boolean' ? d.isOnline : false,
             requestedState: d.requestedState || null,
             confirmedState: d.confirmedState || null,
-            color: d.color || { r: 255, g: 255, b: 255 },
+            color: d.color && (d.color.r !== 0 || d.color.g !== 0 || d.color.b !== 0) ? d.color : { r: 59, g: 130, b: 246 },
             colorPower: d.colorPower || (d.state === 'ON' ? 'ON' : 'OFF'),
             details: d.description || `GPIO ${d.gpioPin ?? 'N/A'} (ESP32)`,
             relayChannel: `GPIO ${d.gpioPin ?? 'N/A'} (ESP32)`,
@@ -170,10 +170,12 @@ export function TeacherPage() {
             isOn: nextIsOn,
             isOnline: typeof incoming.isOnline === 'boolean' ? incoming.isOnline : dev.isOnline,
             color: dev.type === 'PROJECTOR'
-              ? (nextIsOn ? (incoming.color || { r: 255, g: 255, b: 255 }) : { r: 0, g: 0, b: 0 })
+              ? (incoming.color && (incoming.color.r !== 0 || incoming.color.g !== 0 || incoming.color.b !== 0)
+                  ? incoming.color
+                  : dev.color)
               : dev.color,
             colorPower: dev.type === 'PROJECTOR'
-              ? (nextIsOn ? 'ON' : 'OFF')
+              ? (nextIsOn ? (incoming.colorPower || 'ON') : 'OFF')
               : dev.colorPower,
           }
         }
@@ -317,9 +319,7 @@ export function TeacherPage() {
               ? {
                   ...dev,
                   isOn: nextState,
-                  color: dev.type === 'PROJECTOR'
-                    ? (nextState ? { r: 255, g: 255, b: 255 } : { r: 0, g: 0, b: 0 })
-                    : dev.color,
+                  color: dev.color,
                   colorPower: dev.type === 'PROJECTOR' ? (nextState ? 'ON' : 'OFF') : dev.colorPower,
                 }
               : dev
@@ -1132,8 +1132,8 @@ export function TeacherPage() {
                       {/* Live Circular Color Wheel */}
                       <div className="flex flex-col items-center justify-center p-3 rounded-2xl bg-white border border-slate-200/80 shadow-xs">
                         <CircularColorPicker
-                          color={device.isOn ? (device.color || { r: 255, g: 255, b: 255 }) : { r: 255, g: 255, b: 255 }}
-                          power={device.isOn ? 'ON' : 'OFF'}
+                          color={device.color || { r: 59, g: 130, b: 246 }}
+                          power={device.isOn && device.colorPower !== 'OFF' ? 'ON' : 'OFF'}
                           onChange={(rgb, meta) => handleTeacherColorWheel(device, rgb, meta)}
                           onDragEnd={(finalRgb) => sendTeacherLiveColor(device, finalRgb, true)}
                           onDisabledClick={() => {
@@ -1155,20 +1155,20 @@ export function TeacherPage() {
                           <div
                             className="w-7 h-7 rounded-xl border-2 border-white shadow-xs shrink-0 transition-all"
                             style={{
-                              backgroundColor: device.isOn
-                                ? `rgb(${device.color?.r ?? 255}, ${device.color?.g ?? 255}, ${device.color?.b ?? 255})`
+                              backgroundColor: device.isOn && device.colorPower !== 'OFF'
+                                ? `rgb(${device.color?.r ?? 59}, ${device.color?.g ?? 130}, ${device.color?.b ?? 246})`
                                 : '#334155',
-                              boxShadow: device.isOn
-                                ? `0 0 12px rgba(${device.color?.r ?? 255}, ${device.color?.g ?? 255}, ${device.color?.b ?? 255}, 0.5)`
+                              boxShadow: device.isOn && device.colorPower !== 'OFF'
+                                ? `0 0 12px rgba(${device.color?.r ?? 59}, ${device.color?.g ?? 130}, ${device.color?.b ?? 246}, 0.5)`
                                 : 'none',
                             }}
                           />
                           <div className="text-[11px] font-mono leading-tight">
                             <span className="text-slate-400 text-[10px] block">RGB:</span>
                             <span className="font-bold text-slate-800">
-                              {device.isOn
-                                ? `R ${device.color?.r ?? 255}  G ${device.color?.g ?? 255}  B ${device.color?.b ?? 255}`
-                                : 'R 0  G 0  B 0'}
+                              {device.isOn && device.colorPower !== 'OFF'
+                                ? `R ${device.color?.r ?? 59}  G ${device.color?.g ?? 130}  B ${device.color?.b ?? 246}`
+                                : 'RGB OFF'}
                             </span>
                           </div>
                         </div>
@@ -1178,9 +1178,7 @@ export function TeacherPage() {
                           <input
                             type="color"
                             value={
-                              device.isOn
-                                ? rgbToHexStr(device.color?.r ?? 255, device.color?.g ?? 255, device.color?.b ?? 255)
-                                : '#FFFFFF'
+                              rgbToHexStr(device.color?.r ?? 59, device.color?.g ?? 130, device.color?.b ?? 246)
                             }
                             disabled={!device.isOn || !device.isOnline}
                             onChange={(e) => handleProjectorColorChange(device, e.target.value)}
@@ -1195,7 +1193,9 @@ export function TeacherPage() {
                         {[
                           { name: 'White', hex: '#FFFFFF' },
                           { name: 'Red', hex: '#EF4444' },
+                          { name: 'Yellow', hex: '#EAB308' },
                           { name: 'Green', hex: '#10B981' },
+                          { name: 'Cyan', hex: '#06B6D4' },
                           { name: 'Blue', hex: '#3B82F6' },
                           { name: 'Purple', hex: '#A855F7' },
                         ].map((preset) => (

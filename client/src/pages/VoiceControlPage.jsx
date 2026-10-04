@@ -282,7 +282,7 @@ export function VoiceControlPage() {
   // Confirmed hardware telemetry states directly synchronized from ESP32 & backend
   const [projectorState, setProjectorState] = useState('OFF')
   const [rgbPower, setRgbPower] = useState('OFF')
-  const [rgbColor, setRgbColor] = useState({ name: 'purple', hex: '#A855F7', r: 168, g: 85, b: 247 })
+  const [rgbColor, setRgbColor] = useState({ name: 'blue', hex: '#3B82F6', r: 59, g: 130, b: 246 })
 
   // Fetch initial confirmed device status from backend
   useEffect(() => {
@@ -298,7 +298,7 @@ export function VoiceControlPage() {
           if (proj) {
             setProjectorState(proj.state || 'OFF')
             if (proj.colorPower) setRgbPower(proj.colorPower)
-            if (proj.color) setRgbColor(proj.color)
+            if (proj.color && (proj.color.r !== 0 || proj.color.g !== 0 || proj.color.b !== 0)) setRgbColor(proj.color)
           }
         }
       } catch (err) {
@@ -325,7 +325,7 @@ export function VoiceControlPage() {
     const isProjector = data.type === 'PROJECTOR' || String(data.deviceId || '').toLowerCase().includes('proj')
     if (isProjector) {
       if (data.colorPower) setRgbPower(data.colorPower)
-      if (data.color) setRgbColor(data.color)
+      if (data.color && (data.color.r !== 0 || data.color.g !== 0 || data.color.b !== 0)) setRgbColor(data.color)
     }
   })
 

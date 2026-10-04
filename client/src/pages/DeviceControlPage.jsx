@@ -83,8 +83,8 @@ export function DeviceControlPage() {
   const [notification, setNotification] = useState(null)
 
   // State: Projector RGB Lighting Control
-  const [projectorColor, setProjectorColor] = useState({ r: 255, g: 255, b: 255 })
-  const [projectorColorPower, setProjectorColorPower] = useState('ON')
+  const [projectorColor, setProjectorColor] = useState({ r: 59, g: 130, b: 246 })
+  const [projectorColorPower, setProjectorColorPower] = useState('OFF')
   const [isColorUpdating, setIsColorUpdating] = useState(false)
   const [colorSyncStatus, setColorSyncStatus] = useState('synced') // 'synced' | 'pending' | 'syncing' | 'error'
   const isInteractingColorRef = useRef(false)
@@ -156,7 +156,7 @@ export function DeviceControlPage() {
       // Initialize Projector RGB state from DB
       const proj = channelDevices.find((c) => c.type === 'PROJECTOR')
       if (proj) {
-        if (proj.color) {
+        if (proj.color && (proj.color.r !== 0 || proj.color.g !== 0 || proj.color.b !== 0)) {
           setProjectorColor(proj.color)
         }
         if (proj.colorPower) {
@@ -252,7 +252,7 @@ export function DeviceControlPage() {
 
           // If incoming update carries projector RGB lighting data
           if ((ch.type === 'PROJECTOR' || incoming.type === 'PROJECTOR') && !isInteractingColorRef.current) {
-            if (incoming.color) {
+            if (incoming.color && (incoming.color.r !== 0 || incoming.color.g !== 0 || incoming.color.b !== 0)) {
               setProjectorColor(incoming.color)
             }
             if (incoming.colorPower || incoming.power) {
@@ -281,7 +281,9 @@ export function DeviceControlPage() {
     if (!incoming) return
     console.log('[DeviceControl] 🎨 Projector RGB socket telemetry:', incoming)
     if (incoming.color && !isInteractingColorRef.current) {
-      setProjectorColor(incoming.color)
+      if (incoming.color.r !== 0 || incoming.color.g !== 0 || incoming.color.b !== 0) {
+        setProjectorColor(incoming.color)
+      }
     }
     if ((incoming.power || incoming.colorPower) && !isInteractingColorRef.current) {
       setProjectorColorPower(incoming.power || incoming.colorPower)
@@ -492,17 +494,9 @@ export function DeviceControlPage() {
 
     const nextState = channel.state === 'ON' ? 'OFF' : 'ON'
 
-    // Synchronize Projector RGB states with master power switch:
-    // - ON: Relay turns ON, RGB automatically defaults to WHITE (255, 255, 255)
-    // - OFF: Relay turns OFF, RGB turns OFF (0, 0, 0)
+    // Synchronize Projector RGB lighting power with master switch without wiping chosen color
     if (channel.type === 'PROJECTOR') {
-      if (nextState === 'ON') {
-        setProjectorColor({ r: 255, g: 255, b: 255 })
-        setProjectorColorPower('ON')
-      } else {
-        setProjectorColor({ r: 0, g: 0, b: 0 })
-        setProjectorColorPower('OFF')
-      }
+      setProjectorColorPower(nextState === 'ON' ? 'ON' : 'OFF')
     }
 
     try {
@@ -1031,8 +1025,8 @@ export function DeviceControlPage() {
                           {/* 1. Circular Color Selector */}
                           <div className="md:col-span-5 flex flex-col items-center justify-center p-4 bg-white rounded-2xl border border-slate-100 shadow-xs">
                             <CircularColorPicker
-                              color={isOn ? projectorColor : { r: 255, g: 255, b: 255 }}
-                              power={isOn ? projectorColorPower : 'OFF'}
+                              color={projectorColor}
+                              power={isOn && projectorColorPower !== 'OFF' ? 'ON' : 'OFF'}
                               onChange={handleColorWheelChange}
                               onDragEnd={(finalRgb) => {
                                 isInteractingColorRef.current = false

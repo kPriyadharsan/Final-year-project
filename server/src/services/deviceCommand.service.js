@@ -370,10 +370,12 @@ async function executeDeviceCommand({
   if (device.type === DEVICE_TYPES.PROJECTOR) {
     if (newState === DEVICE_STATES.ON) {
       device.colorPower = 'ON'
-      device.color = { r: 255, g: 255, b: 255 }
+      if (!device.color || (device.color.r === 0 && device.color.g === 0 && device.color.b === 0)) {
+        device.color = { r: 59, g: 130, b: 246 }
+      }
     } else {
       device.colorPower = 'OFF'
-      device.color = { r: 0, g: 0, b: 0 }
+      // Preserve device.color instead of zeroing out hue
     }
   }
 
@@ -643,7 +645,7 @@ async function executeDeviceColorCommand({
         classroom: device.classroom,
         type: device.type,
         state: device.state,
-        color: device.color || { r: 255, g: 0, b: 255 },
+        color: device.color || { r: 59, g: 130, b: 246 },
         colorPower: device.colorPower || 'OFF',
         isOnline: device.isOnline,
       },
