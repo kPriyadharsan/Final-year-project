@@ -401,6 +401,13 @@ export function DeviceControlPage() {
                 : c
             )
           )
+        } else if (res.status === 404) {
+          setColorSyncStatus('error')
+          setNotification({
+            type: 'error',
+            title: 'Backend Redeploy Required (HTTP 404)',
+            message: 'Your Render backend (smart-classroom-2763) has not finished deploying the latest commit with the /color API. Please trigger "Manual Deploy > Deploy latest commit" in your Render dashboard, or test via your local dev server (http://localhost:5173).',
+          })
         } else if (res.status === 503) {
           setColorSyncStatus('error')
           setNotification({
