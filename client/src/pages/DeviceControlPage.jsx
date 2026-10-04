@@ -1160,7 +1160,9 @@ export function DeviceControlPage() {
                                       ? 'bg-amber-500 animate-ping'
                                       : colorSyncStatus === 'synced'
                                       ? 'bg-emerald-500'
-                                      : 'bg-slate-400'
+                                      : colorSyncStatus === 'error'
+                                      ? 'bg-rose-500'
+                                      : 'bg-emerald-500'
                                   }`}
                                 />
                                 <span className="text-slate-500 font-mono text-[11px]">
@@ -1168,7 +1170,9 @@ export function DeviceControlPage() {
                                     ? 'Publishing MQTT to ESP32...'
                                     : colorSyncStatus === 'synced'
                                     ? 'Synced to ESP32 (EMQX TLS)'
-                                    : 'Pending Apply'}
+                                    : colorSyncStatus === 'error'
+                                    ? 'Sync Error (Click Apply)'
+                                    : 'Synced to ESP32 (EMQX TLS)'}
                                 </span>
                               </div>
 

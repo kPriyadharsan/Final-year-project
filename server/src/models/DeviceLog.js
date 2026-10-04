@@ -6,6 +6,7 @@ const mongoose = require('mongoose')
 const LOG_ACTIONS = Object.freeze({
   ON: 'ON',
   OFF: 'OFF',
+  COLOR: 'COLOR',
 })
 
 const MQTT_DELIVERY_STATUS = Object.freeze({
@@ -45,7 +46,7 @@ const deviceLogSchema = new mongoose.Schema(
       required: [true, 'Command action is required'],
       enum: {
         values: Object.values(LOG_ACTIONS),
-        message: 'Invalid action. Allowed actions: ON, OFF',
+        message: 'Invalid action. Allowed actions: ON, OFF, COLOR',
       },
       uppercase: true,
       trim: true,

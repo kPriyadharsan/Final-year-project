@@ -561,15 +561,18 @@ async function executeDeviceColorCommand({
     }
   }
 
-  // 3b. Verify Projector Master Relay Power is ON
-  if (device.state === 'OFF') {
-    return {
-      success: false,
-      delivered: false,
-      code: 'PROJECTOR_OFF',
-      executionStatus: 'FAILED',
-      message: 'Projector master power is OFF. Please turn Projector ON before adjusting RGB lighting.',
-      timestamp: new Date().toISOString(),
+  // 3b. If Projector Master Relay Power is OFF, automatically turn it ON first for seamless UX
+  if (device.state === 'OFF' && (!power || String(power).trim().toUpperCase() !== 'OFF')) {
+    try {
+      const projRelayTopic = getCommandTopic(device.classroom, 'PROJECTOR')
+      await publish(projRelayTopic, { command: 'ON' }, { qos: 1 })
+      device.state = 'ON'
+      device.lastConfirmedAt = new Date()
+      await device.save()
+      emitDeviceStatus(device)
+      console.log(`[DeviceCommandService] 📽️ Auto-switched Projector master power ON for RGB adjustment on [${projRelayTopic}]`)
+    } catch (relayErr) {
+      console.warn(`[DeviceCommandService] Auto-turn ON warning: ${relayErr.message}`)
     }
   }
 
