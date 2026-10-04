@@ -186,11 +186,26 @@ function emitDeviceStatus(device) {
     isOnline: typeof device.isOnline === 'boolean' ? device.isOnline : true,
     lastSeenAt: device.lastSeenAt ? new Date(device.lastSeenAt).toISOString() : null,
     gpioPin: device.gpioPin,
+    color: device.color || { r: 255, g: 0, b: 255 },
+    colorPower: device.colorPower || 'OFF',
     updatedAt: device.updatedAt ? new Date(device.updatedAt).toISOString() : new Date().toISOString(),
   }
 
   // 1. Universal Broadcast: All connected teacher/admin dashboards
   io.emit('device:status', payload)
+
+  // Emit device:color event specifically for RGB listeners
+  if (device.type === 'PROJECTOR' || device.color) {
+    io.emit('device:color', {
+      deviceId: device.deviceId,
+      id: device._id ? device._id.toString() : device.id,
+      classroom: device.classroom,
+      power: device.colorPower || 'OFF',
+      colorPower: device.colorPower || 'OFF',
+      color: device.color || { r: 255, g: 0, b: 255 },
+      timestamp: new Date().toISOString(),
+    })
+  }
 
   // 2. Device-Specific Event: Targeted listeners for this hardware deviceId
   if (payload.deviceId) {
@@ -208,8 +223,36 @@ function emitDeviceStatus(device) {
 
   console.log(
     `[Socket.IO] 📡 Emitted "device:status" for [${device.deviceId}] -> ${device.state} ` +
-    `(Req: ${payload.requestedState || 'none'}, Conf: ${payload.confirmedState || 'none'}, Online: ${payload.isOnline})`
+    `(Req: ${payload.requestedState || 'none'}, Conf: ${payload.confirmedState || 'none'}, Online: ${payload.isOnline}, ColorPower: ${payload.colorPower})`
   )
+}
+
+/**
+ * Broadcasts a dedicated device:color real-time event
+ *
+ * @param {Object} device
+ */
+function emitDeviceColor(device) {
+  if (!io || !device) return
+
+  const colorPayload = {
+    deviceId: device.deviceId,
+    id: device._id ? device._id.toString() : device.id,
+    classroom: device.classroom,
+    power: device.colorPower || 'OFF',
+    colorPower: device.colorPower || 'OFF',
+    color: device.color || { r: 255, g: 0, b: 255 },
+    timestamp: new Date().toISOString(),
+  }
+
+  io.emit('device:color', colorPayload)
+  io.emit('projector:color', colorPayload)
+  if (device.classroom) {
+    const roomSlug = toClassroomSlug(device.classroom)
+    if (roomSlug) {
+      io.to(`classroom:${roomSlug}`).emit('classroom:device:color', colorPayload)
+    }
+  }
 }
 
 /**
@@ -245,6 +288,7 @@ module.exports = {
   initSocket,
   getIO,
   emitDeviceStatus,
+  emitDeviceColor,
   getSocketStats,
   closeSocket,
 }

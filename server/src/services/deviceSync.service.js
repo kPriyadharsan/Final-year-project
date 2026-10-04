@@ -1,6 +1,6 @@
 const { Device, DEVICE_STATES } = require('../models/Device')
 const { onMessage } = require('./mqtt.service')
-const { emitDeviceStatus } = require('./socket.service')
+const { emitDeviceStatus, emitDeviceColor } = require('./socket.service')
 const { parseMqttTopic, TOPIC_PATTERNS, classroomSlugToRegex } = require('../utils/mqttTopics')
 
 /**
@@ -256,6 +256,87 @@ async function handleAvailability(topic, payload, rawPayload) {
 }
 
 /**
+ * Handles incoming projector RGB color telemetry
+ *
+ * Topic: smartclassroom/<classroom>/projector/color/state
+ * Payload:
+ *   {
+ *     "power": "ON",
+ *     "color": { "r": 255, "g": 0, "b": 255 }
+ *   }
+ *
+ * @param {string} topic
+ * @param {Object|string} payload
+ * @returns {Promise<Object|null>}
+ */
+async function handleProjectorColorStateMessage(topic, payload) {
+  try {
+    let data = payload
+    if (typeof payload === 'string' || Buffer.isBuffer(payload)) {
+      try {
+        data = JSON.parse(payload.toString())
+      } catch (e) {
+        console.warn(`[DeviceSync] ⚠️ Could not parse JSON for projector color state: ${e.message}`)
+        return null
+      }
+    }
+
+    if (!data || typeof data !== 'object') {
+      return null
+    }
+
+    const parsedTopic = parseMqttTopic(topic)
+    const roomSlug = parsedTopic.classroom || 'room302'
+    const roomRegex = classroomSlugToRegex(roomSlug)
+
+    // Find projector device for this room
+    let device = await Device.findOne({
+      type: 'PROJECTOR',
+      isActive: true,
+      ...(roomRegex ? { classroom: { $regex: roomRegex } } : {}),
+    })
+
+    if (!device) {
+      device = await Device.findOne({ type: 'PROJECTOR', isActive: true })
+    }
+
+    if (!device) {
+      console.warn(`[DeviceSync] No projector found matching color state topic [${topic}]`)
+      return null
+    }
+
+    // Update colorPower and color
+    if (data.power) {
+      device.colorPower = String(data.power).toUpperCase() === 'ON' ? 'ON' : 'OFF'
+    }
+
+    if (data.color && typeof data.color === 'object') {
+      device.color = {
+        r: Math.max(0, Math.min(255, Math.round(Number(data.color.r) || 0))),
+        g: Math.max(0, Math.min(255, Math.round(Number(data.color.g) || 0))),
+        b: Math.max(0, Math.min(255, Math.round(Number(data.color.b) || 0))),
+      }
+    }
+
+    device.isOnline = true
+    device.lastSeenAt = new Date()
+    device.lastConfirmedAt = new Date()
+    await device.save()
+
+    console.log(`[DeviceSync] 🎨 Synced projector RGB state for [${device.deviceId}]: Power=${device.colorPower}, Color=`, device.color)
+
+    // Broadcast in real-time to all connected dashboards
+    emitDeviceStatus(device)
+    emitDeviceColor(device)
+
+    return device
+  } catch (err) {
+    console.error(`[DeviceSync] Error handling projector color state on [${topic}]:`, err)
+    return null
+  }
+}
+
+/**
  * Initializes listeners on MQTT status and availability topics
  */
 function initDeviceSync() {
@@ -265,6 +346,12 @@ function initDeviceSync() {
   onMessage(TOPIC_PATTERNS.ALL_STATES, (topic, payload, rawPayload) => {
     console.log(`[DeviceSync] 📩 Received MQTT relay state on [${topic}]`)
     processDeviceStatusMessage(topic, payload)
+  })
+
+  // 1b. Projector RGB color state topic: smartclassroom/+/projector/color/state
+  onMessage(TOPIC_PATTERNS.PROJECTOR_COLOR_STATE, (topic, payload, rawPayload) => {
+    console.log(`[DeviceSync] 📩 Received MQTT projector color state on [${topic}]`)
+    handleProjectorColorStateMessage(topic, payload)
   })
 
   // 2. Legacy status topics: classroom/device/+/status
@@ -290,6 +377,7 @@ function initDeviceSync() {
 module.exports = {
   initDeviceSync,
   processDeviceStatusMessage,
+  handleProjectorColorStateMessage,
   handleAvailability,
   normalizeState,
 }

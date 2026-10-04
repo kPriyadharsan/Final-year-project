@@ -152,6 +152,18 @@ const deviceSchema = new mongoose.Schema(
       max: [40, 'GPIO pin cannot exceed 40 on standard ESP32/NodeMCU controllers'],
       default: null,
     },
+    color: {
+      r: { type: Number, min: 0, max: 255, default: 255 },
+      g: { type: Number, min: 0, max: 255, default: 0 },
+      b: { type: Number, min: 0, max: 255, default: 255 },
+    },
+    colorPower: {
+      type: String,
+      enum: ['ON', 'OFF'],
+      default: 'OFF',
+      uppercase: true,
+      trim: true,
+    },
     description: {
       type: String,
       trim: true,

@@ -76,6 +76,30 @@ function getAvailabilityTopic(classroom = 'Room 302') {
 }
 
 /**
+ * Builds the MQTT command topic for projector RGB lighting.
+ * Example: "smartclassroom/room302/projector/color/command"
+ *
+ * @param {string} classroom - e.g. "Room 302"
+ * @returns {string}
+ */
+function getProjectorColorCommandTopic(classroom = 'Room 302') {
+  const roomSlug = toClassroomSlug(classroom)
+  return `smartclassroom/${roomSlug}/projector/color/command`
+}
+
+/**
+ * Builds the MQTT state topic for projector RGB lighting.
+ * Example: "smartclassroom/room302/projector/color/state"
+ *
+ * @param {string} classroom - e.g. "Room 302"
+ * @returns {string}
+ */
+function getProjectorColorStateTopic(classroom = 'Room 302') {
+  const roomSlug = toClassroomSlug(classroom)
+  return `smartclassroom/${roomSlug}/projector/color/state`
+}
+
+/**
  * Standardized Wildcard Subscriptions for Backend synchronization
  */
 const TOPIC_PATTERNS = Object.freeze({
@@ -83,6 +107,8 @@ const TOPIC_PATTERNS = Object.freeze({
   ALL_STATES: 'smartclassroom/+/relay/+/state',
   ALL_AVAILABILITY: 'smartclassroom/+/availability',
   ALL_COMMANDS: 'smartclassroom/+/relay/+/command',
+  PROJECTOR_COLOR_STATE: 'smartclassroom/+/projector/color/state',
+  PROJECTOR_COLOR_COMMAND: 'smartclassroom/+/projector/color/command',
 
   // Backward-compatibility patterns
   LEGACY_DEVICE_STATUS: 'classroom/device/+/status',
@@ -94,7 +120,7 @@ const TOPIC_PATTERNS = Object.freeze({
  * Parses an incoming MQTT topic to extract classroom slug, device type, and channel.
  *
  * @param {string} topic
- * @returns {{ isSmartClassroom: boolean, classroom?: string, deviceType?: string, channel?: string }}
+ * @returns {{ isSmartClassroom: boolean, isColorTopic?: boolean, classroom?: string, deviceType?: string, channel?: string }}
  */
 function parseMqttTopic(topic) {
   if (!topic || typeof topic !== 'string') {
@@ -109,6 +135,17 @@ function parseMqttTopic(topic) {
       isSmartClassroom: true,
       classroom: parts[1],
       channel: 'availability',
+    }
+  }
+
+  // Pattern: smartclassroom/<room>/projector/color/<command|state>
+  if (parts.length === 5 && parts[0] === 'smartclassroom' && parts[2] === 'projector' && parts[3] === 'color') {
+    return {
+      isSmartClassroom: true,
+      isColorTopic: true,
+      classroom: parts[1],
+      deviceType: 'projector',
+      channel: parts[4], // 'command' | 'state'
     }
   }
 
@@ -232,6 +269,8 @@ module.exports = {
   getCommandTopic,
   getStateTopic,
   getAvailabilityTopic,
+  getProjectorColorCommandTopic,
+  getProjectorColorStateTopic,
   TOPIC_PATTERNS,
   parseMqttTopic,
   buildCommandPayload,

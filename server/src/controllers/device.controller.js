@@ -164,12 +164,14 @@ async function getDeviceById(req, res) {
 async function sendDeviceCommand(req, res) {
   try {
     const { id } = req.params
-    const { action } = req.body
+    const { action, power, color } = req.body
 
     // Execute through shared device command service
     const cmdResult = await deviceCommandService.executeDeviceCommand({
       deviceId: id,
       action,
+      power,
+      color,
       user: req.user,
       source: 'REST_API',
     })
@@ -261,9 +263,64 @@ async function simulateDeviceStatus(req, res) {
   }
 }
 
+/**
+ * @desc    Send Projector RGB color and lighting power command
+ * @route   POST /api/devices/:id/color
+ * @access  Private (SUPER_ADMIN, TEACHER)
+ */
+async function sendDeviceColor(req, res) {
+  try {
+    const { id } = req.params
+    const { power, color } = req.body
+
+    const cmdResult = await deviceCommandService.executeDeviceColorCommand({
+      deviceId: id,
+      power,
+      color,
+      user: req.user,
+      source: 'REST_API',
+    })
+
+    if (!cmdResult.success) {
+      const statusCode =
+        cmdResult.code === 'DEVICE_NOT_FOUND' ? 404 :
+        cmdResult.code === 'DEVICE_INACTIVE' ? 400 :
+        cmdResult.code === 'MQTT_DISCONNECTED' ? 503 :
+        cmdResult.code === 'DEVICE_OFFLINE' ? 503 :
+        cmdResult.code === 'DELIVERY_FAILED' ? 503 : 400
+
+      return res.status(statusCode).json({
+        status: 'error',
+        code: cmdResult.code || 'COMMAND_FAILED',
+        message: cmdResult.message || 'Command could not be delivered.',
+        data: cmdResult,
+      })
+    }
+
+    return res.status(200).json({
+      status: 'success',
+      message: cmdResult.message,
+      data: {
+        device: cmdResult.device,
+        mqtt: cmdResult.mqtt,
+        logId: cmdResult.logId,
+        timestamp: cmdResult.timestamp,
+      },
+    })
+  } catch (err) {
+    console.error('Error executing device color command:', err)
+    return res.status(500).json({
+      status: 'error',
+      code: 'SERVER_ERROR',
+      message: 'Failed to process projector RGB command.',
+    })
+  }
+}
+
 module.exports = {
   getDevices,
   getDeviceById,
   sendDeviceCommand,
+  sendDeviceColor,
   simulateDeviceStatus,
 }

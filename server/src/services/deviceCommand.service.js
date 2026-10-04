@@ -2,8 +2,8 @@ const mongoose = require('mongoose')
 const { Device, DEVICE_TYPES, DEVICE_STATES } = require('../models/Device')
 const { DeviceLog, MQTT_DELIVERY_STATUS } = require('../models/DeviceLog')
 const { publish, getMQTTStatus } = require('./mqtt.service')
-const { emitDeviceStatus } = require('./socket.service')
-const { getCommandTopic, buildCommandPayload } = require('../utils/mqttTopics')
+const { emitDeviceStatus, emitDeviceColor } = require('./socket.service')
+const { getCommandTopic, getProjectorColorCommandTopic, buildCommandPayload } = require('../utils/mqttTopics')
 
 /**
  * Returns a human-friendly device label for execution messages.
@@ -42,6 +42,8 @@ async function executeDeviceCommand({
   deviceType,
   classroom = process.env.DEFAULT_CLASSROOM || 'Room 302',
   action,
+  power,
+  color,
   user = null,
   source = 'VOICE_COMMAND',
 }) {
@@ -58,7 +60,7 @@ async function executeDeviceCommand({
     }
   }
 
-  // 1. Validate action against strict allowlist
+  // 1. Validate action against strict allowlist (support 'COLOR' action for RGB lighting)
   if (!action || typeof action !== 'string' || action.trim() === '') {
     return {
       success: false,
@@ -71,13 +73,27 @@ async function executeDeviceCommand({
   }
 
   const normalizedAction = action.trim().toUpperCase()
+
+  // Delegate 'COLOR' action to executeDeviceColorCommand
+  if (normalizedAction === 'COLOR' || normalizedAction === 'SET_COLOR') {
+    return executeDeviceColorCommand({
+      deviceId,
+      deviceType,
+      classroom,
+      power,
+      color,
+      user,
+      source,
+    })
+  }
+
   if (!Object.values(DEVICE_STATES).includes(normalizedAction)) {
     return {
       success: false,
       delivered: false,
       code: 'INVALID_ACTION',
       executionStatus: 'FAILED',
-      message: `Invalid action. Allowed actions are: "ON", "OFF".`,
+      message: `Invalid action. Allowed actions are: "ON", "OFF", "COLOR".`,
       timestamp: new Date().toISOString(),
     }
   }
@@ -412,7 +428,263 @@ async function executeDeviceCommand({
   }
 }
 
+/**
+ * Executes a Projector RGB lighting control command.
+ *
+ * MQTT topic:
+ *   smartclassroom/<roomSlug>/projector/color/command
+ * Payload format:
+ *   {
+ *     "power": "ON",
+ *     "color": {
+ *       "r": 255,
+ *       "g": 0,
+ *       "b": 255
+ *     }
+ *   }
+ *
+ * Requirements:
+ * - Directs through: React -> Node API -> MQTT -> EMQX -> ESP32 -> GPIO25/27/32 -> RGB LED
+ * - Updates MongoDB device model (color, colorPower)
+ * - Broadcasts via Socket.IO (emitDeviceStatus and emitDeviceColor)
+ * - Records audit log in DeviceLog
+ * - Guard: Available only when ESP32 controller node is online
+ */
+async function executeDeviceColorCommand({
+  deviceId,
+  deviceType = 'PROJECTOR',
+  classroom = process.env.DEFAULT_CLASSROOM || 'Room 302',
+  power,
+  color,
+  user = null,
+  source = 'REST_API',
+}) {
+  // 0. Verify Database Connectivity
+  if (mongoose.connection.readyState !== 1) {
+    return {
+      success: false,
+      delivered: false,
+      code: 'DATABASE_UNAVAILABLE',
+      executionStatus: 'FAILED',
+      message: 'Database service is currently unavailable. Command cannot be delivered.',
+      timestamp: new Date().toISOString(),
+    }
+  }
+
+  // 1. Role Authorization Guard: Students cannot operate classroom hardware
+  if (user && user.role === 'STUDENT') {
+    return {
+      success: false,
+      delivered: false,
+      code: 'UNAUTHORIZED_ROLE',
+      executionStatus: 'FAILED',
+      message: 'Students are not authorized to control classroom hardware.',
+      timestamp: new Date().toISOString(),
+    }
+  }
+
+  // 2. Identify target Projector Device
+  let device = null
+  if (deviceId) {
+    if (mongoose.Types.ObjectId.isValid(deviceId)) {
+      device = await Device.findById(deviceId)
+    }
+    if (!device) {
+      device = await Device.findOne({
+        deviceId: deviceId.trim().toUpperCase(),
+      })
+    }
+  }
+
+  if (!device) {
+    device = await Device.findOne({
+      type: DEVICE_TYPES.PROJECTOR,
+      isActive: true,
+      ...(classroom ? { classroom: { $regex: new RegExp(`^${classroom.trim()}$`, 'i') } } : {}),
+    })
+    if (!device) {
+      device = await Device.findOne({
+        type: DEVICE_TYPES.PROJECTOR,
+        isActive: true,
+      })
+    }
+  }
+
+  if (!device) {
+    return {
+      success: false,
+      delivered: false,
+      code: 'DEVICE_NOT_FOUND',
+      executionStatus: 'FAILED',
+      message: 'Projector device not found for RGB lighting command.',
+      timestamp: new Date().toISOString(),
+    }
+  }
+
+  if (!device.isActive) {
+    return {
+      success: false,
+      delivered: false,
+      code: 'DEVICE_INACTIVE',
+      executionStatus: 'FAILED',
+      message: `Projector "${device.name}" (${device.deviceId}) is deactivated.`,
+      timestamp: new Date().toISOString(),
+    }
+  }
+
+  // 3. Normalize power & color
+  let targetPower = power ? String(power).trim().toUpperCase() : (device.colorPower || 'ON')
+  if (targetPower !== 'ON' && targetPower !== 'OFF') {
+    targetPower = 'ON'
+  }
+
+  const prevColor = device.color || { r: 255, g: 0, b: 255 }
+  const r = color && typeof color.r !== 'undefined' ? Math.max(0, Math.min(255, Math.round(Number(color.r) || 0))) : prevColor.r
+  const g = color && typeof color.g !== 'undefined' ? Math.max(0, Math.min(255, Math.round(Number(color.g) || 0))) : prevColor.g
+  const b = color && typeof color.b !== 'undefined' ? Math.max(0, Math.min(255, Math.round(Number(color.b) || 0))) : prevColor.b
+  const targetColor = { r, g, b }
+
+  // 4. Verify Controller Node Online Status (Strict Hardware Guard)
+  let isNodeOnline = true
+  if (device.nodeId) {
+    const parentNode = await Device.findOne({ deviceId: device.nodeId }).lean()
+    if (parentNode) {
+      isNodeOnline = parentNode.isOnline === true
+    }
+  } else if (device.classroom) {
+    const roomNode = await Device.findOne({
+      classroom: device.classroom,
+      $or: [{ entityType: 'NODE' }, { deviceCategory: 'NODE' }, { type: DEVICE_TYPES.OTHER }],
+    }).lean()
+    if (roomNode) {
+      isNodeOnline = roomNode.isOnline === true
+    }
+  }
+
+  const mqttStatus = getMQTTStatus()
+  const isMqttConnected = Boolean(mqttStatus && mqttStatus.connected)
+  const isDeviceOnline = isNodeOnline
+
+  if (!isMqttConnected || !isDeviceOnline) {
+    const failureCode = !isMqttConnected ? 'MQTT_DISCONNECTED' : 'DEVICE_OFFLINE'
+    const failureReason = !isMqttConnected
+      ? 'MQTT broker is offline'
+      : `ESP32 controller node for device "${device.name}" (${device.deviceId}) is offline`
+
+    console.warn(`[DeviceCommandService] ⚠️ Projector RGB command failed: ${failureReason}`)
+
+    return {
+      success: false,
+      delivered: false,
+      code: failureCode,
+      executionStatus: 'FAILED',
+      message: 'Command could not be delivered.',
+      error: failureReason,
+      device: {
+        id: device._id,
+        deviceId: device.deviceId,
+        name: device.name,
+        classroom: device.classroom,
+        type: device.type,
+        state: device.state,
+        color: device.color || { r: 255, g: 0, b: 255 },
+        colorPower: device.colorPower || 'OFF',
+        isOnline: device.isOnline,
+      },
+      timestamp: new Date().toISOString(),
+    }
+  }
+
+  // 5. MQTT Topic & Payload
+  // Exact topic: smartclassroom/room302/projector/color/command
+  const mqttTopic = getProjectorColorCommandTopic(device.classroom)
+  const mqttPayload = {
+    power: targetPower,
+    color: targetColor,
+  }
+
+  // 6. Publish via MQTT with QoS 1
+  try {
+    await publish(mqttTopic, mqttPayload, { qos: 1 })
+    console.log(`[DeviceCommandService] 🎨 Published Projector RGB payload to [${mqttTopic}]:`, mqttPayload)
+  } catch (publishErr) {
+    console.error(`[DeviceCommandService] Failed to publish RGB command to [${mqttTopic}]: ${publishErr.message}`)
+    return {
+      success: false,
+      delivered: false,
+      code: 'DELIVERY_FAILED',
+      executionStatus: 'FAILED',
+      message: 'Command could not be delivered.',
+      error: publishErr.message,
+      timestamp: new Date().toISOString(),
+    }
+  }
+
+  // 7. Update MongoDB
+  device.colorPower = targetPower
+  device.color = targetColor
+  device.lastCommandedAt = new Date()
+  await device.save()
+
+  // 8. Real-time broadcast via Socket.IO
+  emitDeviceStatus(device)
+  emitDeviceColor(device)
+
+  // 9. Record DeviceLog
+  let logId = null
+  try {
+    const log = await DeviceLog.create({
+      device: device._id,
+      deviceId: device.deviceId,
+      deviceName: device.name,
+      classroom: device.classroom,
+      action: 'COLOR',
+      previousState: device.state,
+      newState: device.state,
+      topic: mqttTopic,
+      payload: mqttPayload,
+      mqttStatus: MQTT_DELIVERY_STATUS.PUBLISHED,
+      user: user?._id || user?.id || null,
+      userName: user?.name || 'Teacher',
+      userRole: user?.role || 'TEACHER',
+      source,
+      errorMessage: null,
+    })
+    logId = log._id
+  } catch (logErr) {
+    console.warn(`[DeviceCommandService] Notice: Could not record DeviceLog: ${logErr.message}`)
+  }
+
+  return {
+    success: true,
+    delivered: true,
+    executionStatus: 'EXECUTED',
+    message: `Projector lighting set to ${targetPower} (RGB: ${r}, ${g}, ${b}).`,
+    device: {
+      id: device._id,
+      deviceId: device.deviceId,
+      name: device.name,
+      classroom: device.classroom,
+      type: device.type,
+      state: device.state,
+      color: device.color,
+      colorPower: device.colorPower,
+      isOnline: device.isOnline,
+      lastCommandedAt: device.lastCommandedAt,
+    },
+    mqtt: {
+      topic: mqttTopic,
+      status: MQTT_DELIVERY_STATUS.PUBLISHED,
+      published: true,
+      payload: mqttPayload,
+    },
+    logId,
+    timestamp: new Date().toISOString(),
+  }
+}
+
 module.exports = {
   executeDeviceCommand,
+  executeDeviceColorCommand,
   getDeviceLabel,
 }

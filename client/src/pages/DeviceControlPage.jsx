@@ -22,6 +22,8 @@ import {
   ShieldAlert,
   Activity,
   Terminal,
+  Palette,
+  Check,
 } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import { useSocket, useSocketEvent } from '../context/SocketContext'
@@ -36,8 +38,21 @@ import {
   CardContent,
   SiriCard,
   AlertBanner,
+  CircularColorPicker,
+  rgbToHex,
 } from '../components/ui'
 import { API_BASE_URL } from '../config/api'
+
+// 7 Preset Quick Colors requested for Projector RGB lighting
+const QUICK_COLORS = [
+  { name: 'White', hex: '#FFFFFF', r: 255, g: 255, b: 255 },
+  { name: 'Red', hex: '#EF4444', r: 255, g: 0, b: 0 },
+  { name: 'Green', hex: '#22C55E', r: 0, g: 255, b: 0 },
+  { name: 'Blue', hex: '#3B82F6', r: 0, g: 0, b: 255 },
+  { name: 'Yellow', hex: '#EAB308', r: 255, g: 255, b: 0 },
+  { name: 'Cyan', hex: '#06B6D4', r: 0, g: 255, b: 255 },
+  { name: 'Purple', hex: '#A855F7', r: 255, g: 0, b: 255 },
+]
 
 export function DeviceControlPage() {
   const { user, token } = useAuth()
@@ -66,6 +81,14 @@ export function DeviceControlPage() {
 
   // User feedback notification
   const [notification, setNotification] = useState(null)
+
+  // State: Projector RGB Lighting Control
+  const [projectorColor, setProjectorColor] = useState({ r: 255, g: 0, b: 255 })
+  const [projectorColorPower, setProjectorColorPower] = useState('OFF')
+  const [isColorUpdating, setIsColorUpdating] = useState(false)
+  const [colorSyncStatus, setColorSyncStatus] = useState('synced') // 'synced' | 'pending' | 'syncing' | 'error'
+  const debounceTimerRef = useRef(null)
+  const isInteractingColorRef = useRef(false)
 
   // Subscribe to real-time classroom telemetry for selected room
   useEffect(() => {
@@ -126,6 +149,17 @@ export function DeviceControlPage() {
       channelDevices.sort((a, b) => (typePriority[a.type] || 99) - (typePriority[b.type] || 99))
 
       setChannels(channelDevices)
+
+      // Initialize Projector RGB state from DB
+      const proj = channelDevices.find((c) => c.type === 'PROJECTOR')
+      if (proj) {
+        if (proj.color) {
+          setProjectorColor(proj.color)
+        }
+        if (proj.colorPower) {
+          setProjectorColorPower(proj.colorPower)
+        }
+      }
 
       // 2. Discover all distinct classrooms across the system for the room selector
       const allRes = await fetch(`${apiBaseUrl}/api/devices`, {
@@ -212,6 +246,16 @@ export function DeviceControlPage() {
             })
           }
 
+          // If incoming update carries projector RGB lighting data
+          if ((ch.type === 'PROJECTOR' || incoming.type === 'PROJECTOR') && !isInteractingColorRef.current) {
+            if (incoming.color) {
+              setProjectorColor(incoming.color)
+            }
+            if (incoming.colorPower) {
+              setProjectorColorPower(incoming.colorPower)
+            }
+          }
+
           return {
             ...ch,
             state: incoming.state || ch.state,
@@ -219,12 +263,151 @@ export function DeviceControlPage() {
             confirmedState: incoming.confirmedState || incoming.state || ch.confirmedState,
             lastConfirmedAt: incoming.lastConfirmedAt || new Date().toISOString(),
             lastSeenAt: incoming.lastSeenAt || new Date().toISOString(),
+            color: incoming.color || ch.color,
+            colorPower: incoming.colorPower || ch.colorPower,
           }
         }
         return ch
       })
     )
   })
+
+  // Real-time listener for dedicated "device:color" Socket.IO event
+  useSocketEvent('device:color', (incoming) => {
+    if (!incoming) return
+    console.log('[DeviceControl] 🎨 Projector RGB socket telemetry:', incoming)
+    if (incoming.color && !isInteractingColorRef.current) {
+      setProjectorColor(incoming.color)
+    }
+    if ((incoming.power || incoming.colorPower) && !isInteractingColorRef.current) {
+      setProjectorColorPower(incoming.power || incoming.colorPower)
+    }
+    setColorSyncStatus('synced')
+  })
+
+  // Dispatch Projector RGB Color Command via Node backend REST API -> MQTT -> EMQX -> ESP32
+  const dispatchProjectorColor = useCallback(
+    async (targetColor, targetPower) => {
+      const proj = channels.find((c) => c.type === 'PROJECTOR')
+      if (!proj) return
+      const devId = proj.deviceId || proj._id
+
+      if (!isNodeOnline) {
+        setNotification({
+          type: 'danger',
+          title: 'Action Blocked',
+          message: 'Cannot send RGB command. Hardware controller node is offline.',
+        })
+        return
+      }
+
+      const nextPower = targetPower !== undefined ? targetPower : projectorColorPower
+      const nextColor = targetColor !== undefined ? targetColor : projectorColor
+
+      setIsColorUpdating(true)
+      setColorSyncStatus('syncing')
+
+      try {
+        const res = await fetch(`${apiBaseUrl}/api/devices/${encodeURIComponent(devId)}/color`, {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json',
+            Accept: 'application/json',
+          },
+          body: JSON.stringify({
+            power: nextPower,
+            color: nextColor,
+          }),
+        })
+
+        const data = await res.json()
+        if (res.ok && data.status === 'success') {
+          setColorSyncStatus('synced')
+          setChannels((prev) =>
+            prev.map((c) =>
+              c.type === 'PROJECTOR'
+                ? {
+                    ...c,
+                    color: nextColor,
+                    colorPower: nextPower,
+                  }
+                : c
+            )
+          )
+        } else {
+          setColorSyncStatus('error')
+          setNotification({
+            type: 'danger',
+            title: 'RGB Command Failed',
+            message: data.message || 'Failed to dispatch projector RGB command.',
+          })
+        }
+      } catch (err) {
+        console.error('[DeviceControl] Color dispatch error:', err)
+        setColorSyncStatus('error')
+        setNotification({
+          type: 'danger',
+          title: 'Network Error',
+          message: 'Unable to communicate with device service for RGB command.',
+        })
+      } finally {
+        setIsColorUpdating(false)
+      }
+    },
+    [channels, isNodeOnline, apiBaseUrl, token, projectorColorPower, projectorColor]
+  )
+
+  // Toggle Projector Lighting Power (ON / OFF)
+  const handleToggleLightingPower = () => {
+    if (!isNodeOnline) {
+      setNotification({
+        type: 'danger',
+        title: 'Hardware Offline',
+        message: 'Controller node is offline. Lighting power controls are locked.',
+      })
+      return
+    }
+
+    const nextPower = projectorColorPower === 'ON' ? 'OFF' : 'ON'
+    setProjectorColorPower(nextPower)
+    dispatchProjectorColor(projectorColor, nextPower)
+  }
+
+  // Handle Quick Color Click: If lighting is ON, dispatches immediately
+  const handleSelectQuickColor = (qc) => {
+    if (!isNodeOnline) return
+    const nextColor = { r: qc.r, g: qc.g, b: qc.b }
+    setProjectorColor(nextColor)
+
+    if (projectorColorPower === 'ON') {
+      if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current)
+      dispatchProjectorColor(nextColor, 'ON')
+    } else {
+      setColorSyncStatus('pending')
+    }
+  }
+
+  // Handle Circular Color Selector change: Smooth preview + 300ms debounce when lighting is ON
+  const handleColorWheelChange = (newRgb) => {
+    if (!isNodeOnline) return
+    setProjectorColor(newRgb)
+    setColorSyncStatus('pending')
+    isInteractingColorRef.current = true
+
+    if (projectorColorPower === 'ON') {
+      if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current)
+      debounceTimerRef.current = setTimeout(() => {
+        dispatchProjectorColor(newRgb, 'ON')
+        isInteractingColorRef.current = false
+      }, 300)
+    } else {
+      if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current)
+      debounceTimerRef.current = setTimeout(() => {
+        isInteractingColorRef.current = false
+      }, 500)
+    }
+  }
 
   // Handle Relay Channel Toggle Command (ON / OFF)
   const handleToggleChannel = async (channel) => {
@@ -601,10 +784,18 @@ export function DeviceControlPage() {
                   iconBg = isOn ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-400'
                 }
 
+                const isProjector = channel.type === 'PROJECTOR'
+                const matchingQuickColor = QUICK_COLORS.find(
+                  (qc) => qc.r === projectorColor.r && qc.g === projectorColor.g && qc.b === projectorColor.b
+                )
+                const isCustomColor = !matchingQuickColor
+
                 return (
                   <Card
                     key={devId}
                     className={`overflow-hidden transition-all duration-300 relative border ${
+                      isProjector ? 'col-span-1 md:col-span-2 lg:col-span-3' : 'col-span-1'
+                    } ${
                       isOn && isAvailable
                         ? 'border-indigo-200/80 shadow-md shadow-indigo-500/5'
                         : 'border-slate-200/70 hover:border-slate-300/80'
@@ -646,7 +837,9 @@ export function DeviceControlPage() {
                     <div className="px-5 sm:px-6 py-3 bg-slate-50/60 border-y border-slate-100/90 text-xs font-mono space-y-2">
                       <div className="flex items-center justify-between text-slate-500">
                         <span>GPIO Output Pin:</span>
-                        <strong className="text-slate-800">GPIO {channel.gpioPin ?? 'N/A'}</strong>
+                        <strong className="text-slate-800">
+                          {isProjector ? `GPIO ${channel.gpioPin ?? 21} (Relay) | GPIO 25, 27, 32 (RGB)` : `GPIO ${channel.gpioPin ?? 'N/A'}`}
+                        </strong>
                       </div>
                       <div className="flex items-center justify-between text-slate-500">
                         <span>Connection Availability:</span>
@@ -665,11 +858,11 @@ export function DeviceControlPage() {
                       </div>
                     </div>
 
-                    {/* Interactive Toggle Actuator Section */}
+                    {/* Interactive Toggle Actuator Section (Projector AC Relay Switch) */}
                     <div className="p-5 sm:p-6 flex items-center justify-between gap-4 bg-white/40">
                       <div>
                         <span className="text-xs font-medium text-slate-600 block">
-                          Physical Switch
+                          {isProjector ? 'Projector AC Relay Power' : 'Physical Switch'}
                         </span>
                         <span className="text-[11px] text-slate-400">
                           {isPending ? 'Sending MQTT packet...' : isAvailable ? (isOn ? 'Click to Turn OFF' : 'Click to Turn ON') : 'Controls locked'}
@@ -701,6 +894,221 @@ export function DeviceControlPage() {
                         )}
                       </button>
                     </div>
+
+                    {/* DEDICATED PROJECTOR RGB LIGHTING CONTROL SECTION */}
+                    {isProjector && (
+                      <div className="border-t border-slate-100 bg-gradient-to-b from-slate-50/80 via-white to-slate-50/40 p-5 sm:p-6 space-y-5">
+                        {/* Section Header */}
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
+                          <div className="flex items-center gap-2.5">
+                            <div className="w-9 h-9 rounded-2xl bg-gradient-to-tr from-purple-500 via-fuchsia-500 to-indigo-500 flex items-center justify-center text-white shadow-xs">
+                              <Palette className="w-4 h-4" />
+                            </div>
+                            <div>
+                              <div className="flex items-center gap-2">
+                                <h5 className="text-xs font-bold uppercase tracking-wider text-slate-900">
+                                  Projector RGB Lighting Control
+                                </h5>
+                                <Badge variant="purple" size="xs">
+                                  GPIO 25, 27, 32
+                                </Badge>
+                              </div>
+                              <span className="text-[11px] font-mono text-slate-400 block mt-0.5">
+                                Topic: smartclassroom/room302/projector/color/command
+                              </span>
+                            </div>
+                          </div>
+
+                          {/* Projector Lighting Power Segmented Toggle (ON / OFF) */}
+                          <div className="flex items-center gap-2.5 self-start sm:self-auto">
+                            <span className="text-xs font-semibold text-slate-600">Lighting Power:</span>
+                            <div className="inline-flex p-0.5 bg-slate-200/80 rounded-xl shadow-inner">
+                              <button
+                                type="button"
+                                onClick={handleToggleLightingPower}
+                                disabled={!isAvailable || isColorUpdating}
+                                title={!isAvailable ? 'Controller offline' : 'Turn Lighting Power ON'}
+                                className={`px-3.5 py-1 text-xs font-bold rounded-lg transition-all cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed ${
+                                  projectorColorPower === 'ON'
+                                    ? 'bg-emerald-600 text-white shadow-xs'
+                                    : 'text-slate-600 hover:text-slate-900'
+                                }`}
+                              >
+                                ON
+                              </button>
+                              <button
+                                type="button"
+                                onClick={handleToggleLightingPower}
+                                disabled={!isAvailable || isColorUpdating}
+                                title={!isAvailable ? 'Controller offline' : 'Turn Lighting Power OFF'}
+                                className={`px-3.5 py-1 text-xs font-bold rounded-lg transition-all cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed ${
+                                  projectorColorPower === 'OFF'
+                                    ? 'bg-slate-700 text-white shadow-xs'
+                                    : 'text-slate-600 hover:text-slate-900'
+                                }`}
+                              >
+                                OFF
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Interactive RGB Control Grid */}
+                        <div className="grid grid-cols-1 md:grid-cols-12 gap-6 items-center">
+                          {/* 1. Circular Color Selector */}
+                          <div className="md:col-span-5 flex flex-col items-center justify-center p-4 bg-white rounded-2xl border border-slate-100 shadow-xs">
+                            <CircularColorPicker
+                              color={projectorColor}
+                              power={projectorColorPower}
+                              onChange={handleColorWheelChange}
+                              disabled={!isAvailable}
+                              size={175}
+                            />
+                            <span className="text-[11px] text-slate-400 mt-2 font-medium text-center">
+                              Click or drag along the ring to select any color
+                            </span>
+                          </div>
+
+                          {/* 2. Values Display, Live Preview Swatch, Quick Colors, Apply Button */}
+                          <div className="md:col-span-7 space-y-4">
+                            {/* Live Preview Circle & Selected RGB Values Badges */}
+                            <div className="p-4 rounded-2xl bg-white border border-slate-100 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                              <div className="flex items-center gap-3">
+                                {/* Live Preview Swatch Circle */}
+                                <div
+                                  className="w-12 h-12 rounded-2xl border-2 border-white shadow-md transition-all duration-300 shrink-0"
+                                  style={{
+                                    backgroundColor:
+                                      projectorColorPower === 'ON'
+                                        ? `rgb(${projectorColor.r}, ${projectorColor.g}, ${projectorColor.b})`
+                                        : '#475569',
+                                    boxShadow:
+                                      projectorColorPower === 'ON'
+                                        ? `0 0 22px rgba(${projectorColor.r}, ${projectorColor.g}, ${projectorColor.b}, 0.55)`
+                                        : 'none',
+                                  }}
+                                />
+                                <div>
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-xs font-bold text-slate-900">
+                                      {matchingQuickColor ? matchingQuickColor.name : 'Custom Selection'}
+                                    </span>
+                                    {isCustomColor ? (
+                                      <Badge variant="purple" size="xs">
+                                        Custom
+                                      </Badge>
+                                    ) : (
+                                      <Badge variant="neutral" size="xs">
+                                        Preset
+                                      </Badge>
+                                    )}
+                                  </div>
+                                  <span className="text-xs font-mono font-bold text-slate-500 block mt-0.5">
+                                    {rgbToHex(projectorColor.r, projectorColor.g, projectorColor.b)}
+                                  </span>
+                                </div>
+                              </div>
+
+                              {/* Numeric Readout: R: 255, G: 0, B: 255 */}
+                              <div className="flex items-center gap-1.5 font-mono text-xs">
+                                <span className="px-2.5 py-1 bg-rose-50 text-rose-700 border border-rose-200/80 rounded-lg font-bold">
+                                  R: {projectorColor.r}
+                                </span>
+                                <span className="px-2.5 py-1 bg-emerald-50 text-emerald-700 border border-emerald-200/80 rounded-lg font-bold">
+                                  G: {projectorColor.g}
+                                </span>
+                                <span className="px-2.5 py-1 bg-blue-50 text-blue-700 border border-blue-200/80 rounded-lg font-bold">
+                                  B: {projectorColor.b}
+                                </span>
+                              </div>
+                            </div>
+
+                            {/* Quick Colors Set: White, Red, Green, Blue, Yellow, Cyan, Purple */}
+                            <div>
+                              <div className="flex items-center justify-between mb-2">
+                                <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
+                                  Quick Colors ({QUICK_COLORS.length})
+                                </span>
+                                <span className="text-[11px] text-slate-400">
+                                  {projectorColorPower === 'ON' ? 'Instant actuation' : 'Power is OFF'}
+                                </span>
+                              </div>
+                              <div className="flex items-center gap-2 flex-wrap">
+                                {QUICK_COLORS.map((qc) => {
+                                  const isSelected =
+                                    projectorColor.r === qc.r &&
+                                    projectorColor.g === qc.g &&
+                                    projectorColor.b === qc.b
+
+                                  return (
+                                    <button
+                                      key={qc.name}
+                                      type="button"
+                                      onClick={() => handleSelectQuickColor(qc)}
+                                      disabled={!isAvailable}
+                                      title={`${qc.name} (R:${qc.r}, G:${qc.g}, B:${qc.b})`}
+                                      className={`group relative flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-semibold transition-all cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed ${
+                                        isSelected
+                                          ? 'border-indigo-500 bg-indigo-50/80 text-indigo-900 shadow-xs ring-2 ring-indigo-500/20'
+                                          : 'border-slate-200/80 bg-white hover:border-slate-300 text-slate-700'
+                                      }`}
+                                    >
+                                      <span
+                                        className="w-3.5 h-3.5 rounded-full border border-black/10 shrink-0 shadow-xs"
+                                        style={{ backgroundColor: qc.hex }}
+                                      />
+                                      <span>{qc.name}</span>
+                                    </button>
+                                  )
+                                })}
+                              </div>
+                            </div>
+
+                            {/* Telemetry Status Bar & Apply Color Button */}
+                            <div className="flex items-center justify-between pt-2 border-t border-slate-100">
+                              <div className="flex items-center gap-2 text-xs">
+                                <span
+                                  className={`w-2 h-2 rounded-full ${
+                                    colorSyncStatus === 'syncing'
+                                      ? 'bg-amber-500 animate-ping'
+                                      : colorSyncStatus === 'synced'
+                                      ? 'bg-emerald-500'
+                                      : 'bg-slate-400'
+                                  }`}
+                                />
+                                <span className="text-slate-500 font-mono text-[11px]">
+                                  {colorSyncStatus === 'syncing'
+                                    ? 'Publishing MQTT to ESP32...'
+                                    : colorSyncStatus === 'synced'
+                                    ? 'Synced to ESP32 (EMQX TLS)'
+                                    : 'Pending Apply'}
+                                </span>
+                              </div>
+
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => dispatchProjectorColor(projectorColor, projectorColorPower)}
+                                disabled={!isAvailable || isColorUpdating}
+                                className="rounded-xl h-8 px-3 text-xs font-bold"
+                              >
+                                {isColorUpdating ? (
+                                  <div className="flex items-center gap-1.5">
+                                    <RefreshCw className="w-3 h-3 animate-spin" />
+                                    <span>Applying...</span>
+                                  </div>
+                                ) : (
+                                  <div className="flex items-center gap-1.5">
+                                    <Check className="w-3 h-3 text-emerald-600" />
+                                    <span>Apply Color</span>
+                                  </div>
+                                )}
+                              </Button>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    )}
                   </Card>
                 )
               })}

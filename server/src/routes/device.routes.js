@@ -6,6 +6,7 @@ const {
   getDevices,
   getDeviceById,
   sendDeviceCommand,
+  sendDeviceColor,
   simulateDeviceStatus,
 } = require('../controllers/device.controller')
 
@@ -33,6 +34,13 @@ router.get('/:id', getDeviceById)
  * @access  Private (SUPER_ADMIN, TEACHER)
  */
 router.post('/:id/command', sendDeviceCommand)
+
+/**
+ * @route   POST /api/devices/:id/color
+ * @desc    Send Projector RGB color and lighting power command, publish MQTT topic, and record DeviceLog
+ * @access  Private (SUPER_ADMIN, TEACHER)
+ */
+router.post('/:id/color', sendDeviceColor)
 
 /**
  * @route   POST /api/devices/:id/simulate-status
