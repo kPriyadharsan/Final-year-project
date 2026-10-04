@@ -434,6 +434,53 @@ function disconnectMQTT(force = false) {
   })
 }
 
+/**
+ * Publishes Projector master relay command (ON / OFF)
+ * Topic: smartclassroom/<classroom>/relay/projector/command
+ * Payload: { "command": "ON" } or { "command": "OFF" }
+ *
+ * @param {'ON'|'OFF'} command
+ * @param {string} [classroom='room302']
+ * @returns {Promise<boolean>}
+ */
+async function publishProjectorCommand(command, classroom = 'room302') {
+  const normClassroom = String(classroom).toLowerCase().replace(/[^a-z0-9]/g, '') || 'room302'
+  const topic = `smartclassroom/${normClassroom}/relay/projector/command`
+  const payload = {
+    command: String(command).trim().toUpperCase(),
+  }
+  return publish(topic, payload, { qos: 1 })
+}
+
+/**
+ * Publishes Projector RGB color command
+ * Topic: smartclassroom/<classroom>/projector/color/command
+ * Payload: { "power": "ON", "color": { "r": <0-255>, "g": <0-255>, "b": <0-255> } }
+ *
+ * @param {number} r
+ * @param {number} g
+ * @param {number} b
+ * @param {'ON'|'OFF'} [power='ON']
+ * @param {string} [classroom='room302']
+ * @returns {Promise<boolean>}
+ */
+async function publishProjectorColor(r, g, b, power = 'ON', classroom = 'room302') {
+  const normClassroom = String(classroom).toLowerCase().replace(/[^a-z0-9]/g, '') || 'room302'
+  const topic = `smartclassroom/${normClassroom}/projector/color/command`
+  const clampedR = Math.max(0, Math.min(255, Math.round(Number(r) || 0)))
+  const clampedG = Math.max(0, Math.min(255, Math.round(Number(g) || 0)))
+  const clampedB = Math.max(0, Math.min(255, Math.round(Number(b) || 0)))
+  const payload = {
+    power: String(power).trim().toUpperCase() === 'OFF' ? 'OFF' : 'ON',
+    color: {
+      r: clampedR,
+      g: clampedG,
+      b: clampedB,
+    },
+  }
+  return publish(topic, payload, { qos: 1 })
+}
+
 module.exports = {
   connectMQTT,
   disconnectMQTT,
@@ -442,5 +489,7 @@ module.exports = {
   unsubscribe,
   onMessage,
   getMQTTStatus,
+  publishProjectorCommand,
+  publishProjectorColor,
   DEFAULT_TOPICS,
 }

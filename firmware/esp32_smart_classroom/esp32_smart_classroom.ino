@@ -51,6 +51,12 @@ bool lightState     = false;
 bool fanState       = false;
 bool projectorState = false;
 
+// Projector Common-Cathode RGB LED PWM states (0 - 255)
+uint8_t rgbRed   = 0;
+uint8_t rgbGreen = 0;
+uint8_t rgbBlue  = 0;
+bool rgbPower    = false;
+
 // Non-blocking timing trackers (millis)
 unsigned long lastWifiRetryMs   = 0;
 unsigned long lastMqttRetryMs   = 0;
@@ -75,6 +81,48 @@ void applyPinOutput(uint8_t pin, bool turnOn) {
 }
 
 // ----------------------------------------------------------------------------
+// HARDWARE RGB PWM HELPER FUNCTION
+// Common-Cathode RGB LED: 0 = OFF (0V), 255 = Full Brightness (3.3V)
+// Directly controls GPIO25 (Red), GPIO27 (Green), GPIO32 (Blue) via PWM.
+// The relay (GPIO21) and RGB LED are completely independent.
+// ----------------------------------------------------------------------------
+void setRGB(uint8_t r, uint8_t g, uint8_t b) {
+  rgbRed = r;
+  rgbGreen = g;
+  rgbBlue = b;
+  analogWrite(PIN_RGB_RED, r);
+  analogWrite(PIN_RGB_GREEN, g);
+  analogWrite(PIN_RGB_BLUE, b);
+  Serial.printf("[HARDWARE] 🎨 RGB PWM Output -> R: %u (GPIO %d), G: %u (GPIO %d), B: %u (GPIO %d)\n",
+                r, PIN_RGB_RED, g, PIN_RGB_GREEN, b, PIN_RGB_BLUE);
+}
+
+// Helper to parse integer value from JSON string by key
+int parseJsonInt(const String& json, const String& key, int defaultVal) {
+  int keyIndex = json.indexOf("\"" + key + "\"");
+  if (keyIndex < 0) {
+    keyIndex = json.indexOf(key);
+  }
+  if (keyIndex < 0) return defaultVal;
+
+  int colonIndex = json.indexOf(":", keyIndex);
+  if (colonIndex < 0) return defaultVal;
+
+  int start = colonIndex + 1;
+  while (start < json.length() && (json[start] == ' ' || json[start] == '"')) {
+    start++;
+  }
+
+  int end = start;
+  while (end < json.length() && (isDigit(json[end]) || json[end] == '-')) {
+    end++;
+  }
+
+  if (start == end) return defaultVal;
+  return json.substring(start, end).toInt();
+}
+
+// ----------------------------------------------------------------------------
 // SERIAL BANNER & DIAGNOSTICS
 // ----------------------------------------------------------------------------
 void printBanner() {
@@ -90,9 +138,12 @@ void printBanner() {
   Serial.println("================================================================");
   Serial.printf("   Light Output     : GPIO %d\n", PIN_RELAY_LIGHT);
   Serial.printf("   Fan Output       : GPIO %d\n", PIN_RELAY_FAN);
-  Serial.printf("   Projector Output : GPIO %d\n", PIN_RELAY_PROJECTOR);
+  Serial.printf("   Projector Relay  : GPIO %d (Master Power)\n", PIN_RELAY_PROJECTOR);
+  Serial.printf("   RGB Red PWM      : GPIO %d\n", PIN_RGB_RED);
+  Serial.printf("   RGB Green PWM    : GPIO %d\n", PIN_RGB_GREEN);
+  Serial.printf("   RGB Blue PWM     : GPIO %d\n", PIN_RGB_BLUE);
   Serial.printf("   Status LED       : GPIO %d\n", PIN_STATUS_LED);
-  Serial.printf("   Relay Polarity   : %s\n", RELAY_ACTIVE_LOW ? "Active-LOW (5V Relay Board)" : "Active-HIGH (Direct LED Mode)");
+  Serial.printf("   Relay Polarity   : %s\n", RELAY_ACTIVE_LOW ? "Active-LOW (5V Relay Board)" : "Active-HIGH (Direct Mode)");
   Serial.printf("   Broker Host      : %s\n", MQTT_BROKER_HOST);
   Serial.printf("   Client ID        : %s\n", MQTT_CLIENT_ID);
   Serial.println("================================================================\n");
@@ -146,6 +197,31 @@ void publishDeviceStatus(const char* appliance, const char* stateTopic, bool sta
 }
 
 // ----------------------------------------------------------------------------
+// PROJECTOR RGB STATE PUBLICATION HELPER
+// Publishes standardized RGB telemetry matching project specifications:
+// { "deviceId": "ESP32-RM302-01", "classroom": "room302", "power": "ON"|"OFF", "color": { "r": 255, "g": 255, "b": 255 } }
+// ----------------------------------------------------------------------------
+void publishRGBStatus(bool power, uint8_t r, uint8_t g, uint8_t b) {
+  const char* powerStr = power ? "ON" : "OFF";
+  char jsonBuffer[256];
+  snprintf(
+    jsonBuffer,
+    sizeof(jsonBuffer),
+    "{\"deviceId\":\"%s\",\"classroom\":\"%s\",\"power\":\"%s\",\"color\":{\"r\":%u,\"g\":%u,\"b\":%u}}",
+    "ESP32-RM302-01",
+    CLASSROOM_SLUG,
+    powerStr,
+    r,
+    g,
+    b
+  );
+
+  mqttClient.publish(TOPIC_RGB_STATE, jsonBuffer, false);
+  Serial.printf("[MQTT OUT] 🎨 Published RGB state to [%s] -> Power: %s, Color: (%u, %u, %u)\n",
+                TOPIC_RGB_STATE, powerStr, r, g, b);
+}
+
+// ----------------------------------------------------------------------------
 // INCOMING MQTT COMMAND CALLBACK DISPATCHER
 // Parses backend JSON command payload:
 // { "deviceId": "...", "command": "ON", "state": 1, "gpioPin": ... }
@@ -166,7 +242,46 @@ void onMqttMessageReceived(char* topic, byte* payload, unsigned int length) {
   String payloadUpper = payloadStr;
   payloadUpper.toUpperCase();
 
-  // Parse command action: ON or OFF
+  String topicStr = String(topic);
+
+  // --------------------------------------------------------------------------
+  // 0. PROJECTOR RGB COLOR COMMAND HANDLER (Independent PWM Channel)
+  // Matches: smartclassroom/room302/projector/color/command
+  // Changing RGB color must NEVER turn the relay OFF and NEVER change GPIO21!
+  // --------------------------------------------------------------------------
+  if (topicStr == TOPIC_RGB_COMMAND || topicStr.indexOf("/projector/color/command") >= 0) {
+    bool targetPower = true;
+    if (payloadUpper.indexOf("\"POWER\":\"OFF\"") >= 0 || payloadUpper.indexOf("\"POWER\": \"OFF\"") >= 0) {
+      targetPower = false;
+    }
+
+    if (!targetPower) {
+      rgbPower = false;
+      setRGB(0, 0, 0);
+      publishRGBStatus(false, 0, 0, 0);
+      Serial.println("[HARDWARE] 🎨 RGB Power set to OFF (0, 0, 0). Relay (GPIO 21) remains untouched.");
+    } else {
+      rgbPower = true;
+      int rVal = parseJsonInt(payloadStr, "r", rgbRed);
+      int gVal = parseJsonInt(payloadStr, "g", rgbGreen);
+      int bVal = parseJsonInt(payloadStr, "b", rgbBlue);
+
+      // Clamp values strictly between 0 and 255
+      uint8_t r = constrain(rVal, 0, 255);
+      uint8_t g = constrain(gVal, 0, 255);
+      uint8_t b = constrain(bVal, 0, 255);
+
+      // Keep GPIO21 relay ON, update GPIO25, 27, 32 with PWM
+      setRGB(r, g, b);
+      publishRGBStatus(true, r, g, b);
+      Serial.printf("[HARDWARE] 🎨 RGB Color updated to (%u, %u, %u). Master Relay (GPIO %d) remains ON.\n",
+                    r, g, b, PIN_RELAY_PROJECTOR);
+    }
+    Serial.println("----------------------------------------------------------------");
+    return;
+  }
+
+  // Parse relay command action: ON or OFF
   // Accommodates:
   // 1. JSON {"command":"ON"} or {"command": "ON"}
   // 2. Numeric JSON {"state":1} or {"state": 1}
@@ -194,7 +309,6 @@ void onMqttMessageReceived(char* topic, byte* payload, unsigned int length) {
   }
 
   bool targetState = commandIsOn;
-  String topicStr = String(topic);
 
   // --------------------------------------------------------------------------
   // 1. LIGHT APPLIANCE HANDLER
@@ -223,8 +337,13 @@ void onMqttMessageReceived(char* topic, byte* payload, unsigned int length) {
     publishDeviceStatus("FAN", TOPIC_FAN_STATE, fanState);
   }
   // --------------------------------------------------------------------------
-  // 3. PROJECTOR APPLIANCE HANDLER
-  // Matches: smartclassroom/room302/relay/projector/command, classroom/device/projector/set
+  // 3. PROJECTOR APPLIANCE HANDLER (Master AC Power Relay on GPIO 21)
+  // When Projector is switched ON:
+  //   - GPIO21 turns relay ON
+  //   - RGB automatically turns WHITE (255, 255, 255)
+  // When Projector is switched OFF:
+  //   - GPIO21 turns relay OFF
+  //   - RGB turns OFF (0, 0, 0)
   // --------------------------------------------------------------------------
   else if (topicStr == TOPIC_PROJECTOR_COMMAND || 
            topicStr.indexOf("/projector/command") >= 0 || 
@@ -232,8 +351,22 @@ void onMqttMessageReceived(char* topic, byte* payload, unsigned int length) {
            topicStr.indexOf("/projector") >= 0) {
     projectorState = targetState;
     applyPinOutput(PIN_RELAY_PROJECTOR, projectorState);
-    Serial.printf("[HARDWARE] 📽️ PROJECTOR set to: [%s] on GPIO %d\n", projectorState ? "ON" : "OFF", PIN_RELAY_PROJECTOR);
-    publishDeviceStatus("PROJECTOR", TOPIC_PROJECTOR_STATE, projectorState);
+
+    if (projectorState) {
+      // Projector ON: Master Relay ON (GPIO 21) + Default WHITE (GPIO 25, 27, 32 = 255)
+      rgbPower = true;
+      setRGB(255, 255, 255);
+      Serial.printf("[HARDWARE] 📽️ PROJECTOR Master Relay ON (GPIO %d) & RGB Default WHITE (255, 255, 255)\n", PIN_RELAY_PROJECTOR);
+      publishDeviceStatus("PROJECTOR", TOPIC_PROJECTOR_STATE, true);
+      publishRGBStatus(true, 255, 255, 255);
+    } else {
+      // Projector OFF: Master Relay OFF (GPIO 21) & RGB OFF (0, 0, 0)
+      rgbPower = false;
+      setRGB(0, 0, 0);
+      Serial.printf("[HARDWARE] 📽️ PROJECTOR Master Relay OFF (GPIO %d) & RGB OFF (0, 0, 0)\n", PIN_RELAY_PROJECTOR);
+      publishDeviceStatus("PROJECTOR", TOPIC_PROJECTOR_STATE, false);
+      publishRGBStatus(false, 0, 0, 0);
+    }
   }
   else {
     Serial.printf("[WARN] ⚠️ Unmatched command topic: [%s]\n", topic);
@@ -332,6 +465,10 @@ void handleMQTT() {
     mqttClient.subscribe(TOPIC_PROJECTOR_COMMAND, 1);
     Serial.printf("   ✓ Subscribed: %s\n", TOPIC_PROJECTOR_COMMAND);
 
+    // Subscribe to Projector RGB Lighting command topic
+    mqttClient.subscribe(TOPIC_RGB_COMMAND, 1);
+    Serial.printf("   ✓ Subscribed: %s\n", TOPIC_RGB_COMMAND);
+
     // Also subscribe to wildcard command topic for future appliance expansion
     mqttClient.subscribe(TOPIC_ALL_COMMANDS, 1);
     Serial.printf("   ✓ Subscribed: %s (Standard Wildcard)\n", TOPIC_ALL_COMMANDS);
@@ -345,6 +482,7 @@ void handleMQTT() {
     publishDeviceStatus("LIGHT", TOPIC_LIGHT_STATE, lightState);
     publishDeviceStatus("FAN", TOPIC_FAN_STATE, fanState);
     publishDeviceStatus("PROJECTOR", TOPIC_PROJECTOR_STATE, projectorState);
+    publishRGBStatus(rgbPower, rgbRed, rgbGreen, rgbBlue);
 
     Serial.println("[MQTT] 🚀 All subscriptions active. Ready for classroom commands!");
   } else {
@@ -363,19 +501,23 @@ void setup() {
   delay(500); // Allow hardware UART to stabilize
   printBanner();
 
-  // 2. Configure GPIO relay output pins
+  // 2. Configure GPIO relay output pins & RGB PWM pins
   pinMode(PIN_RELAY_LIGHT, OUTPUT);
   pinMode(PIN_RELAY_FAN, OUTPUT);
   pinMode(PIN_RELAY_PROJECTOR, OUTPUT);
+  pinMode(PIN_RGB_RED, OUTPUT);
+  pinMode(PIN_RGB_GREEN, OUTPUT);
+  pinMode(PIN_RGB_BLUE, OUTPUT);
   pinMode(PIN_STATUS_LED, OUTPUT);
 
-  // Initialize all appliances in safe OFF state on boot
+  // Initialize all appliances and RGB in safe OFF state on boot
   applyPinOutput(PIN_RELAY_LIGHT, false);
   applyPinOutput(PIN_RELAY_FAN, false);
   applyPinOutput(PIN_RELAY_PROJECTOR, false);
+  setRGB(0, 0, 0);
   digitalWrite(PIN_STATUS_LED, LOW);
 
-  Serial.println("[BOOT] 🔌 GPIO Outputs initialized in safe OFF state.");
+  Serial.println("[BOOT] 🔌 GPIO Outputs & RGB LED initialized in safe OFF state.");
 
   // 3. Configure TLS Security on WiFiClientSecure (if TLS enabled)
 #if MQTT_USE_TLS

@@ -416,6 +416,16 @@ export function DeviceControlPage() {
   // Handle Circular Color Selector change: Smooth preview + 300ms debounce when lighting is ON
   const handleColorWheelChange = (newRgb) => {
     if (!isNodeOnline) return
+    const projChannel = channels.find((c) => c.type === 'PROJECTOR')
+    if (projChannel && projChannel.state === 'OFF') {
+      setNotification({
+        type: 'warning',
+        title: 'Projector is OFF',
+        message: 'Please turn Projector ON before adjusting RGB lighting.',
+      })
+      return
+    }
+
     setProjectorColor(newRgb)
     setColorSyncStatus('pending')
     isInteractingColorRef.current = true
@@ -459,6 +469,19 @@ export function DeviceControlPage() {
     setPendingCommands((prev) => ({ ...prev, [devId]: true }))
 
     const nextState = channel.state === 'ON' ? 'OFF' : 'ON'
+
+    // Synchronize Projector RGB states with master power switch:
+    // - ON: Relay turns ON, RGB automatically defaults to WHITE (255, 255, 255)
+    // - OFF: Relay turns OFF, RGB turns OFF (0, 0, 0)
+    if (channel.type === 'PROJECTOR') {
+      if (nextState === 'ON') {
+        setProjectorColor({ r: 255, g: 255, b: 255 })
+        setProjectorColorPower('ON')
+      } else {
+        setProjectorColor({ r: 0, g: 0, b: 0 })
+        setProjectorColorPower('OFF')
+      }
+    }
 
     try {
       const controller = new AbortController()
@@ -986,14 +1009,16 @@ export function DeviceControlPage() {
                           {/* 1. Circular Color Selector */}
                           <div className="md:col-span-5 flex flex-col items-center justify-center p-4 bg-white rounded-2xl border border-slate-100 shadow-xs">
                             <CircularColorPicker
-                              color={projectorColor}
-                              power={projectorColorPower}
+                              color={isOn ? projectorColor : { r: 0, g: 0, b: 0 }}
+                              power={isOn ? projectorColorPower : 'OFF'}
                               onChange={handleColorWheelChange}
-                              disabled={!isAvailable}
+                              disabled={!isAvailable || !isOn}
                               size={175}
                             />
-                            <span className="text-[11px] text-slate-400 mt-2 font-medium text-center">
-                              Click or drag along the ring to select any color
+                            <span className={`text-[11px] mt-2 font-medium text-center ${!isOn ? 'text-amber-600 font-semibold' : 'text-slate-400'}`}>
+                              {!isOn
+                                ? 'Projector is OFF. Switch Projector ON to enable RGB lighting.'
+                                : 'Click or drag along the ring to select any color'}
                             </span>
                           </div>
 
@@ -1007,11 +1032,11 @@ export function DeviceControlPage() {
                                   className="w-12 h-12 rounded-2xl border-2 border-white shadow-md transition-all duration-300 shrink-0"
                                   style={{
                                     backgroundColor:
-                                      projectorColorPower === 'ON'
+                                      isOn && projectorColorPower === 'ON'
                                         ? `rgb(${projectorColor.r}, ${projectorColor.g}, ${projectorColor.b})`
-                                        : '#475569',
+                                        : '#334155',
                                     boxShadow:
-                                      projectorColorPower === 'ON'
+                                      isOn && projectorColorPower === 'ON'
                                         ? `0 0 22px rgba(${projectorColor.r}, ${projectorColor.g}, ${projectorColor.b}, 0.55)`
                                         : 'none',
                                   }}
@@ -1019,34 +1044,36 @@ export function DeviceControlPage() {
                                 <div>
                                   <div className="flex items-center gap-2">
                                     <span className="text-xs font-bold text-slate-900">
-                                      {matchingQuickColor ? matchingQuickColor.name : 'Custom Selection'}
+                                      {!isOn
+                                        ? 'Projector is OFF'
+                                        : (matchingQuickColor ? matchingQuickColor.name : 'Custom Selection')}
                                     </span>
-                                    {isCustomColor ? (
-                                      <Badge variant="purple" size="xs">
-                                        Custom
-                                      </Badge>
-                                    ) : (
-                                      <Badge variant="neutral" size="xs">
-                                        Preset
-                                      </Badge>
-                                    )}
+                                    <Badge variant={!isOn ? 'neutral' : (isCustomColor ? 'purple' : 'neutral')} size="xs">
+                                      {!isOn ? 'RGB Inactive' : (isCustomColor ? 'Custom' : 'Preset')}
+                                    </Badge>
                                   </div>
                                   <span className="text-xs font-mono font-bold text-slate-500 block mt-0.5">
-                                    {rgbToHex(projectorColor.r, projectorColor.g, projectorColor.b)}
+                                    {!isOn ? 'RGB LED: OFF' : rgbToHex(projectorColor.r, projectorColor.g, projectorColor.b)}
                                   </span>
                                 </div>
                               </div>
 
-                              {/* Numeric Readout: R: 255, G: 0, B: 255 */}
+                              {/* Numeric Readout: R: 255, G: 255, B: 255 (or 0 when OFF) */}
                               <div className="flex items-center gap-1.5 font-mono text-xs">
-                                <span className="px-2.5 py-1 bg-rose-50 text-rose-700 border border-rose-200/80 rounded-lg font-bold">
-                                  R: {projectorColor.r}
+                                <span className={`px-2.5 py-1 rounded-lg font-bold border ${
+                                  isOn ? 'bg-rose-50 text-rose-700 border-rose-200/80' : 'bg-slate-100 text-slate-400 border-slate-200'
+                                }`}>
+                                  R: {isOn ? projectorColor.r : 0}
                                 </span>
-                                <span className="px-2.5 py-1 bg-emerald-50 text-emerald-700 border border-emerald-200/80 rounded-lg font-bold">
-                                  G: {projectorColor.g}
+                                <span className={`px-2.5 py-1 rounded-lg font-bold border ${
+                                  isOn ? 'bg-emerald-50 text-emerald-700 border-emerald-200/80' : 'bg-slate-100 text-slate-400 border-slate-200'
+                                }`}>
+                                  G: {isOn ? projectorColor.g : 0}
                                 </span>
-                                <span className="px-2.5 py-1 bg-blue-50 text-blue-700 border border-blue-200/80 rounded-lg font-bold">
-                                  B: {projectorColor.b}
+                                <span className={`px-2.5 py-1 rounded-lg font-bold border ${
+                                  isOn ? 'bg-blue-50 text-blue-700 border-blue-200/80' : 'bg-slate-100 text-slate-400 border-slate-200'
+                                }`}>
+                                  B: {isOn ? projectorColor.b : 0}
                                 </span>
                               </div>
                             </div>

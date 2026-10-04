@@ -106,6 +106,19 @@ async function processDeviceStatusMessage(topic, payload) {
       device.state = confirmed
       device.confirmedState = confirmed
       device.lastConfirmedAt = new Date()
+
+      // Synchronize RGB defaults with Projector master relay power
+      if (device.type === 'PROJECTOR') {
+        if (confirmed === DEVICE_STATES.ON) {
+          if (device.colorPower !== 'ON' || !device.color || (device.color.r === 0 && device.color.g === 0 && device.color.b === 0)) {
+            device.colorPower = 'ON'
+            device.color = { r: 255, g: 255, b: 255 }
+          }
+        } else {
+          device.colorPower = 'OFF'
+          device.color = { r: 0, g: 0, b: 0 }
+        }
+      }
     }
 
     if (typeof data.isOnline === 'boolean') {
@@ -125,6 +138,9 @@ async function processDeviceStatusMessage(topic, payload) {
 
     // 4. Emit real-time Socket.IO event to all connected dashboards
     emitDeviceStatus(device)
+    if (device.type === 'PROJECTOR') {
+      emitDeviceColor(device)
+    }
 
     // 5. Telemetry arrival from a classroom channel confirms the parent controller node is active
     if (device.classroom) {

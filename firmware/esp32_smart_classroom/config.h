@@ -79,6 +79,10 @@
 #define TOPIC_FAN_STATE            "smartclassroom/" CLASSROOM_SLUG "/relay/fan/state"
 #define TOPIC_PROJECTOR_STATE      "smartclassroom/" CLASSROOM_SLUG "/relay/projector/state"
 
+// Projector RGB Lighting Topics (Independent PWM color channel)
+#define TOPIC_RGB_COMMAND          "smartclassroom/" CLASSROOM_SLUG "/projector/color/command"
+#define TOPIC_RGB_STATE            "smartclassroom/" CLASSROOM_SLUG "/projector/color/state"
+
 // Board Availability / Last Will and Testament (LWT) Topic
 #define TOPIC_AVAILABILITY         "smartclassroom/" CLASSROOM_SLUG "/availability"
 
@@ -99,9 +103,14 @@
 // 4. GPIO PIN CONFIGURATION & MAPPING
 // ----------------------------------------------------------------------------
 // Standard output GPIOs on ESP32 DevKit. Modify if custom wiring is used.
-#define PIN_RELAY_LIGHT            23  // Relay Channel 1: Classroom Lights / LED 1
-#define PIN_RELAY_FAN              22  // Relay Channel 2: Ceiling Fans / LED 2
-#define PIN_RELAY_PROJECTOR        21  // Relay Channel 3: Projector / LED 3
+#define PIN_RELAY_LIGHT            23  // Relay Channel 1: Classroom Lights
+#define PIN_RELAY_FAN              22  // Relay Channel 2: Ceiling Fans
+#define PIN_RELAY_PROJECTOR        21  // Relay Channel 3: Projector Master Power (1-channel 5V relay)
+
+// Common-Cathode 4-terminal RGB LED (Cathode to GND, Anodes through 220Ω resistors)
+#define PIN_RGB_RED                25  // Red LED Anode (PWM)
+#define PIN_RGB_GREEN              27  // Green LED Anode (PWM)
+#define PIN_RGB_BLUE               32  // Blue LED Anode (PWM)
 
 // Onboard diagnostic status LED (built-in blue LED on most ESP32 DevKits is GPIO 2)
 #define PIN_STATUS_LED             2

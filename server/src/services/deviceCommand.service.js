@@ -361,10 +361,27 @@ async function executeDeviceCommand({
   device.state = newState
   device.requestedState = newState
   device.lastCommandedAt = new Date()
+
+  // Projector Master Relay state synchronization with RGB:
+  // - Projector ON: Master relay ON, RGB automatically defaults to WHITE (255, 255, 255)
+  // - Projector OFF: Master relay OFF, RGB turns OFF (0, 0, 0)
+  if (device.type === DEVICE_TYPES.PROJECTOR) {
+    if (newState === DEVICE_STATES.ON) {
+      device.colorPower = 'ON'
+      device.color = { r: 255, g: 255, b: 255 }
+    } else {
+      device.colorPower = 'OFF'
+      device.color = { r: 0, g: 0, b: 0 }
+    }
+  }
+
   await device.save()
 
   // 10. Real-time broadcast via Socket.IO to connected dashboards
   emitDeviceStatus(device)
+  if (device.type === DEVICE_TYPES.PROJECTOR) {
+    emitDeviceColor(device)
+  }
 
   // 11. Record in DeviceLog
   let logId = null
@@ -532,13 +549,36 @@ async function executeDeviceColorCommand({
     }
   }
 
-  // 3. Normalize power & color
+  // 3. Normalize power & color (clamp 0-255, reject malformed payloads)
+  if (color && typeof color !== 'object') {
+    return {
+      success: false,
+      delivered: false,
+      code: 'INVALID_COLOR_PAYLOAD',
+      executionStatus: 'FAILED',
+      message: 'Malformed color payload. Expected object with numeric r, g, b fields (0-255).',
+      timestamp: new Date().toISOString(),
+    }
+  }
+
+  // 3b. Verify Projector Master Relay Power is ON
+  if (device.state === 'OFF') {
+    return {
+      success: false,
+      delivered: false,
+      code: 'PROJECTOR_OFF',
+      executionStatus: 'FAILED',
+      message: 'Projector master power is OFF. Please turn Projector ON before adjusting RGB lighting.',
+      timestamp: new Date().toISOString(),
+    }
+  }
+
   let targetPower = power ? String(power).trim().toUpperCase() : (device.colorPower || 'ON')
   if (targetPower !== 'ON' && targetPower !== 'OFF') {
     targetPower = 'ON'
   }
 
-  const prevColor = device.color || { r: 255, g: 0, b: 255 }
+  const prevColor = device.color || { r: 255, g: 255, b: 255 }
   const r = color && typeof color.r !== 'undefined' ? Math.max(0, Math.min(255, Math.round(Number(color.r) || 0))) : prevColor.r
   const g = color && typeof color.g !== 'undefined' ? Math.max(0, Math.min(255, Math.round(Number(color.g) || 0))) : prevColor.g
   const b = color && typeof color.b !== 'undefined' ? Math.max(0, Math.min(255, Math.round(Number(color.b) || 0))) : prevColor.b

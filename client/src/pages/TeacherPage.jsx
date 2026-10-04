@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import {
   School,
   MonitorPlay,
@@ -15,6 +15,7 @@ import {
   Lightbulb,
   Fan,
   Projector,
+  Palette,
   FileText,
   HelpCircle,
   Image as ImageIcon,
@@ -110,6 +111,8 @@ export function TeacherPage() {
             isOnline: typeof d.isOnline === 'boolean' ? d.isOnline : false,
             requestedState: d.requestedState || null,
             confirmedState: d.confirmedState || null,
+            color: d.color || { r: 255, g: 255, b: 255 },
+            colorPower: d.colorPower || (d.state === 'ON' ? 'ON' : 'OFF'),
             details: d.description || `GPIO ${d.gpioPin ?? 'N/A'} (ESP32)`,
             relayChannel: `GPIO ${d.gpioPin ?? 'N/A'} (ESP32)`,
             nodeId: d.nodeId || 'ESP32-RM302-01',
@@ -159,10 +162,17 @@ export function TeacherPage() {
           (dev.type && incoming.type && dev.type.toUpperCase() === incoming.type.toUpperCase())
 
         if (isMatch) {
+          const nextIsOn = incoming.state === 'ON'
           return {
             ...dev,
-            isOn: incoming.state === 'ON',
+            isOn: nextIsOn,
             isOnline: typeof incoming.isOnline === 'boolean' ? incoming.isOnline : dev.isOnline,
+            color: dev.type === 'PROJECTOR'
+              ? (nextIsOn ? (incoming.color || { r: 255, g: 255, b: 255 }) : { r: 0, g: 0, b: 0 })
+              : dev.color,
+            colorPower: dev.type === 'PROJECTOR'
+              ? (nextIsOn ? 'ON' : 'OFF')
+              : dev.colorPower,
           }
         }
         return dev
@@ -175,6 +185,23 @@ export function TeacherPage() {
         incoming.isOnline ? 'Online' : 'Offline'
       }).`,
     })
+  })
+
+  // Real-Time Socket.IO Listener: Dedicated projector RGB color broadcast
+  useSocketEvent('device:color', (incoming) => {
+    if (!incoming || !incoming.color) return
+    setDevices((prev) =>
+      prev.map((dev) => {
+        if (dev.type === 'PROJECTOR') {
+          return {
+            ...dev,
+            color: incoming.color || dev.color,
+            colorPower: incoming.power || incoming.colorPower || dev.colorPower,
+          }
+        }
+        return dev
+      })
+    )
   })
 
   // Classroom-scoped status listener
@@ -285,7 +312,14 @@ export function TeacherPage() {
         setDevices((prev) =>
           prev.map((dev) =>
             dev.id === device.id || dev.deviceId === device.deviceId
-              ? { ...dev, isOn: nextState }
+              ? {
+                  ...dev,
+                  isOn: nextState,
+                  color: dev.type === 'PROJECTOR'
+                    ? (nextState ? { r: 255, g: 255, b: 255 } : { r: 0, g: 0, b: 0 })
+                    : dev.color,
+                  colorPower: dev.type === 'PROJECTOR' ? (nextState ? 'ON' : 'OFF') : dev.colorPower,
+                }
               : dev
           )
         )
@@ -353,6 +387,52 @@ export function TeacherPage() {
         return dev
       })
     )
+  }
+
+  // Helper to convert RGB to HEX string
+  const toHexStr = (n) => {
+    const hex = Math.max(0, Math.min(255, Math.round(Number(n) || 0))).toString(16)
+    return hex.length === 1 ? '0' + hex : hex
+  }
+  const rgbToHexStr = (r, g, b) => `#${toHexStr(r)}${toHexStr(g)}${toHexStr(b)}`.toUpperCase()
+
+  // Projector RGB color change handler with 300ms debounce
+  const projectorColorDebounceRef = useRef(null)
+
+  const handleProjectorColorChange = (device, hexColor) => {
+    if (!device.isOn || !device.isOnline) return
+
+    const hex = hexColor.replace('#', '')
+    const r = parseInt(hex.substring(0, 2), 16) || 0
+    const g = parseInt(hex.substring(2, 4), 16) || 0
+    const b = parseInt(hex.substring(4, 6), 16) || 0
+    const targetColor = { r, g, b }
+
+    // Optimistically update local device state immediately
+    setDevices((prev) =>
+      prev.map((d) => (d.id === device.id || d.deviceId === device.deviceId ? { ...d, color: targetColor } : d))
+    )
+
+    if (projectorColorDebounceRef.current) {
+      clearTimeout(projectorColorDebounceRef.current)
+    }
+
+    projectorColorDebounceRef.current = setTimeout(async () => {
+      try {
+        const devId = device.deviceId || device.id
+        await fetch(`${apiBaseUrl}/api/devices/${encodeURIComponent(devId)}/color`, {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json',
+            Accept: 'application/json',
+          },
+          body: JSON.stringify({ power: 'ON', color: targetColor }),
+        })
+      } catch (err) {
+        console.warn('[TeacherPage] Projector color error:', err.message)
+      }
+    }, 300)
   }
 
   // Master device toggles
@@ -990,6 +1070,89 @@ export function TeacherPage() {
                       </Button>
                     </div>
                   </div>
+
+                  {/* Projector RGB Light Color Control */}
+                  {device.type === 'PROJECTOR' && (
+                    <div className="pt-3 border-t border-slate-100 space-y-2.5">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-1.5">
+                          <Palette className="w-3.5 h-3.5 text-purple-600" />
+                          <span className="text-xs font-bold text-slate-800">Projector Light</span>
+                        </div>
+                        <Badge variant={device.isOn ? 'purple' : 'neutral'} size="xs">
+                          {device.isOn ? 'RGB Active' : 'RGB OFF'}
+                        </Badge>
+                      </div>
+
+                      {/* Live Preview & Color Input */}
+                      <div className="flex items-center justify-between gap-3 p-2.5 rounded-xl bg-slate-50/80 border border-slate-200/70">
+                        <div className="flex items-center gap-2.5">
+                          <div
+                            className="w-7 h-7 rounded-xl border-2 border-white shadow-xs shrink-0 transition-all"
+                            style={{
+                              backgroundColor: device.isOn
+                                ? `rgb(${device.color?.r ?? 255}, ${device.color?.g ?? 255}, ${device.color?.b ?? 255})`
+                                : '#334155',
+                              boxShadow: device.isOn
+                                ? `0 0 12px rgba(${device.color?.r ?? 255}, ${device.color?.g ?? 255}, ${device.color?.b ?? 255}, 0.5)`
+                                : 'none',
+                            }}
+                          />
+                          <div className="text-[11px] font-mono leading-tight">
+                            <span className="text-slate-400 text-[10px] block">RGB:</span>
+                            <span className="font-bold text-slate-800">
+                              {device.isOn
+                                ? `R ${device.color?.r ?? 255}  G ${device.color?.g ?? 255}  B ${device.color?.b ?? 255}`
+                                : 'R 0  G 0  B 0'}
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Native Color Picker */}
+                        <div className="flex items-center gap-1.5">
+                          <input
+                            type="color"
+                            value={
+                              device.isOn
+                                ? rgbToHexStr(device.color?.r ?? 255, device.color?.g ?? 255, device.color?.b ?? 255)
+                                : '#FFFFFF'
+                            }
+                            disabled={!device.isOn || !device.isOnline}
+                            onChange={(e) => handleProjectorColorChange(device, e.target.value)}
+                            className="w-7 h-7 rounded-lg cursor-pointer border border-slate-200 disabled:opacity-30 disabled:cursor-not-allowed p-0.5 bg-white shadow-xs"
+                            title={!device.isOn ? 'Projector is OFF' : 'Click to choose color'}
+                          />
+                        </div>
+                      </div>
+
+                      {/* Quick Preset Colors: White, Red, Green, Blue, Purple */}
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        {[
+                          { name: 'White', hex: '#FFFFFF' },
+                          { name: 'Red', hex: '#EF4444' },
+                          { name: 'Green', hex: '#10B981' },
+                          { name: 'Blue', hex: '#3B82F6' },
+                          { name: 'Purple', hex: '#A855F7' },
+                        ].map((preset) => (
+                          <button
+                            key={preset.name}
+                            type="button"
+                            disabled={!device.isOn || !device.isOnline}
+                            onClick={() => handleProjectorColorChange(device, preset.hex)}
+                            className="w-5 h-5 rounded-full border border-slate-300 shadow-xs hover:scale-110 active:scale-95 transition-all cursor-pointer disabled:opacity-25 disabled:cursor-not-allowed"
+                            style={{ backgroundColor: preset.hex }}
+                            title={`${preset.name} (${preset.hex})`}
+                          />
+                        ))}
+                      </div>
+
+                      {!device.isOn && (
+                        <p className="text-[10px] text-amber-700 italic">
+                          Projector is OFF. Switch Projector ON to enable RGB lighting.
+                        </p>
+                      )}
+                    </div>
+                  )}
                 </div>
               )
             })
