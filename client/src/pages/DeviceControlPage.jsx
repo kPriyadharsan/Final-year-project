@@ -83,12 +83,15 @@ export function DeviceControlPage() {
   const [notification, setNotification] = useState(null)
 
   // State: Projector RGB Lighting Control
-  const [projectorColor, setProjectorColor] = useState({ r: 255, g: 0, b: 255 })
-  const [projectorColorPower, setProjectorColorPower] = useState('OFF')
+  const [projectorColor, setProjectorColor] = useState({ r: 255, g: 255, b: 255 })
+  const [projectorColorPower, setProjectorColorPower] = useState('ON')
   const [isColorUpdating, setIsColorUpdating] = useState(false)
   const [colorSyncStatus, setColorSyncStatus] = useState('synced') // 'synced' | 'pending' | 'syncing' | 'error'
-  const debounceTimerRef = useRef(null)
   const isInteractingColorRef = useRef(false)
+  const inFlightColorRef = useRef(false)
+  const queuedColorRef = useRef(null)
+  const lastDispatchedTimeRef = useRef(0)
+  const throttleTimerRef = useRef(null)
 
   // Subscribe to real-time classroom telemetry for selected room
   useEffect(() => {
@@ -310,25 +313,63 @@ export function DeviceControlPage() {
   useSocketEvent('device:rgb', handleColorUpdate)
   useSocketEvent('projector:color', handleColorUpdate)
 
-  // Dispatch Projector RGB Color Command via Node backend REST API -> MQTT -> EMQX -> ESP32
-  const dispatchProjectorColor = useCallback(
-    async (targetColor, targetPower) => {
+  // Live Throttled Projector RGB Color Command via Node backend REST API -> MQTT -> EMQX -> ESP32
+  const sendLiveProjectorColor = useCallback(
+    async (targetColor, targetPower = 'ON', isImmediate = false) => {
       const proj = channels.find((c) => c.type === 'PROJECTOR')
       if (!proj) return
       const devId = proj.deviceId || proj._id
+      if (!devId) return
 
-      if (!isNodeOnline) {
-        setNotification({
-          type: 'danger',
-          title: 'Action Blocked',
-          message: 'Cannot send RGB command. Hardware controller node is offline.',
-        })
+      // Auto-turn ON projector if currently OFF
+      if (proj.state === 'OFF') {
+        try {
+          await fetch(`${apiBaseUrl}/api/devices/${encodeURIComponent(devId)}/command`, {
+            method: 'POST',
+            headers: {
+              Authorization: `Bearer ${token}`,
+              'Content-Type': 'application/json',
+              Accept: 'application/json',
+            },
+            body: JSON.stringify({ action: 'ON' }),
+          })
+          setChannels((prev) =>
+            prev.map((c) =>
+              c.type === 'PROJECTOR' ? { ...c, state: 'ON', lastConfirmedAt: new Date().toISOString() } : c
+            )
+          )
+        } catch (e) {
+          console.warn('[DeviceControl] Auto-turn on failed:', e.message)
+        }
+      }
+
+      // If an HTTP request is currently active in-flight:
+      if (inFlightColorRef.current) {
+        queuedColorRef.current = { color: targetColor, power: targetPower }
         return
       }
 
-      const nextPower = targetPower !== undefined ? targetPower : projectorColorPower
-      const nextColor = targetColor !== undefined ? targetColor : projectorColor
+      const now = Date.now()
+      const THROTTLE_MS = 60 // Silky-smooth 60ms throttle for live dragging
+      const timeSinceLast = now - lastDispatchedTimeRef.current
 
+      if (!isImmediate && timeSinceLast < THROTTLE_MS) {
+        queuedColorRef.current = { color: targetColor, power: targetPower }
+        if (!throttleTimerRef.current) {
+          throttleTimerRef.current = setTimeout(() => {
+            throttleTimerRef.current = null
+            if (queuedColorRef.current) {
+              const next = queuedColorRef.current
+              queuedColorRef.current = null
+              sendLiveProjectorColor(next.color, next.power, true)
+            }
+          }, THROTTLE_MS - timeSinceLast)
+        }
+        return
+      }
+
+      inFlightColorRef.current = true
+      lastDispatchedTimeRef.current = now
       setIsColorUpdating(true)
       setColorSyncStatus('syncing')
 
@@ -341,8 +382,8 @@ export function DeviceControlPage() {
             Accept: 'application/json',
           },
           body: JSON.stringify({
-            power: nextPower,
-            color: nextColor,
+            power: targetPower,
+            color: targetColor,
           }),
         })
 
@@ -354,93 +395,67 @@ export function DeviceControlPage() {
               c.type === 'PROJECTOR'
                 ? {
                     ...c,
-                    color: nextColor,
-                    colorPower: nextPower,
+                    color: targetColor,
+                    colorPower: targetPower,
                   }
                 : c
             )
           )
-        } else {
+        } else if (res.status === 503) {
           setColorSyncStatus('error')
           setNotification({
-            type: 'danger',
-            title: 'RGB Command Failed',
-            message: data.message || 'Failed to dispatch projector RGB command.',
+            type: 'warning',
+            title: 'ESP32 Telemetry Pending',
+            message: data.message || 'Waiting for heartbeat confirmation from ESP32 controller node.',
           })
+        } else {
+          setColorSyncStatus('error')
         }
       } catch (err) {
-        console.error('[DeviceControl] Color dispatch error:', err)
+        console.error('[DeviceControl] Live color error:', err)
         setColorSyncStatus('error')
-        setNotification({
-          type: 'danger',
-          title: 'Network Error',
-          message: 'Unable to communicate with device service for RGB command.',
-        })
       } finally {
         setIsColorUpdating(false)
+        inFlightColorRef.current = false
+        // If a newer color arrived while this request was in flight, dispatch immediately!
+        if (queuedColorRef.current) {
+          const next = queuedColorRef.current
+          queuedColorRef.current = null
+          sendLiveProjectorColor(next.color, next.power, true)
+        }
       }
     },
-    [channels, isNodeOnline, apiBaseUrl, token, projectorColorPower, projectorColor]
+    [channels, apiBaseUrl, token]
   )
 
   // Toggle Projector Lighting Power (ON / OFF)
   const handleToggleLightingPower = () => {
-    if (!isNodeOnline) {
-      setNotification({
-        type: 'danger',
-        title: 'Hardware Offline',
-        message: 'Controller node is offline. Lighting power controls are locked.',
-      })
-      return
-    }
-
     const nextPower = projectorColorPower === 'ON' ? 'OFF' : 'ON'
     setProjectorColorPower(nextPower)
-    dispatchProjectorColor(projectorColor, nextPower)
+    sendLiveProjectorColor(projectorColor, nextPower, true)
   }
 
-  // Handle Quick Color Click: If lighting is ON, dispatches immediately
+  // Handle Quick Color Click: Dispatches immediately
   const handleSelectQuickColor = (qc) => {
-    if (!isNodeOnline) return
     const nextColor = { r: qc.r, g: qc.g, b: qc.b }
     setProjectorColor(nextColor)
-
-    if (projectorColorPower === 'ON') {
-      if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current)
-      dispatchProjectorColor(nextColor, 'ON')
-    } else {
-      setColorSyncStatus('pending')
-    }
+    setProjectorColorPower('ON')
+    sendLiveProjectorColor(nextColor, 'ON', true)
   }
 
-  // Handle Circular Color Selector change: Smooth preview + 300ms debounce when lighting is ON
-  const handleColorWheelChange = (newRgb) => {
-    if (!isNodeOnline) return
-    const projChannel = channels.find((c) => c.type === 'PROJECTOR')
-    if (projChannel && projChannel.state === 'OFF') {
-      setNotification({
-        type: 'warning',
-        title: 'Projector is OFF',
-        message: 'Please turn Projector ON before adjusting RGB lighting.',
-      })
-      return
-    }
-
+  // Handle Circular Color Selector change: Lively updates as finger/cursor moves
+  const handleColorWheelChange = (newRgb, meta) => {
     setProjectorColor(newRgb)
-    setColorSyncStatus('pending')
+    setProjectorColorPower('ON')
     isInteractingColorRef.current = true
 
-    if (projectorColorPower === 'ON') {
-      if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current)
-      debounceTimerRef.current = setTimeout(() => {
-        dispatchProjectorColor(newRgb, 'ON')
+    // Dispatch lively!
+    sendLiveProjectorColor(newRgb, 'ON', meta?.isFinal === true)
+
+    if (meta?.isFinal) {
+      setTimeout(() => {
         isInteractingColorRef.current = false
-      }, 300)
-    } else {
-      if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current)
-      debounceTimerRef.current = setTimeout(() => {
-        isInteractingColorRef.current = false
-      }, 500)
+      }, 400)
     }
   }
 
@@ -1009,16 +1024,33 @@ export function DeviceControlPage() {
                           {/* 1. Circular Color Selector */}
                           <div className="md:col-span-5 flex flex-col items-center justify-center p-4 bg-white rounded-2xl border border-slate-100 shadow-xs">
                             <CircularColorPicker
-                              color={isOn ? projectorColor : { r: 0, g: 0, b: 0 }}
+                              color={isOn ? projectorColor : { r: 255, g: 255, b: 255 }}
                               power={isOn ? projectorColorPower : 'OFF'}
                               onChange={handleColorWheelChange}
-                              disabled={!isAvailable || !isOn}
+                              onDragEnd={(finalRgb) => {
+                                isInteractingColorRef.current = false
+                                sendLiveProjectorColor(finalRgb, 'ON', true)
+                              }}
+                              onDisabledClick={() => {
+                                if (!isNodeOnline) {
+                                  setNotification({
+                                    type: 'warning',
+                                    title: 'Hardware Offline',
+                                    message: 'ESP32 controller node is offline. Connect hardware to control RGB light.',
+                                  })
+                                } else if (!isOn) {
+                                  // Auto turn on
+                                  const proj = channels.find((c) => c.type === 'PROJECTOR')
+                                  if (proj) handleToggleChannel(proj)
+                                }
+                              }}
+                              disabled={!isNodeOnline}
                               size={175}
                             />
                             <span className={`text-[11px] mt-2 font-medium text-center ${!isOn ? 'text-amber-600 font-semibold' : 'text-slate-400'}`}>
                               {!isOn
-                                ? 'Projector is OFF. Switch Projector ON to enable RGB lighting.'
-                                : 'Click or drag along the ring to select any color'}
+                                ? 'Projector is currently OFF. Click wheel or switch ON to light RGB.'
+                                : 'Drag or click along the ring to control RGB light live'}
                             </span>
                           </div>
 
@@ -1143,7 +1175,7 @@ export function DeviceControlPage() {
                               <Button
                                 variant="outline"
                                 size="sm"
-                                onClick={() => dispatchProjectorColor(projectorColor, projectorColorPower)}
+                                onClick={() => sendLiveProjectorColor(projectorColor, projectorColorPower, true)}
                                 disabled={!isAvailable || isColorUpdating}
                                 className="rounded-xl h-8 px-3 text-xs font-bold"
                               >

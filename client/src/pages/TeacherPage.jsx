@@ -44,6 +44,7 @@ import {
   AlertBanner,
   SiriCard,
   BentoContainer,
+  CircularColorPicker,
 } from '../components/ui'
 import { VoiceAssistant } from '../components/voice'
 import { API_BASE_URL } from '../config/api'
@@ -396,30 +397,45 @@ export function TeacherPage() {
   }
   const rgbToHexStr = (r, g, b) => `#${toHexStr(r)}${toHexStr(g)}${toHexStr(b)}`.toUpperCase()
 
-  // Projector RGB color change handler with 300ms debounce
-  const projectorColorDebounceRef = useRef(null)
+  // High-performance Live Projector RGB streaming
+  const teacherInFlightColorRef = useRef(false)
+  const teacherQueuedColorRef = useRef(null)
+  const teacherLastTimeRef = useRef(0)
+  const teacherThrottleTimerRef = useRef(null)
 
-  const handleProjectorColorChange = (device, hexColor) => {
-    if (!device.isOn || !device.isOnline) return
+  const sendTeacherLiveColor = useCallback(
+    async (device, targetColor, isImmediate = false) => {
+      const devId = device.deviceId || device.id
+      if (!devId) return
 
-    const hex = hexColor.replace('#', '')
-    const r = parseInt(hex.substring(0, 2), 16) || 0
-    const g = parseInt(hex.substring(2, 4), 16) || 0
-    const b = parseInt(hex.substring(4, 6), 16) || 0
-    const targetColor = { r, g, b }
+      if (teacherInFlightColorRef.current) {
+        teacherQueuedColorRef.current = { device, color: targetColor }
+        return
+      }
 
-    // Optimistically update local device state immediately
-    setDevices((prev) =>
-      prev.map((d) => (d.id === device.id || d.deviceId === device.deviceId ? { ...d, color: targetColor } : d))
-    )
+      const now = Date.now()
+      const THROTTLE_MS = 60
+      const timeSince = now - teacherLastTimeRef.current
 
-    if (projectorColorDebounceRef.current) {
-      clearTimeout(projectorColorDebounceRef.current)
-    }
+      if (!isImmediate && timeSince < THROTTLE_MS) {
+        teacherQueuedColorRef.current = { device, color: targetColor }
+        if (!teacherThrottleTimerRef.current) {
+          teacherThrottleTimerRef.current = setTimeout(() => {
+            teacherThrottleTimerRef.current = null
+            if (teacherQueuedColorRef.current) {
+              const next = teacherQueuedColorRef.current
+              teacherQueuedColorRef.current = null
+              sendTeacherLiveColor(next.device, next.color, true)
+            }
+          }, THROTTLE_MS - timeSince)
+        }
+        return
+      }
 
-    projectorColorDebounceRef.current = setTimeout(async () => {
+      teacherInFlightColorRef.current = true
+      teacherLastTimeRef.current = now
+
       try {
-        const devId = device.deviceId || device.id
         await fetch(`${apiBaseUrl}/api/devices/${encodeURIComponent(devId)}/color`, {
           method: 'POST',
           headers: {
@@ -430,9 +446,37 @@ export function TeacherPage() {
           body: JSON.stringify({ power: 'ON', color: targetColor }),
         })
       } catch (err) {
-        console.warn('[TeacherPage] Projector color error:', err.message)
+        console.warn('[TeacherPage] Live color error:', err.message)
+      } finally {
+        teacherInFlightColorRef.current = false
+        if (teacherQueuedColorRef.current) {
+          const next = teacherQueuedColorRef.current
+          teacherQueuedColorRef.current = null
+          sendTeacherLiveColor(next.device, next.color, true)
+        }
       }
-    }, 300)
+    },
+    [apiBaseUrl, token]
+  )
+
+  const handleTeacherColorWheel = (device, newRgb, meta) => {
+    setDevices((prev) =>
+      prev.map((d) => (d.id === device.id || d.deviceId === device.deviceId ? { ...d, color: newRgb } : d))
+    )
+    sendTeacherLiveColor(device, newRgb, meta?.isFinal === true)
+  }
+
+  const handleProjectorColorChange = (device, hexColor) => {
+    const hex = hexColor.replace('#', '')
+    const r = parseInt(hex.substring(0, 2), 16) || 0
+    const g = parseInt(hex.substring(2, 4), 16) || 0
+    const b = parseInt(hex.substring(4, 6), 16) || 0
+    const targetColor = { r, g, b }
+
+    setDevices((prev) =>
+      prev.map((d) => (d.id === device.id || d.deviceId === device.deviceId ? { ...d, color: targetColor } : d))
+    )
+    sendTeacherLiveColor(device, targetColor, true)
   }
 
   // Master device toggles
@@ -1073,15 +1117,35 @@ export function TeacherPage() {
 
                   {/* Projector RGB Light Color Control */}
                   {device.type === 'PROJECTOR' && (
-                    <div className="pt-3 border-t border-slate-100 space-y-2.5">
+                    <div className="pt-3 border-t border-slate-100 space-y-3">
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-1.5">
                           <Palette className="w-3.5 h-3.5 text-purple-600" />
-                          <span className="text-xs font-bold text-slate-800">Projector Light</span>
+                          <span className="text-xs font-bold text-slate-800">Projector RGB Light</span>
                         </div>
                         <Badge variant={device.isOn ? 'purple' : 'neutral'} size="xs">
                           {device.isOn ? 'RGB Active' : 'RGB OFF'}
                         </Badge>
+                      </div>
+
+                      {/* Live Circular Color Wheel */}
+                      <div className="flex flex-col items-center justify-center p-3 rounded-2xl bg-white border border-slate-200/80 shadow-xs">
+                        <CircularColorPicker
+                          color={device.isOn ? (device.color || { r: 255, g: 255, b: 255 }) : { r: 255, g: 255, b: 255 }}
+                          power={device.isOn ? 'ON' : 'OFF'}
+                          onChange={(rgb, meta) => handleTeacherColorWheel(device, rgb, meta)}
+                          onDragEnd={(finalRgb) => sendTeacherLiveColor(device, finalRgb, true)}
+                          onDisabledClick={() => {
+                            if (!device.isOn) handleToggleDevice(device)
+                          }}
+                          disabled={!device.isOnline}
+                          size={150}
+                        />
+                        <span className="text-[10px] text-slate-400 mt-1.5 font-medium text-center">
+                          {device.isOn
+                            ? 'Drag or click along wheel to control RGB live'
+                            : 'Projector is OFF. Click wheel or Turn ON to light RGB.'}
+                        </span>
                       </div>
 
                       {/* Live Preview & Color Input */}

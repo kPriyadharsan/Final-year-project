@@ -416,6 +416,14 @@ async function runCompleteIoTAudit() {
   await sendCommand('ESP32-RM302-FAN-01', 'OFF')
   await sendCommand('ESP32-RM302-PROJ-01', 'OFF')
 
+  // Leave system in healthy online state for website and ESP32 hardware testing
+  mqttClient.publish(
+    'smartclassroom/room302/availability',
+    JSON.stringify({ deviceId: 'ESP32-RM302-01', classroom: 'room302', status: 'online' }),
+    { retain: true, qos: 1 }
+  )
+  await new Promise((r) => setTimeout(r, 300))
+
   webSocket.disconnect()
   mqttClient.end()
   await mongoose.disconnect()

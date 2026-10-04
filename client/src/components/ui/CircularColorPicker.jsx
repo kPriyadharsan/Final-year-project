@@ -82,17 +82,27 @@ export function CircularColorPicker({
   color = { r: 255, g: 0, b: 255 },
   power = 'ON',
   onChange,
+  onDragEnd,
+  onDisabledClick,
   disabled = false,
   size = 180,
 }) {
   const canvasRef = useRef(null)
   const isDraggingRef = useRef(false)
+  const lastRgbRef = useRef(color)
 
   const radius = size / 2
   const ringThickness = 18
   const outerRadius = radius - 6
   const innerRadius = outerRadius - ringThickness
   const centerRadius = innerRadius - 8
+
+  // Keep track of latest color
+  useEffect(() => {
+    if (!isDraggingRef.current) {
+      lastRgbRef.current = color
+    }
+  }, [color])
 
   // Calculate current angle from RGB color
   const currentAngle = useMemo(() => {
@@ -148,8 +158,11 @@ export function CircularColorPicker({
 
   // Handle color calculation from pointer coordinates
   const handlePointerEvent = useCallback(
-    (e) => {
-      if (disabled) return
+    (e, isFinal = false) => {
+      if (disabled) {
+        if (onDisabledClick) onDisabledClick()
+        return
+      }
       const canvas = canvasRef.current
       if (!canvas) return
 
@@ -161,23 +174,32 @@ export function CircularColorPicker({
       if (angle < 0) angle += 360
 
       const newRgb = hslToRgb(angle, 1, 0.5)
+      lastRgbRef.current = newRgb
       if (onChange) {
-        onChange(newRgb)
+        onChange(newRgb, { isDragging: !isFinal, isFinal })
       }
+      return newRgb
     },
-    [disabled, size, onChange]
+    [disabled, size, onChange, onDisabledClick]
   )
 
   const handlePointerDown = (e) => {
-    if (disabled) return
+    if (disabled) {
+      if (onDisabledClick) onDisabledClick()
+      return
+    }
     isDraggingRef.current = true
-    e.currentTarget.setPointerCapture(e.pointerId)
-    handlePointerEvent(e)
+    try {
+      e.currentTarget.setPointerCapture(e.pointerId)
+    } catch {
+      // Ignored
+    }
+    handlePointerEvent(e, false)
   }
 
   const handlePointerMove = (e) => {
     if (!isDraggingRef.current || disabled) return
-    handlePointerEvent(e)
+    handlePointerEvent(e, false)
   }
 
   const handlePointerUp = (e) => {
@@ -187,6 +209,11 @@ export function CircularColorPicker({
         e.currentTarget.releasePointerCapture(e.pointerId)
       } catch {
         // Ignored
+      }
+      if (onDragEnd && lastRgbRef.current) {
+        onDragEnd(lastRgbRef.current)
+      } else if (onChange && lastRgbRef.current) {
+        onChange(lastRgbRef.current, { isDragging: false, isFinal: true })
       }
     }
   }
@@ -202,8 +229,8 @@ export function CircularColorPicker({
 
   return (
     <div
-      className={`relative select-none flex items-center justify-center ${
-        disabled ? 'opacity-40 cursor-not-allowed pointer-events-none' : 'cursor-pointer'
+      className={`relative select-none flex items-center justify-center transition-opacity duration-200 ${
+        disabled ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer'
       }`}
       style={{ width: size, height: size }}
       onPointerDown={handlePointerDown}
