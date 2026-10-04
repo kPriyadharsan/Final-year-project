@@ -3,7 +3,7 @@ const geminiService = require('./gemini.service')
 
 // Strict Backend Allowlists (Never execute arbitrary or unvalidated AI commands)
 const SUPPORTED_DEVICES = Object.freeze(['light', 'fan', 'projector'])
-const SUPPORTED_ACTIONS = Object.freeze(['ON', 'OFF'])
+const SUPPORTED_ACTIONS = Object.freeze(['ON', 'OFF', 'SET_COLOR'])
 const SUPPORTED_INTENTS = Object.freeze([
   'DEVICE_CONTROL',
   'CREATE_NOTE',
@@ -54,6 +54,11 @@ const ACTION_NORMALIZATION_MAP = {
   'switch off': 'OFF',
   'turn off': 'OFF',
   kill: 'OFF',
+
+  'set color': 'SET_COLOR',
+  setcolor: 'SET_COLOR',
+  color: 'SET_COLOR',
+  glow: 'SET_COLOR',
 }
 
 // Structured Output Schema for Google Gemini SDK (@google/genai)
@@ -78,7 +83,11 @@ const classroomCommandSchema = {
     },
     action: {
       type: Type.STRING,
-      description: 'Target action: "ON" or "OFF". Null or empty string if not a device command.',
+      description: 'Target action: "ON", "OFF", or "SET_COLOR". Null or empty string if not a device command.',
+    },
+    color: {
+      type: Type.STRING,
+      description: 'Color name (e.g. purple, cyan, red, blue, green, yellow, pink, white) if setting RGB color.',
     },
     confidence: {
       type: Type.NUMBER,
@@ -90,13 +99,14 @@ const classroomCommandSchema = {
 
 const SYSTEM_INSTRUCTION = `
 You are an intelligent natural language command parser for an educational Smart Classroom system.
-Your job is to analyze the user's spoken or typed prompt and extract structured intent, device, action, and confidence.
+Your job is to analyze the user's spoken or typed prompt and extract structured intent, device, action, color, and confidence.
 
 Supported Intents:
-1. DEVICE_CONTROL: Commands to turn classroom appliances ON or OFF.
+1. DEVICE_CONTROL: Commands to control classroom appliances.
    - Supported devices ONLY: "light", "fan", "projector".
-   - Supported actions ONLY: "ON", "OFF".
-   - If the user asks to control an unsupported device (e.g. "turn on AC", "open window", "play music", "turn on TV"), the intent MUST be "UNKNOWN" and device/action must be null.
+   - Supported actions ONLY: "ON", "OFF", "SET_COLOR".
+   - Projector RGB color: commands like "make the light purple", "glow the light purple", "make it blue", "set the RGB to red", "give me a cyan glow", "make the projector LED purple" map to device: "projector", action: "SET_COLOR", with the extracted color name.
+   - If user asks to control an unsupported device (e.g. "turn on AC", "open window", "play music", "turn on TV"), intent MUST be "UNKNOWN" and device/action must be null.
 2. CREATE_NOTE: User wants to generate study notes, summaries, or classroom study materials.
 3. CREATE_QUIZ: User wants to generate quizzes, test questions, or MCQs.
 4. CREATE_IMAGE: User wants to generate educational diagrams, illustrations, or charts.
@@ -105,7 +115,7 @@ Supported Intents:
 
 Rules:
 - Output strictly according to the JSON schema.
-- For non-DEVICE_CONTROL intents, device and action must be null.
+- For non-DEVICE_CONTROL intents, device, action, and color must be null.
 - Confidence must be a decimal between 0.0 and 1.0 (e.g. 0.95).
 `.trim()
 
@@ -197,10 +207,17 @@ function validateAndSanitize(rawParsed, originalInput) {
       }
     }
 
+    let resolvedColor = null
+    if (validatedAction === 'SET_COLOR') {
+      const { resolveRgbColor, COLOR_PALETTE } = require('../constants/deviceCapabilities')
+      resolvedColor = resolveRgbColor(rawParsed.color || 'purple') || COLOR_PALETTE.purple
+    }
+
     return {
       intent: 'DEVICE_CONTROL',
       device: validatedDevice,
       action: validatedAction,
+      color: resolvedColor,
       confidence: rawConfidence || 0.95,
       rawInput: originalInput,
       isValid: true,

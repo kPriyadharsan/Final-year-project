@@ -1,23 +1,22 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import {
   Mic,
-  MicOff,
-  Radio,
   RotateCcw,
   CheckCircle2,
   AlertTriangle,
   Loader2,
-  Volume2,
   Sparkles,
-  Bluetooth,
-  ArrowRight,
-  Send,
   Zap,
+  Lightbulb,
+  Fan,
+  Monitor,
+  Square,
+  X,
+  Volume2,
 } from 'lucide-react'
-import { Button, Badge } from '../ui'
 import { useAuth } from '../../context/AuthContext'
 import { API_BASE_URL } from '../../config/api'
-import { GoogleGenAI } from '@google/genai'
+import { GoogleGenAI, Type } from '@google/genai'
 import audioProcessorUrl from './geminiLiveAudioProcessor.js?url'
 
 /**
@@ -30,47 +29,77 @@ export const LIVE_VOICE_ENABLED = true
  */
 const LIVE_MODEL = 'gemini-2.5-flash-native-audio-preview-12-2025'
 
-const LIVE_SYSTEM_INSTRUCTION = `You control a smart classroom.
+const LIVE_SYSTEM_INSTRUCTION = `You are an intelligent Smart Classroom Voice Assistant.
 
-Supported devices:
-- light
-- fan
-- projector
+DEVICE CAPABILITY MODEL:
+- light: capabilities = ["power"]. Supported actions: ON, OFF. Main classroom lighting relay channel (GPIO 23). No RGB capability.
+- fan: capabilities = ["power"]. Supported actions: ON, OFF. Ceiling fans relay channel (GPIO 22). No speed control or RGB capability.
+- projector: capabilities = ["power", "rgb"]. Supported actions: ON, OFF, and RGB LED control. Projector master power relay (GPIO 21) and PWM ambient RGB LED (GPIO 25, 27, 32).
+  Supported colors: red, green, blue, yellow, orange, purple, pink, cyan, white, warm white, magenta, violet, lime, amber, or hexadecimal colors (e.g. #FF00FF).
 
-Supported actions:
-- ON
-- OFF
+STRUCTURED TOOLS:
+1. "control_classroom_devices": For general device power switching (light, fan, projector ON/OFF).
+   Arguments: { actions: [{ device: "light"|"fan"|"projector", action: "ON"|"OFF" }] }
 
-When the user requests a device action, call control_classroom_devices.
+2. "set_classroom_rgb": Dedicated tool for projector RGB LED lighting control.
+   Arguments: {
+     device: "projector",
+     color: { name: "purple" } // or "#FF00FF"
+     power?: "ON" | "OFF"
+   }
 
-For multiple requested devices, include every requested device in the actions array.
+NATURAL LANGUAGE UNDERSTANDING:
+- Color commands:
+  "make it purple"
+  "give it a purple glow"
+  "set the light to purple"
+  "make the RGB purple"
+  "change the LED color to purple"
+  "turn the projector light purple"
+  -> All map to: set_classroom_rgb(device: "projector", color: { name: "purple" })
+  Do not require the exact phrase "SET_COLOR".
 
-Examples:
+CONTEXT & PRONOUN RESOLUTION:
+- User: "Turn on the projector." -> AI: "Projector is on."
+  User: "Make it purple." -> AI calls set_classroom_rgb(device: "projector", color: { name: "purple" }). Do NOT ask which device unless context is genuinely ambiguous.
+- If user says "Make it blue" without any prior mention of an RGB-capable device, ask: "Make what blue?"
 
-User: Turn on the fan.
-Tool call:
-actions = [
-  { device: "fan", action: "ON" }
-]
+COMBINED COMMANDS:
+- User: "Turn on the projector and make the light purple."
+  AI calls both actions:
+  1. control_classroom_devices({ actions: [{ device: "projector", action: "ON" }] })
+  2. set_classroom_rgb({ device: "projector", color: { name: "purple" } })
 
-User: Turn on the fan and light.
-Tool call:
-actions = [
-  { device: "fan", action: "ON" },
-  { device: "light", action: "ON" }
-]
+RGB OFF BEHAVIOR:
+- User: "Turn off the purple light."
+  If conversational context indicates the user means the RGB LED:
+  -> call set_classroom_rgb({ device: "projector", power: "OFF" })
+  If conversational context indicates the user means the projector itself:
+  -> call control_classroom_devices({ actions: [{ device: "projector", action: "OFF" }] })
+  If genuinely ambiguous, ask one short question: "Turn off the projector or just the purple light?"
 
-User: Turn everything off.
-Tool call:
-actions = [
-  { device: "fan", action: "OFF" },
-  { device: "light", action: "OFF" },
-  { device: "projector", action: "OFF" }
-]
+STRICT CAPABILITY ENFORCEMENT:
+- Fan and Light DO NOT support RGB.
+- If user requests RGB on fan ("Make the fan purple"): Do NOT call tool. Respond: "The fan doesn't have RGB lighting."
+- If user requests speed control on fan: Do NOT call tool. Respond: "Fan speed control isn't available yet."
 
-Never invent unsupported devices.
-
-Keep responses short and natural.`
+RESPONSE STYLE & CONVERSATIONAL NATURALNESS:
+- Talk like a natural human assistant in real-time voice, NOT a command execution engine.
+- Keep responses ultra-concise (1 to 4 words when confirming standard commands):
+  Examples:
+  User: "Turn on the projector." -> Assistant: "Projector is on."
+  User: "Make it purple." -> Assistant: "Done."
+  User: "Actually, make it blue." -> Assistant: "Blue."
+  User: "Okay, turn it off." -> Assistant: "Projector is off."
+  User: "Turn on the fan." -> Assistant: "Fan is on."
+  User: "Turn off everything." -> Assistant: "All devices are off."
+- AVOID robotic phrases like: "I have executed your command", "Command processed successfully", "Executing instruction", "Device parameter updated".
+- NEVER ask unnecessary confirmations for normal classroom controls (e.g. NEVER ask "Are you sure you want to turn on the fan?"). Execute directly when intent is clear.
+- ONLY ask for clarification when command is genuinely ambiguous (e.g. User: "Make it purple" with no device context -> Assistant: "Which device do you want me to make purple?").
+- Natural explanation of limitations: If user asks for unsupported feature (e.g., fan speed or fan RGB), explain conversationally:
+  "I can turn the fan on or off, but I can't control its speed yet."
+  "The fan doesn't have RGB lighting, only the projector does."
+- Maintain conversational memory across turns for immediate context and pronoun references ("it", "both", "that", "again").`
 
 /**
  * Tool Declaration for Gemini Live device control
@@ -79,25 +108,25 @@ const CONTROL_CLASSROOM_DEVICES_TOOL = {
   functionDeclarations: [
     {
       name: 'control_classroom_devices',
-      description: 'Control one or more smart classroom appliances (light, fan, projector) to turn them ON or OFF.',
+      description: 'Control smart classroom appliances (light, fan, projector) for power switching (ON/OFF).',
       parameters: {
-        type: 'OBJECT',
+        type: Type.OBJECT,
         properties: {
           actions: {
-            type: 'ARRAY',
-            description: 'List of device control actions to execute',
+            type: Type.ARRAY,
+            description: 'List of device power control actions to execute',
             items: {
-              type: 'OBJECT',
+              type: Type.OBJECT,
               properties: {
                 device: {
-                  type: 'STRING',
+                  type: Type.STRING,
                   enum: ['light', 'fan', 'projector'],
                   description: 'The target appliance to control',
                 },
                 action: {
-                  type: 'STRING',
+                  type: Type.STRING,
                   enum: ['ON', 'OFF'],
-                  description: 'The target state: ON or OFF',
+                  description: 'The target power action: ON or OFF',
                 },
               },
               required: ['device', 'action'],
@@ -105,6 +134,63 @@ const CONTROL_CLASSROOM_DEVICES_TOOL = {
           },
         },
         required: ['actions'],
+      },
+    },
+  ],
+}
+
+const SET_CLASSROOM_RGB_TOOL = {
+  functionDeclarations: [
+    {
+      name: 'set_classroom_rgb',
+      description: 'Set the RGB LED color or power state of an RGB-capable classroom appliance (specifically the projector ambient RGB LED).',
+      parameters: {
+        type: Type.OBJECT,
+        properties: {
+          device: {
+            type: Type.STRING,
+            description: 'The target appliance with RGB lighting capability (must be "projector").',
+          },
+          color: {
+            type: Type.OBJECT,
+            properties: {
+              name: {
+                type: Type.STRING,
+                description: 'Color name (e.g. "purple", "red", "green", "blue", "yellow", "orange", "pink", "cyan", "white", "warm white") or hexadecimal code (e.g. "#FF00FF").',
+              },
+            },
+            description: 'The RGB color object with the color name or hex code.',
+          },
+          colorName: {
+            type: Type.STRING,
+            description: 'Direct color name or hex code if not inside color object.',
+          },
+          power: {
+            type: Type.STRING,
+            enum: ['ON', 'OFF'],
+            description: 'RGB LED power state. Use "OFF" to turn off the RGB light.',
+          },
+        },
+        required: ['device'],
+      },
+    },
+  ],
+}
+
+const GET_CLASSROOM_DEVICE_STATE_TOOL = {
+  functionDeclarations: [
+    {
+      name: 'get_classroom_device_state',
+      description: 'Query the authoritative, real-time hardware status of classroom devices (light, fan, projector). Use this tool whenever the user asks about device status or condition (e.g. "Is the fan on?", "Is the projector running?", "What is currently on?", "Which devices are off?", "What color is the projector?").',
+      parameters: {
+        type: Type.OBJECT,
+        properties: {
+          device: {
+            type: Type.STRING,
+            enum: ['light', 'fan', 'projector', 'all'],
+            description: 'The target appliance to inspect, or "all" to inspect all classroom appliances.',
+          },
+        },
       },
     },
   ],
@@ -153,31 +239,52 @@ function arrayBufferToBase64(buffer) {
 }
 
 /**
- * Supported Visual States of the Voice Assistant
+ * Supported Visual States of the Voice Assistant (ChatGPT Voice Mode style)
  */
 export const VOICE_STATES = {
   IDLE: 'idle',
   LISTENING: 'listening',
   PROCESSING: 'processing',
-  SUCCESS: 'success',
+  SPEAKING: 'speaking',
   ERROR: 'error',
+  ENDED: 'ended',
+}
+
+/**
+ * Helper to get opposite action
+ */
+export function getOppositeAction(action) {
+  return String(action).toUpperCase() === 'ON' ? 'OFF' : 'ON'
+}
+
+/**
+ * Helper to get device icon component
+ */
+function getDeviceIcon(device) {
+  const d = String(device || '').toLowerCase()
+  if (d === 'light') return Lightbulb
+  if (d === 'fan') return Fan
+  if (d === 'projector') return Monitor
+  return Zap
 }
 
 const SAMPLE_COMMANDS = [
   'Turn on the fan',
-  'Switch off classroom lights',
-  'Turn on projector',
+  'Turn off the light',
   'Turn on the fan and light',
-  'Turn off the fan and projector',
-  'Please switch off everything',
+  'Turn off everything',
+  'Turn on the projector',
 ]
 
 /**
- * Reusable VoiceAssistant Component for the Smart Classroom
+ * ChatGPT-Style Voice Conversation Assistant for Smart Classroom
  *
- * Supports Gemini Multimodal Live API real-time microphone streaming,
- * bidirectional function calling (control_classroom_devices),
- * with graceful fallback to browser Web Speech API.
+ * Provides a dedicated voice-mode experience:
+ * - Large interactive voice orb with fluid state animations
+ * - Real-time audio streaming via Gemini Multimodal Live API
+ * - Automatic action result cards for executed hardware commands
+ * - Individual opposite-action toggle buttons for quick corrections
+ * - Graceful fallback to browser Web Speech API
  *
  * @param {Object} props
  * @param {string} [props.classroom='Room 302'] - Active classroom identifier
@@ -196,12 +303,11 @@ export function VoiceAssistant({
 
   // State Management
   const [currentState, setCurrentState] = useState(VOICE_STATES.IDLE)
-  const [transcript, setTranscript] = useState('')
-  const [interimTranscript, setInterimTranscript] = useState('')
+  const [latestUserText, setLatestUserText] = useState('')
+  const [latestGeminiText, setLatestGeminiText] = useState('')
+  const [actionCards, setActionCards] = useState([])
   const [errorMessage, setErrorMessage] = useState('')
-  const [resultData, setResultData] = useState(null)
   const [isSupported, setIsSupported] = useState(true)
-  const [manualText, setManualText] = useState('')
   const [isLiveActive, setIsLiveActive] = useState(false)
   const [liveStatusText, setLiveStatusText] = useState('')
 
@@ -257,10 +363,17 @@ export function VoiceAssistant({
       nextPlaybackTimeRef.current = startTime + audioBuffer.duration
       activeAudioSourcesRef.current.push(sourceNode)
 
+      // Enter SPEAKING state while audio is playing
+      setCurrentState(VOICE_STATES.SPEAKING)
+
       sourceNode.onended = () => {
         const idx = activeAudioSourcesRef.current.indexOf(sourceNode)
         if (idx !== -1) {
           activeAudioSourcesRef.current.splice(idx, 1)
+        }
+        // Return to LISTENING if all chunks finished and live session is still active
+        if (activeAudioSourcesRef.current.length === 0 && isLiveModeActiveRef.current) {
+          setCurrentState(VOICE_STATES.LISTENING)
         }
       }
     } catch (e) {
@@ -273,32 +386,22 @@ export function VoiceAssistant({
     activeAudioSourcesRef.current.forEach((src) => {
       try {
         src.stop()
-      } catch {
-        // Source may already have ended
-      }
+      } catch {}
     })
     activeAudioSourcesRef.current = []
     if (outputAudioContextRef.current) {
       nextPlaybackTimeRef.current = outputAudioContextRef.current.currentTime
     }
+    if (isLiveModeActiveRef.current) {
+      setCurrentState(VOICE_STATES.LISTENING)
+    }
   }, [])
 
-  // Safely stop Gemini Live session and tear down audio graph
+  // Disconnect active Gemini Live session
   const stopLiveSession = useCallback(async () => {
-    console.log('[GeminiLive] 🛑 Stopping Live voice session...')
+    console.log('[GeminiLive] Stopping Live API session...')
     stopAudioPlayback()
 
-    // 1. Stop mic tracks
-    if (micStreamRef.current) {
-      micStreamRef.current.getTracks().forEach((track) => {
-        try {
-          track.stop()
-        } catch {}
-      })
-      micStreamRef.current = null
-    }
-
-    // 2. Disconnect audio worklet
     if (workletNodeRef.current) {
       try {
         workletNodeRef.current.disconnect()
@@ -306,27 +409,18 @@ export function VoiceAssistant({
       workletNodeRef.current = null
     }
 
-    // 3. Close input AudioContext
     if (inputAudioContextRef.current) {
       try {
-        if (inputAudioContextRef.current.state !== 'closed') {
-          await inputAudioContextRef.current.close()
-        }
+        await inputAudioContextRef.current.close()
       } catch {}
       inputAudioContextRef.current = null
     }
 
-    // 4. Close output AudioContext
-    if (outputAudioContextRef.current) {
-      try {
-        if (outputAudioContextRef.current.state !== 'closed') {
-          await outputAudioContextRef.current.close()
-        }
-      } catch {}
-      outputAudioContextRef.current = null
+    if (micStreamRef.current) {
+      micStreamRef.current.getTracks().forEach((track) => track.stop())
+      micStreamRef.current = null
     }
 
-    // 5. Close Live WebSocket session
     if (liveSessionRef.current) {
       try {
         if (liveSessionRef.current.conn && typeof liveSessionRef.current.conn.close === 'function') {
@@ -345,63 +439,100 @@ export function VoiceAssistant({
   const handleDeviceToolCall = useCallback(
     async (call) => {
       console.log('[GeminiLive] Function call: control_classroom_devices')
+      setCurrentState(VOICE_STATES.PROCESSING)
+
       const { id, name, args } = call
-      const actions = args?.actions
+      const callId = id || 'call_default'
+      const toolName = name || 'control_classroom_devices'
+      const rawActions = args?.actions
 
       const SUPPORTED_DEVICES = ['light', 'fan', 'projector']
       const SUPPORTED_ACTIONS = ['ON', 'OFF']
 
-      // 1. Frontend validation: must be a non-empty array
-      if (!Array.isArray(actions) || actions.length === 0) {
+      // 1. Initial check: must be a non-empty array
+      if (!Array.isArray(rawActions) || rawActions.length === 0) {
         console.warn('[GeminiLive] ⚠️ Rejected tool call: actions must be a non-empty array')
         if (liveSessionRef.current) {
           liveSessionRef.current.sendToolResponse({
             functionResponses: [
               {
-                id,
-                name,
+                id: callId,
+                name: toolName,
                 response: { error: 'Actions must be a non-empty array' },
               },
             ],
           })
         }
+        if (isLiveModeActiveRef.current) {
+          setCurrentState(VOICE_STATES.LISTENING)
+        }
         return
       }
 
-      // 2. Frontend validation: device and action allowlists
+      // 2. Normalization: Support BOTH Format A ({ device, action }) and Format B (JSON string)
+      const normalizedActions = []
+      for (let i = 0; i < rawActions.length; i++) {
+        let entry = rawActions[i]
+
+        if (typeof entry === 'string') {
+          try {
+            entry = JSON.parse(entry)
+          } catch (parseErr) {
+            console.warn(`[GeminiLive] ⚠️ Malformed JSON action string at index ${i}:`, entry)
+            continue
+          }
+        }
+
+        if (entry && typeof entry === 'object' && !Array.isArray(entry)) {
+          normalizedActions.push(entry)
+        }
+      }
+
+      // 3. Strict allowlist validation
       const validatedActions = []
-      for (const item of actions) {
-        if (
-          item &&
-          SUPPORTED_DEVICES.includes(String(item.device || '').toLowerCase()) &&
-          SUPPORTED_ACTIONS.includes(String(item.action || '').toUpperCase())
-        ) {
+      for (const item of normalizedActions) {
+        const device = String(item.device || '').trim().toLowerCase()
+        const action = String(item.action || '').trim().toUpperCase()
+
+        if (SUPPORTED_DEVICES.includes(device) && SUPPORTED_ACTIONS.includes(action)) {
           validatedActions.push({
-            device: String(item.device).toLowerCase(),
-            action: String(item.action).toUpperCase(),
+            device,
+            action,
           })
+        } else {
+          console.warn(`[GeminiLive] ⚠️ Discarded unsupported action item:`, item)
         }
       }
 
       if (validatedActions.length === 0) {
-        console.warn('[GeminiLive] ⚠️ Rejected tool call: no valid actions found')
+        console.warn('[GeminiLive] ⚠️ Rejected tool call: no valid actions found after validation')
         if (liveSessionRef.current) {
           liveSessionRef.current.sendToolResponse({
             functionResponses: [
               {
-                id,
-                name,
+                id: callId,
+                name: toolName,
                 response: { error: 'No valid device actions found' },
               },
             ],
           })
+        }
+        if (isLiveModeActiveRef.current) {
+          setCurrentState(VOICE_STATES.LISTENING)
         }
         return
       }
 
       console.log(`[GeminiLive] Actions: ${validatedActions.length}`)
 
-      // 3. Dispatch to backend POST /api/voice/live/command
+      // Display transcribed user intent if not already populated
+      setLatestUserText(
+        validatedActions
+          .map((a) => `${a.action === 'ON' ? 'Turn on' : 'Turn off'} the ${a.device}`)
+          .join(' and ')
+      )
+
+      // 4. Dispatch to backend POST /api/voice/live/command
       try {
         const response = await fetch(`${apiBaseUrl}/api/voice/live/command`, {
           method: 'POST',
@@ -425,36 +556,52 @@ export function VoiceAssistant({
             )
           })
 
-          // Update UI state with action outcome
-          const allOk = actionResults.every((a) => a.success)
-          setResultData({
-            executionStatus: allOk ? 'EXECUTED' : 'FAILED',
-            message: actionResults
-              .map((a) => `${a.device.toUpperCase()} ${a.action} (${a.delivered ? 'Delivered' : 'Failed'})`)
-              .join(', '),
-            transcript: `[Live Action] ${validatedActions.map((a) => `${a.device} -> ${a.action}`).join(', ')}`,
-            intent: 'DEVICE_CONTROL',
-            device: validatedActions.map((a) => a.device).join(', '),
-            action: validatedActions.map((a) => a.action).join(', '),
-          })
+          // Generate action result cards for EACH executed action
+          const newCards = actionResults
+            .filter((a) => a.success)
+            .map((a) => ({
+              id: `${a.device}-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+              device: a.device,
+              action: a.action,
+              status: 'success',
+              timestamp: Date.now(),
+              oppositeAction: getOppositeAction(a.action),
+              isReverting: false,
+              error: null,
+            }))
+
+          if (newCards.length > 0) {
+            setActionCards((prev) => [...newCards, ...prev].slice(0, 6))
+          }
+
+          // Generate concise spoken summary for Gemini response preview
+          const summary = actionResults
+            .map((a) => `${a.device.charAt(0).toUpperCase() + a.device.slice(1)} is ${a.action.toLowerCase()}`)
+            .join(' and ')
+          if (summary) {
+            setLatestGeminiText(`${summary}.`)
+          }
 
           if (onCommandExecuted) {
             onCommandExecuted(result.data)
           }
 
-          // 4. Return tool response to Gemini Live session
+          // 5. Return clean tool response to Gemini Live session
           if (liveSessionRef.current) {
             liveSessionRef.current.sendToolResponse({
               functionResponses: [
                 {
-                  id,
-                  name,
+                  id: callId,
+                  name: toolName,
                   response: {
                     actions: actionResults.map((a) => ({
                       device: a.device,
                       action: a.action,
                       success: a.success,
+                      message: a.message,
                     })),
+                    allSucceeded: actionResults.every((a) => a.success),
+                    partialFailure: actionResults.some((a) => !a.success) && actionResults.some((a) => a.success),
                   },
                 },
               ],
@@ -469,16 +616,207 @@ export function VoiceAssistant({
           liveSessionRef.current.sendToolResponse({
             functionResponses: [
               {
-                id,
-                name,
-                response: { error: err.message },
+                id: callId,
+                name: toolName,
+                response: {
+                  actions: validatedActions.map((a) => ({
+                    device: a.device,
+                    action: a.action,
+                    success: false,
+                  })),
+                  error: err.message,
+                },
               },
             ],
           })
         }
+      } finally {
+        if (isLiveModeActiveRef.current && activeAudioSourcesRef.current.length === 0) {
+          setCurrentState(VOICE_STATES.LISTENING)
+        }
       }
     },
     [apiBaseUrl, token, classroom, onCommandExecuted]
+  )
+
+  // Handle Gemini Live RGB tool call (set_classroom_rgb)
+  const handleRgbToolCall = useCallback(
+    async (call) => {
+      console.log('[GeminiLive] Function call: set_classroom_rgb')
+      setCurrentState(VOICE_STATES.PROCESSING)
+
+      const { id, name, args } = call
+      const callId = id || 'call_rgb_default'
+      const toolName = name || 'set_classroom_rgb'
+
+      const device = String(args?.device || 'projector').trim().toLowerCase()
+      const rawColor = args?.color?.name || args?.colorName || args?.color || 'purple'
+      const power = args?.power ? String(args.power).trim().toUpperCase() : 'ON'
+
+      try {
+        const response = await fetch(`${apiBaseUrl}/api/voice/live/rgb`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
+          body: JSON.stringify({
+            device,
+            color: rawColor,
+            power,
+            classroom,
+          }),
+        })
+
+        const result = await response.json()
+
+        if (response.ok && result.status === 'success') {
+          const rgbData = result.data
+          const newCard = {
+            id: `rgb-${device}-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+            device: rgbData.device,
+            action: power === 'OFF' ? 'OFF' : 'SET_COLOR',
+            color: rgbData.color,
+            status: 'success',
+            timestamp: Date.now(),
+            oppositeAction: power === 'OFF' ? 'ON' : 'OFF',
+            isReverting: false,
+            error: null,
+          }
+
+          setActionCards((prev) => [newCard, ...prev].slice(0, 6))
+          setLatestGeminiText(
+            power === 'OFF'
+              ? 'Projector RGB light is OFF.'
+              : `Projector RGB light set to ${rgbData.color?.name || 'custom color'}.`
+          )
+
+          if (onCommandExecuted) {
+            onCommandExecuted(result.data)
+          }
+
+          if (liveSessionRef.current) {
+            liveSessionRef.current.sendToolResponse({
+              functionResponses: [
+                {
+                  id: callId,
+                  name: toolName,
+                  response: {
+                    device: rgbData.device,
+                    status: 'success',
+                    power: rgbData.power,
+                    color: rgbData.color,
+                  },
+                },
+              ],
+            })
+          }
+        } else {
+          console.warn('[GeminiLive] RGB command error response:', result)
+          if (liveSessionRef.current) {
+            liveSessionRef.current.sendToolResponse({
+              functionResponses: [
+                {
+                  id: callId,
+                  name: toolName,
+                  response: {
+                    error: result.message || 'RGB command failed',
+                    code: result.code || 'RGB_ERROR',
+                  },
+                },
+              ],
+            })
+          }
+        }
+      } catch (err) {
+        console.error('[GeminiLive] ❌ Error executing live RGB command:', err.message)
+        if (liveSessionRef.current) {
+          liveSessionRef.current.sendToolResponse({
+            functionResponses: [
+              {
+                id: callId,
+                name: toolName,
+                response: { error: 'Network error communicating with classroom controller' },
+              },
+            ],
+          })
+        }
+      } finally {
+        if (isLiveModeActiveRef.current && activeAudioSourcesRef.current.length === 0) {
+          setCurrentState(VOICE_STATES.LISTENING)
+        }
+      }
+    },
+    [apiBaseUrl, token, classroom, onCommandExecuted]
+  )
+
+  // Handle get_classroom_device_state tool call for live state queries
+  const handleGetStateToolCall = useCallback(
+    async (call) => {
+      console.log('[GeminiLive] Function call: get_classroom_device_state')
+      setCurrentState(VOICE_STATES.PROCESSING)
+
+      const { id, name, args } = call
+      const callId = id || 'call_state_default'
+      const toolName = name || 'get_classroom_device_state'
+      const device = String(args?.device || 'all').trim().toLowerCase()
+
+      try {
+        const response = await fetch(
+          `${apiBaseUrl}/api/voice/live/state?classroom=${encodeURIComponent(classroom)}&device=${encodeURIComponent(device)}`,
+          {
+            method: 'GET',
+            headers: {
+              'Content-Type': 'application/json',
+              ...(token ? { Authorization: `Bearer ${token}` } : {}),
+            },
+          }
+        )
+
+        const result = await response.json()
+        const stateData = result?.data || {}
+
+        if (liveSessionRef.current) {
+          liveSessionRef.current.sendToolResponse({
+            functionResponses: [
+              {
+                id: callId,
+                name: toolName,
+                response: {
+                  classroom,
+                  device,
+                  state: stateData,
+                  success: true,
+                },
+              },
+            ],
+          })
+        }
+      } catch (err) {
+        console.error('[GeminiLive] Error retrieving state tool response:', err.message)
+        if (liveSessionRef.current) {
+          liveSessionRef.current.sendToolResponse({
+            functionResponses: [
+              {
+                id: callId,
+                name: toolName,
+                response: {
+                  classroom,
+                  device,
+                  error: 'Could not retrieve hardware state from classroom controller.',
+                  success: false,
+                },
+              },
+            ],
+          })
+        }
+      } finally {
+        if (isLiveModeActiveRef.current && activeAudioSourcesRef.current.length === 0) {
+          setCurrentState(VOICE_STATES.LISTENING)
+        }
+      }
+    },
+    [apiBaseUrl, token, classroom]
   )
 
   // Handle incoming messages from Gemini Live WebSocket
@@ -487,33 +825,38 @@ export function VoiceAssistant({
       // 1. Tool call received from server (primary path)
       if (msg.toolCall?.functionCalls) {
         for (const call of msg.toolCall.functionCalls) {
-          if (call.name === 'control_classroom_devices') {
+          if (call.name === 'set_classroom_rgb') {
+            handleRgbToolCall(call)
+          } else if (call.name === 'control_classroom_devices') {
             handleDeviceToolCall(call)
+          } else if (call.name === 'get_classroom_device_state') {
+            handleGetStateToolCall(call)
           }
         }
       }
 
       // 2. User speech activity detected by server
       if (msg.serverContent?.userTurn) {
-        console.log('[GeminiLive] 🗣️ User speech activity detected by model')
-        setLiveStatusText('Gemini is listening to your speech...')
+        console.log('[GeminiLive] 🗣️ User speech activity detected')
       }
 
       // 3. Model response parts received
       if (msg.serverContent?.modelTurn?.parts) {
-        console.log('[GeminiLive] 🤖 Gemini response received')
         for (const part of msg.serverContent.modelTurn.parts) {
-          // Check for tool call embedded in model turn parts
-          if (part.functionCall && part.functionCall.name === 'control_classroom_devices') {
-            handleDeviceToolCall(part.functionCall)
+          if (part.functionCall) {
+            if (part.functionCall.name === 'set_classroom_rgb') {
+              handleRgbToolCall(part.functionCall)
+            } else if (part.functionCall.name === 'control_classroom_devices') {
+              handleDeviceToolCall(part.functionCall)
+            } else if (part.functionCall.name === 'get_classroom_device_state') {
+              handleGetStateToolCall(part.functionCall)
+            }
           }
           if (part.inlineData && part.inlineData.data) {
-            console.log('[GeminiLive] 🔊 Gemini audio response received')
             playPcmChunk(part.inlineData.data)
           }
           if (part.text) {
-            console.log('[GeminiLive] 📝 Gemini text output received')
-            setTranscript((prev) => (prev ? prev + ' ' : '') + part.text)
+            setLatestGeminiText(part.text)
           }
         }
       }
@@ -522,23 +865,23 @@ export function VoiceAssistant({
       if (msg.serverContent?.interrupted) {
         console.log('[GeminiLive] ⚡ Gemini response interrupted by user speech')
         stopAudioPlayback()
-        setLiveStatusText('Interrupted. Listening...')
       }
 
       // 5. Model turn complete
       if (msg.serverContent?.turnComplete) {
-        console.log('[GeminiLive] ✅ Gemini response turn completed')
-        setLiveStatusText('Gemini response finished. You can speak again.')
+        if (activeAudioSourcesRef.current.length === 0 && isLiveModeActiveRef.current) {
+          setCurrentState(VOICE_STATES.LISTENING)
+        }
       }
     },
-    [handleDeviceToolCall, playPcmChunk, stopAudioPlayback]
+    [handleDeviceToolCall, handleRgbToolCall, playPcmChunk, stopAudioPlayback]
   )
 
   // Start Gemini Live API Session
   const startLiveSession = useCallback(async () => {
-    console.log('[GeminiLive] 🚀 Initiating Gemini Live session with device control tools...')
+    console.log('[GeminiLive] 🚀 Initiating Gemini Live session...')
     setErrorMessage('')
-    setLiveStatusText('Requesting microphone access...')
+    setCurrentState(VOICE_STATES.PROCESSING)
 
     // 1. Request microphone permission
     const micStream = await navigator.mediaDevices.getUserMedia({
@@ -551,9 +894,7 @@ export function VoiceAssistant({
     })
     micStreamRef.current = micStream
 
-    setLiveStatusText('Requesting ephemeral Live API token from backend...')
-
-    // 2. Fetch short-lived ephemeral token from backend
+    // 2. Request short-lived ephemeral token from backend
     const tokenRes = await fetch(`${apiBaseUrl}/api/voice/live/token`, {
       method: 'POST',
       headers: {
@@ -567,8 +908,6 @@ export function VoiceAssistant({
       throw new Error(tokenData.message || 'Failed to obtain Gemini Live session token from backend.')
     }
     const ephemeralToken = tokenData.data.token
-
-    setLiveStatusText('Connecting to Gemini Live WebSocket...')
 
     // 3. Initialize GoogleGenAI with ephemeral token
     const ai = new GoogleGenAI({
@@ -586,7 +925,6 @@ export function VoiceAssistant({
     try {
       await inputCtx.audioWorklet.addModule(audioProcessorUrl)
     } catch {
-      // Fallback: load inline blob if external module fails to resolve
       const blob = new Blob([WORKLET_INLINE_CODE], { type: 'application/javascript' })
       const blobUrl = URL.createObjectURL(blob)
       await inputCtx.audioWorklet.addModule(blobUrl)
@@ -614,22 +952,27 @@ export function VoiceAssistant({
       }
     }
 
-    // Connect to silent gain to keep AudioWorklet processing clock active
     const silentGain = inputCtx.createGain()
     silentGain.gain.value = 0
     sourceNode.connect(workletNode)
     workletNode.connect(silentGain)
     silentGain.connect(inputCtx.destination)
 
-    // 5. Connect Gemini Live Session with control_classroom_devices tool
+    const backendInstructionText = tokenData.data?.systemInstruction?.parts?.[0]?.text || tokenData.data?.systemInstruction
+    const systemInstructionText = typeof backendInstructionText === 'string' ? backendInstructionText : LIVE_SYSTEM_INSTRUCTION
+    const toolsToUse = (tokenData.data?.tools && Array.isArray(tokenData.data.tools) && tokenData.data.tools.length > 0)
+      ? tokenData.data.tools
+      : [CONTROL_CLASSROOM_DEVICES_TOOL, SET_CLASSROOM_RGB_TOOL, GET_CLASSROOM_DEVICE_STATE_TOOL]
+
+    // 5. Connect Gemini Live Session with backend tools
     const session = await ai.live.connect({
-      model: LIVE_MODEL,
+      model: tokenData.data?.model || LIVE_MODEL,
       config: {
         responseModalities: ['AUDIO'],
         systemInstruction: {
-          parts: [{ text: LIVE_SYSTEM_INSTRUCTION }],
+          parts: [{ text: systemInstructionText }],
         },
-        tools: [CONTROL_CLASSROOM_DEVICES_TOOL],
+        tools: toolsToUse,
         sessionResumption: {},
       },
       callbacks: {
@@ -644,18 +987,21 @@ export function VoiceAssistant({
           handleLiveServerMessage(msg)
         },
         onerror: (err) => {
-          console.warn('[GeminiLive] ⚠️ Gemini Live WebSocket error received')
+          console.warn('[GeminiLive] ⚠️ Gemini Live WebSocket error:', err)
         },
         onclose: (e) => {
           console.log('[GeminiLive] 🔌 Gemini Live WebSocket connection closed')
           setIsLiveActive(false)
           isLiveModeActiveRef.current = false
+          if (currentState !== VOICE_STATES.ERROR) {
+            setCurrentState(VOICE_STATES.IDLE)
+          }
         },
       },
     })
 
     liveSessionRef.current = session
-  }, [apiBaseUrl, token, handleLiveServerMessage])
+  }, [apiBaseUrl, token, handleLiveServerMessage, currentState])
 
   // Initialize SpeechRecognition on mount (Fallback Engine)
   useEffect(() => {
@@ -663,7 +1009,6 @@ export function VoiceAssistant({
       window.SpeechRecognition || window.webkitSpeechRecognition
 
     if (!SpeechRecognition) {
-      console.warn('[VoiceAssistant] Web Speech API is not supported in this browser environment.')
       setIsSupported(false)
       return
     }
@@ -671,7 +1016,7 @@ export function VoiceAssistant({
     try {
       const recognition = new SpeechRecognition()
       recognition.lang = 'en-US'
-      recognition.continuous = false // Stops automatically when speech ends
+      recognition.continuous = false
       recognition.interimResults = true
       recognition.maxAlternatives = 1
 
@@ -679,66 +1024,41 @@ export function VoiceAssistant({
         isSpeechEndedRef.current = false
         setCurrentState(VOICE_STATES.LISTENING)
         setErrorMessage('')
-        console.log('[VoiceAssistant] 🎙️ Microphone active. Listening for English speech...')
       }
 
       recognition.onresult = (event) => {
-        let interim = ''
         let final = ''
-
         for (let i = event.resultIndex; i < event.results.length; ++i) {
-          const res = event.results[i]
-          if (res.isFinal) {
-            final += res[0].transcript
-          } else {
-            interim += res[0].transcript
+          if (event.results[i].isFinal) {
+            final += event.results[i][0].transcript
           }
         }
-
         if (final) {
-          setTranscript(final.trim())
-          setInterimTranscript('')
-        } else if (interim) {
-          setInterimTranscript(interim)
+          setLatestUserText(final.trim())
         }
       }
 
       recognition.onspeechend = () => {
-        console.log('[VoiceAssistant] 🛑 Speech ended naturally. Stopping recognition...')
         isSpeechEndedRef.current = true
         recognition.stop()
       }
 
       recognition.onerror = (event) => {
-        console.warn('[VoiceAssistant] Speech Recognition error:', event.error)
+        console.warn('[VoiceAssistant] Web Speech Recognition error:', event.error)
         let friendly = 'Voice recognition error occurred. Please try again.'
-
-        switch (event.error) {
-          case 'no-speech':
-            friendly = 'No speech was detected. Please tap the microphone and speak clearly.'
-            break
-          case 'not-allowed':
-          case 'service-not-allowed':
-            friendly = 'Microphone permission was denied. Please allow microphone access in your browser.'
-            break
-          case 'audio-capture':
-            friendly = 'No microphone found. Please check your laptop or Bluetooth microphone connection.'
-            break
-          case 'network':
-            friendly = 'Network connection error during voice recognition.'
-            break
-          case 'aborted':
-            return // Ignored when user cancels
-          default:
-            friendly = `Voice error: ${event.error}`
+        if (event.error === 'not-allowed') {
+          friendly = 'Microphone permission was denied. Please allow microphone access in your browser.'
+        } else if (event.error === 'no-speech') {
+          friendly = 'No speech was detected. Tap to speak again.'
         }
-
         setErrorMessage(friendly)
         setCurrentState(VOICE_STATES.ERROR)
       }
 
       recognition.onend = () => {
-        console.log('[VoiceAssistant] Recognition session ended.')
+        if (!isSpeechEndedRef.current && currentState === VOICE_STATES.LISTENING) {
+          setCurrentState(VOICE_STATES.IDLE)
+        }
       }
 
       recognitionRef.current = recognition
@@ -751,30 +1071,22 @@ export function VoiceAssistant({
       if (recognitionRef.current) {
         try {
           recognitionRef.current.abort()
-        } catch {
-          // Cleanup ignore
-        }
+        } catch {}
       }
       stopLiveSession()
     }
-  }, [stopLiveSession])
+  }, [stopLiveSession, currentState])
 
-  // Send Transcript to Backend POST /api/voice/command (Used by Fallback & Manual input)
+  // Fallback Web Speech execution: Dispatches transcript to /api/voice/command
   const sendTranscriptToBackend = useCallback(
-    async (textToSend) => {
-      const commandText = (textToSend || transcript).trim()
-      if (!commandText) {
-        setCurrentState(VOICE_STATES.ERROR)
-        setErrorMessage('No speech transcript captured to process.')
+    async (commandText) => {
+      if (!commandText || !commandText.trim()) {
+        setCurrentState(VOICE_STATES.IDLE)
         return
       }
 
       setCurrentState(VOICE_STATES.PROCESSING)
-      setErrorMessage('')
-      console.log(`[VoiceAssistant] 🚀 Sending transcript to backend: "${commandText}"`)
-
-      const controller = new AbortController()
-      const timeoutId = setTimeout(() => controller.abort(), 10000)
+      setLatestUserText(commandText.trim())
 
       try {
         const response = await fetch(`${apiBaseUrl}/api/voice/command`, {
@@ -784,116 +1096,93 @@ export function VoiceAssistant({
             ...(token ? { Authorization: `Bearer ${token}` } : {}),
           },
           body: JSON.stringify({
-            transcript: commandText,
+            transcript: commandText.trim(),
             classroom,
           }),
-          signal: controller.signal,
         })
-        clearTimeout(timeoutId)
 
         const result = await response.json()
 
         if (response.ok && result.status === 'success') {
-          console.log('[VoiceAssistant] ✅ Command response received:', result.data)
-          setResultData(result.data)
-          setCurrentState(VOICE_STATES.SUCCESS)
+          const data = result.data
+          const messageText = data.humanReadableMessage || data.message || 'Command executed.'
+          setLatestGeminiText(messageText)
+
+          if (data.intent === 'DEVICE_CONTROL' && data.executionStatus === 'EXECUTED' && data.device && data.action) {
+            const newCard = {
+              id: `${data.device}-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+              device: data.device,
+              action: data.action,
+              status: 'success',
+              timestamp: Date.now(),
+              oppositeAction: getOppositeAction(data.action),
+              isReverting: false,
+              error: null,
+            }
+            setActionCards((prev) => [newCard, ...prev].slice(0, 6))
+          }
 
           if (onCommandExecuted) {
-            onCommandExecuted(result.data)
+            onCommandExecuted(data)
           }
+
+          setCurrentState(VOICE_STATES.IDLE)
         } else {
-          throw new Error(result.message || 'Failed to process voice command.')
+          setErrorMessage(result.message || 'Voice command could not be processed.')
+          setCurrentState(VOICE_STATES.ERROR)
         }
       } catch (err) {
-        clearTimeout(timeoutId)
-        console.error('[VoiceAssistant] Backend dispatch error:', err)
-        let friendlyMsg = err.message
-        if (err.name === 'AbortError') {
-          friendlyMsg = 'Voice command processing timed out after 10 seconds. AI engine or backend did not respond in time.'
-        } else if (err.message && err.message.includes('Failed to fetch')) {
-          friendlyMsg = 'Backend server is unavailable or offline. Please verify that the API server is running.'
-        }
-        setErrorMessage(friendlyMsg)
+        setErrorMessage(err.message || 'Network error executing voice command.')
         setCurrentState(VOICE_STATES.ERROR)
       }
     },
-    [transcript, apiBaseUrl, classroom, token, onCommandExecuted]
+    [apiBaseUrl, token, classroom, onCommandExecuted]
   )
 
-  // When Web Speech finishes and we have captured transcript, automatically submit
-  useEffect(() => {
-    if (!isLiveModeActiveRef.current && transcript && isSpeechEndedRef.current && currentState === VOICE_STATES.LISTENING) {
-      sendTranscriptToBackend(transcript)
-    }
-  }, [transcript, currentState, sendTranscriptToBackend])
-
-  // Helper to trigger fallback Web Speech Recognition
-  const startWebSpeech = useCallback(() => {
-    if (!recognitionRef.current) {
-      setErrorMessage('Speech recognition is not available in this browser.')
-      setCurrentState(VOICE_STATES.ERROR)
-      return
-    }
-
-    try {
-      recognitionRef.current.start()
-    } catch (err) {
-      console.warn('[VoiceAssistant] Web Speech start error (attempting restart):', err.message)
-      try {
-        recognitionRef.current.stop()
-        setTimeout(() => recognitionRef.current?.start(), 150)
-      } catch {
-        setCurrentState(VOICE_STATES.ERROR)
-        setErrorMessage('Could not activate microphone. Please try again.')
-      }
-    }
-  }, [])
-
-  // Primary Start Listening Handler
+  // Start listening handler: tries Gemini Live first, falls back to Web Speech
   const handleStartListening = async () => {
     setErrorMessage('')
-    setResultData(null)
-    setTranscript('')
-    setInterimTranscript('')
-    isSpeechEndedRef.current = false
 
-    // Attempt Gemini Live API connection if enabled
     if (LIVE_VOICE_ENABLED) {
       try {
         await startLiveSession()
         return
       } catch (err) {
         console.warn('[VoiceAssistant] ⚠️ Gemini Live connection failed, engaging Web Speech fallback:', err.message)
-        await stopLiveSession()
-        setErrorMessage(`Live session unavailable: ${err.message}. Engaging browser speech recognition fallback.`)
-        // Fall back to Web Speech recognition
       }
     }
 
-    // Fallback: Web Speech API
-    startWebSpeech()
+    // Web Speech Fallback path
+    if (recognitionRef.current) {
+      try {
+        recognitionRef.current.start()
+      } catch (err) {
+        setErrorMessage('Failed to start microphone. Please check permissions.')
+        setCurrentState(VOICE_STATES.ERROR)
+      }
+    } else {
+      setErrorMessage('Speech recognition is not available in this browser.')
+      setCurrentState(VOICE_STATES.ERROR)
+    }
   }
 
-  // Primary Stop Listening Handler
+  // Stop listening handler
   const handleStopListening = async () => {
     if (isLiveModeActiveRef.current) {
       setCurrentState(VOICE_STATES.PROCESSING)
       await stopLiveSession()
       setTimeout(() => {
         setCurrentState(VOICE_STATES.IDLE)
-      }, 500)
+      }, 400)
       return
     }
 
-    // Fallback: Web Speech Stop
     if (recognitionRef.current) {
       try {
         isSpeechEndedRef.current = true
         recognitionRef.current.stop()
-        if (transcript || interimTranscript) {
-          const finalCandidate = transcript || interimTranscript
-          setTranscript(finalCandidate)
-          sendTranscriptToBackend(finalCandidate)
+        if (latestUserText) {
+          sendTranscriptToBackend(latestUserText)
         } else {
           setCurrentState(VOICE_STATES.IDLE)
         }
@@ -903,305 +1192,396 @@ export function VoiceAssistant({
     }
   }
 
-  // Allow Retry
+  // Handle opposite action click on an action card
+  const handleOppositeAction = async (cardId) => {
+    const card = actionCards.find((c) => c.id === cardId)
+    if (!card || card.isReverting) return
+
+    const targetDevice = card.device
+    const targetOpposite = card.oppositeAction // e.g. "OFF" if currently "ON", "ON" if currently "OFF"
+
+    // Set loading indicator on this specific card
+    setActionCards((prev) =>
+      prev.map((c) =>
+        c.id === cardId ? { ...c, isReverting: true, error: null } : c
+      )
+    )
+
+    try {
+      // Dispatch through the existing backend device command architecture (POST /api/voice/live/command)
+      const res = await fetch(`${apiBaseUrl}/api/voice/live/command`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({
+          actions: [{ device: targetDevice, action: targetOpposite }],
+          classroom,
+        }),
+      })
+
+      const data = await res.json()
+      const actionResult = data.data?.actions?.[0]
+
+      if (res.ok && data.status === 'success' && actionResult?.success) {
+        // Success: update the card to the new state and toggle oppositeAction
+        setActionCards((prev) =>
+          prev.map((c) =>
+            c.id === cardId
+              ? {
+                  ...c,
+                  action: targetOpposite,
+                  oppositeAction: getOppositeAction(targetOpposite),
+                  isReverting: false,
+                  error: null,
+                  timestamp: Date.now(),
+                }
+              : c
+          )
+        )
+
+        const devName = targetDevice.charAt(0).toUpperCase() + targetDevice.slice(1)
+        setLatestGeminiText(`${devName} turned ${targetOpposite}.`)
+
+        if (onCommandExecuted) {
+          onCommandExecuted({
+            executionStatus: 'EXECUTED',
+            message: `${targetDevice.toUpperCase()} ${targetOpposite} command sent.`,
+          })
+        }
+      } else {
+        throw new Error(
+          actionResult?.message || data.message || `Failed to turn ${targetDevice} ${targetOpposite}`
+        )
+      }
+    } catch (err) {
+      console.error(`[VoiceAssistant] Failed opposite action for ${targetDevice}:`, err.message)
+      // Error handling (Requirement 12): Keep original state, display error
+      setActionCards((prev) =>
+        prev.map((c) =>
+          c.id === cardId
+            ? {
+                ...c,
+                isReverting: false,
+                error: `Failed to turn ${targetDevice} ${targetOpposite}`,
+              }
+            : c
+        )
+      )
+    }
+  }
+
+  // End conversation handler
+  const handleEndConversation = async () => {
+    stopAudioPlayback()
+    if (isLiveModeActiveRef.current) {
+      await stopLiveSession()
+    }
+    if (recognitionRef.current) {
+      try {
+        recognitionRef.current.stop()
+      } catch {}
+    }
+    setCurrentState(VOICE_STATES.ENDED)
+  }
+
+  // Central orb click handler
+  const handleOrbClick = () => {
+    if (currentState === VOICE_STATES.IDLE || currentState === VOICE_STATES.ENDED) {
+      handleStartListening()
+    } else if (currentState === VOICE_STATES.LISTENING) {
+      handleStopListening()
+    } else if (currentState === VOICE_STATES.SPEAKING) {
+      stopAudioPlayback()
+    } else if (currentState === VOICE_STATES.ERROR) {
+      handleRetry()
+    }
+  }
+
+  // Retry handler
   const handleRetry = () => {
     setErrorMessage('')
-    setResultData(null)
-    setTranscript('')
-    setInterimTranscript('')
     setCurrentState(VOICE_STATES.IDLE)
     stopLiveSession()
   }
 
-  // Manual fallback execution
-  const handleManualSubmit = (e) => {
-    e?.preventDefault()
-    if (!manualText.trim()) return
-    setTranscript(manualText.trim())
-    sendTranscriptToBackend(manualText.trim())
-    setManualText('')
-  }
-
   return (
-    <div className={`space-y-5 text-slate-800 ${isEmbedded ? '' : 'p-1'}`}>
-      {/* Mic Status & Live Awareness Badge */}
-      <div className="flex items-center justify-between px-3.5 py-2.5 rounded-2xl bg-slate-100/80 border border-slate-200/80 text-xs">
-        <div className="flex items-center gap-2 text-slate-600 font-medium">
-          <Bluetooth className="w-3.5 h-3.5 text-blue-600" />
-          <span>Microphone: Default System Audio (16kHz PCM)</span>
-        </div>
-        <div className="flex items-center gap-1.5">
-          {LIVE_VOICE_ENABLED && (
-            <Badge variant={isLiveActive ? 'purple' : 'neutral'} size="sm">
-              {isLiveActive ? 'Gemini Live Active' : 'Gemini Live Ready'}
-            </Badge>
-          )}
-          <Badge variant="info" size="sm">
-            en-US (English)
-          </Badge>
-        </div>
-      </div>
+    <div
+      className={`relative w-full overflow-hidden rounded-3xl bg-gradient-to-b from-slate-900 via-slate-950 to-slate-900 border border-slate-800 text-white shadow-2xl ${
+        isEmbedded ? 'p-5 sm:p-6' : 'p-6 sm:p-8'
+      }`}
+    >
+      {/* Background ambient radial glow */}
+      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-80 h-80 bg-indigo-500/10 rounded-full blur-3xl pointer-events-none" />
 
-      {/* Main Dynamic State Viewport */}
-      <div className="rounded-3xl bg-slate-50/90 border border-slate-200/80 p-6 sm:p-7 text-center space-y-4 shadow-sm">
-        {/* ================= STATE 1: IDLE ================= */}
-        {currentState === VOICE_STATES.IDLE && (
-          <div className="space-y-4 py-2">
-            {!isSupported && !LIVE_VOICE_ENABLED && (
-              <div className="p-3 rounded-2xl bg-amber-50 border border-amber-200 text-xs text-amber-800">
-                Speech recognition is unavailable in this browser. You can enter commands using the text input below.
-              </div>
-            )}
+      {/* Header Bar */}
+      <div className="relative z-10 flex items-center justify-between pb-4 border-b border-slate-800/80 text-xs">
+        <div className="flex items-center gap-2">
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-slate-800/90 border border-slate-700/70 text-slate-300 font-medium">
+            <span
+              className={`w-2 h-2 rounded-full ${
+                isLiveActive ? 'bg-emerald-400 animate-pulse' : 'bg-slate-400'
+              }`}
+            />
+            <span>{isLiveActive ? 'Gemini Live' : 'Voice Mode'}</span>
+          </span>
+          <span className="text-slate-400 font-medium">{classroom}</span>
+        </div>
+
+        <div className="flex items-center gap-2">
+          {currentState !== VOICE_STATES.IDLE && currentState !== VOICE_STATES.ENDED && (
             <button
               type="button"
-              onClick={handleStartListening}
-              className="w-20 h-20 mx-auto rounded-full bg-gradient-to-tr from-purple-600 via-indigo-600 to-pink-500 hover:from-purple-500 hover:to-indigo-500 flex items-center justify-center text-white shadow-xl shadow-purple-500/30 transition-transform active:scale-95 cursor-pointer group"
-              title="Tap to speak in English"
+              onClick={handleEndConversation}
+              className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-800/90 hover:bg-slate-700 border border-slate-700/80 text-slate-300 hover:text-white text-xs font-medium transition-colors cursor-pointer"
             >
-              <Mic className="w-9 h-9 group-hover:scale-110 transition-transform" />
+              <Square className="w-3 h-3 text-rose-400 fill-rose-400" />
+              <span>End conversation</span>
             </button>
-            <div>
-              <p className="text-base font-bold text-slate-900">
-                {LIVE_VOICE_ENABLED ? 'Tap to Speak with Gemini Live' : 'Tap to Speak'}
-              </p>
-              <p className="text-xs text-slate-500 mt-1 max-w-sm mx-auto">
-                {LIVE_VOICE_ENABLED
-                  ? 'Real-time bidirectional voice assistant with smart appliance function calling.'
-                  : 'Speak naturally in English. Your voice is captured locally and parsed by Gemini AI.'}
-              </p>
-            </div>
-          </div>
-        )}
+          )}
 
-        {/* ================= STATE 2: LISTENING ================= */}
-        {currentState === VOICE_STATES.LISTENING && (
-          <div className="space-y-4 py-2">
-            {/* Pulsing Mic Visualizer */}
-            <div className="relative w-24 h-24 mx-auto flex items-center justify-center">
-              <span className="absolute inset-0 rounded-full bg-purple-500/20 animate-ping" />
-              <span className="absolute inset-2 rounded-full bg-purple-600/30 animate-pulse" />
-              <button
-                type="button"
-                onClick={handleStopListening}
-                className="relative z-10 w-16 h-16 rounded-full bg-purple-600 hover:bg-purple-500 text-white flex items-center justify-center shadow-lg shadow-purple-600/50 cursor-pointer"
-                title="Tap when finished speaking"
-              >
-                <Radio className="w-7 h-7 animate-pulse text-amber-300" />
-              </button>
-            </div>
-
-            <div>
-              <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-purple-50 border border-purple-200 text-purple-700 text-xs font-semibold">
-                <span className="w-2 h-2 rounded-full bg-purple-500 animate-ping" />
-                {isLiveActive ? 'Live Audio Session Active' : 'Listening... Speak now'}
-              </div>
-              <p className="text-xs text-slate-500 mt-2">
-                {liveStatusText || (isLiveActive ? 'Streaming audio to Gemini Live. Tap when done.' : 'Recording will stop automatically when speech finishes.')}
-              </p>
-            </div>
-
-            {/* Live Real-Time Transcript Display */}
-            <div className="min-h-14 p-3.5 rounded-2xl bg-white border border-purple-200 text-xs text-left font-mono shadow-sm">
-              <span className="text-slate-400 text-[11px] block uppercase font-sans font-bold mb-1">
-                {isLiveActive ? 'Live Assistant Audio / Transcript:' : 'Live Speech Transcript:'}
-              </span>
-              <p className="text-slate-800 font-medium break-words">
-                {transcript || interimTranscript || (
-                  <span className="text-slate-400 italic">Listening for speech...</span>
-                )}
-              </p>
-            </div>
-
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleStopListening}
+          {onClose && (
+            <button
+              type="button"
+              onClick={onClose}
+              className="p-1 rounded-full hover:bg-slate-800 text-slate-400 hover:text-white transition-colors cursor-pointer"
+              title="Close Voice Assistant"
             >
-              Done Speaking
-            </Button>
-          </div>
-        )}
-
-        {/* ================= STATE 3: PROCESSING ================= */}
-        {currentState === VOICE_STATES.PROCESSING && (
-          <div className="space-y-4 py-4">
-            <div className="w-16 h-16 mx-auto rounded-full bg-blue-50 border border-blue-200 flex items-center justify-center text-blue-600 shadow-sm">
-              <Loader2 className="w-8 h-8 animate-spin" />
-            </div>
-            <div>
-              <p className="text-base font-bold text-slate-900">
-                {isLiveActive ? 'Completing Live Session...' : 'Analyzing Voice Command...'}
-              </p>
-              <p className="text-xs text-slate-500 mt-1">
-                {isLiveActive
-                  ? 'Executing classroom appliance commands and finalizing response.'
-                  : 'Gemini intent classification and backend allowlist validation in progress.'}
-              </p>
-            </div>
-
-            {/* Echoed Transcript */}
-            {transcript && (
-              <div className="p-3.5 rounded-2xl bg-white border border-slate-200 text-xs text-left font-mono shadow-sm">
-                <span className="text-slate-400 text-[10px] block uppercase font-sans mb-1">
-                  Transcribed Audio:
-                </span>
-                <p className="text-blue-600 font-semibold italic">"{transcript}"</p>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* ================= STATE 4: SUCCESS ================= */}
-        {currentState === VOICE_STATES.SUCCESS && resultData && (
-          <div className="space-y-4 py-2 text-left">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-200">
-              <div className="flex items-center gap-2">
-                {resultData.executionStatus === 'FAILED' ? (
-                  <AlertTriangle className="w-5 h-5 text-rose-500" />
-                ) : resultData.executionStatus === 'EXECUTED' ? (
-                  <CheckCircle2 className="w-5 h-5 text-emerald-600" />
-                ) : (
-                  <CheckCircle2 className="w-5 h-5 text-blue-600" />
-                )}
-                <span className="text-sm font-bold text-slate-900">
-                  {resultData.executionStatus === 'FAILED'
-                    ? 'Delivery Notice'
-                    : resultData.executionStatus === 'EXECUTED'
-                    ? 'Command Executed'
-                    : 'Intent Detected'}
-                </span>
-              </div>
-              <Badge
-                variant={
-                  resultData.executionStatus === 'EXECUTED'
-                    ? 'success'
-                    : resultData.executionStatus === 'DETECTED'
-                    ? 'info'
-                    : 'danger'
-                }
-              >
-                {resultData.executionStatus}
-              </Badge>
-            </div>
-
-            {/* Transcript Quote */}
-            <div className="p-3.5 rounded-2xl bg-white border border-slate-200 space-y-1 shadow-sm">
-              <span className="text-[10px] text-slate-400 uppercase tracking-wider block font-semibold">
-                Captured Transcript
-              </span>
-              <p className="text-xs font-mono text-purple-700 font-semibold italic">
-                "{resultData.transcript}"
-              </p>
-            </div>
-
-            {/* Intent & Device Badges */}
-            <div className="grid grid-cols-2 gap-2 text-xs">
-              <div className="p-3 rounded-2xl bg-white border border-slate-200 shadow-sm">
-                <span className="text-[10px] text-slate-400 block font-medium">Classified Intent</span>
-                <span className="font-semibold text-slate-900 font-mono">{resultData.intent}</span>
-              </div>
-              <div className="p-3 rounded-2xl bg-white border border-slate-200 shadow-sm">
-                <span className="text-[10px] text-slate-400 block font-medium">Target Device / Action</span>
-                <span className="font-semibold text-blue-600 font-mono">
-                  {resultData.device ? `${resultData.device.toUpperCase()} → ${resultData.action}` : 'N/A (Software)'}
-                </span>
-              </div>
-            </div>
-
-            {/* Human Readable Message from Backend */}
-            <div
-              className={`p-3.5 rounded-2xl border text-xs font-medium ${
-                resultData.executionStatus === 'FAILED'
-                  ? 'bg-rose-50 border-rose-200 text-rose-800'
-                  : resultData.executionStatus === 'EXECUTED'
-                  ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
-                  : 'bg-sky-50 border-sky-200 text-sky-800'
-              }`}
-            >
-              {resultData.message}
-            </div>
-
-            {/* Action Bar */}
-            <div className="pt-2 flex justify-between items-center">
-              <Button variant="outline" size="sm" onClick={handleRetry}>
-                <RotateCcw className="w-3.5 h-3.5 mr-1.5" />
-                Speak Another
-              </Button>
-              {onClose && (
-                <Button variant="primary" size="sm" onClick={onClose}>
-                  Done
-                </Button>
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* ================= STATE 5: ERROR ================= */}
-        {currentState === VOICE_STATES.ERROR && (
-          <div className="space-y-4 py-2">
-            <div className="w-14 h-14 mx-auto rounded-full bg-rose-50 border border-rose-200 flex items-center justify-center text-rose-500 shadow-sm">
-              <AlertTriangle className="w-7 h-7" />
-            </div>
-            <div>
-              <p className="text-sm font-bold text-slate-900">Voice Command Notice</p>
-              <p className="text-xs text-rose-600 mt-1 max-w-sm mx-auto">{errorMessage}</p>
-            </div>
-            <div className="pt-2">
-              <Button variant="outline" size="sm" onClick={handleRetry}>
-                <RotateCcw className="w-3.5 h-3.5 mr-1.5" />
-                Retry
-              </Button>
-            </div>
-          </div>
-        )}
+              <X className="w-4 h-4" />
+            </button>
+          )}
+        </div>
       </div>
 
-      {/* Suggested Command Chips */}
-      {currentState === VOICE_STATES.IDLE && (
-        <div className="space-y-2">
-          <span className="text-[11px] font-semibold text-slate-400 block">
-            Suggested English Voice Commands:
-          </span>
-          <div className="flex flex-wrap gap-2">
-            {SAMPLE_COMMANDS.map((phrase, idx) => (
-              <button
-                key={idx}
-                type="button"
-                onClick={() => {
-                  setTranscript(phrase)
-                  sendTranscriptToBackend(phrase)
-                }}
-                className="px-3 py-1.5 rounded-full bg-white border border-slate-200/80 hover:border-purple-300 hover:bg-purple-50/50 text-[11px] text-slate-700 hover:text-purple-700 transition-all cursor-pointer font-sans shadow-sm flex items-center gap-1.5 font-medium"
-              >
-                <span>"{phrase}"</span>
-                <ArrowRight className="w-3 h-3 text-purple-500" />
-              </button>
-            ))}
-          </div>
+      {/* Main Voice Center: Orb & State Announcement */}
+      <div className="relative z-10 py-6 sm:py-8 flex flex-col items-center justify-center text-center">
+        {/* The Central Visual Orb */}
+        <div className="relative flex items-center justify-center">
+          {/* Ambient wave animations for LISTENING */}
+          {currentState === VOICE_STATES.LISTENING && (
+            <>
+              <span className="absolute -inset-4 rounded-full bg-cyan-400/20 animate-ping pointer-events-none" />
+              <span className="absolute -inset-2 rounded-full bg-indigo-500/30 animate-pulse pointer-events-none" />
+            </>
+          )}
+
+          {/* Ambient glow for SPEAKING */}
+          {currentState === VOICE_STATES.SPEAKING && (
+            <>
+              <span className="absolute -inset-3 rounded-full bg-emerald-400/25 animate-pulse pointer-events-none" />
+            </>
+          )}
+
+          {/* Ambient glow for PROCESSING */}
+          {currentState === VOICE_STATES.PROCESSING && (
+            <>
+              <span className="absolute -inset-3 rounded-full bg-purple-500/25 animate-pulse pointer-events-none" />
+            </>
+          )}
+
+          {/* Interactive Core Orb */}
+          <button
+            type="button"
+            onClick={handleOrbClick}
+            disabled={currentState === VOICE_STATES.PROCESSING}
+            className={`relative z-10 w-28 h-28 sm:w-32 sm:h-32 rounded-full flex items-center justify-center text-white transition-all cursor-pointer active:scale-95 shadow-2xl ${
+              currentState === VOICE_STATES.IDLE
+                ? 'bg-gradient-to-tr from-indigo-600 via-purple-600 to-pink-500 shadow-indigo-500/30 hover:scale-105'
+                : currentState === VOICE_STATES.LISTENING
+                ? 'bg-gradient-to-tr from-sky-500 via-indigo-500 to-purple-600 shadow-cyan-500/40 hover:scale-105'
+                : currentState === VOICE_STATES.PROCESSING
+                ? 'bg-gradient-to-tr from-purple-600 via-indigo-600 to-amber-500 shadow-purple-500/40 animate-pulse cursor-wait'
+                : currentState === VOICE_STATES.SPEAKING
+                ? 'bg-gradient-to-tr from-emerald-500 via-teal-500 to-cyan-500 shadow-emerald-500/40 hover:scale-105'
+                : currentState === VOICE_STATES.ERROR
+                ? 'bg-gradient-to-tr from-rose-600 via-amber-600 to-red-600 shadow-rose-500/30 hover:scale-105'
+                : 'bg-slate-800 border-2 border-slate-700 text-slate-300 hover:border-slate-500 hover:scale-105'
+            }`}
+            title={
+              currentState === VOICE_STATES.IDLE
+                ? 'Tap to speak'
+                : currentState === VOICE_STATES.LISTENING
+                ? 'Listening... Tap when done'
+                : currentState === VOICE_STATES.SPEAKING
+                ? 'Gemini is speaking... Tap to interrupt'
+                : 'Voice Assistant'
+            }
+          >
+            {currentState === VOICE_STATES.IDLE && (
+              <Mic className="w-10 h-10 transition-transform group-hover:scale-110" />
+            )}
+            {currentState === VOICE_STATES.LISTENING && (
+              <div className="flex items-center gap-1.5">
+                <span className="w-1.5 h-6 bg-white rounded-full animate-pulse" />
+                <span className="w-1.5 h-10 bg-white rounded-full animate-pulse" />
+                <span className="w-1.5 h-7 bg-white rounded-full animate-pulse" />
+                <span className="w-1.5 h-4 bg-white rounded-full animate-pulse" />
+              </div>
+            )}
+            {currentState === VOICE_STATES.PROCESSING && (
+              <Sparkles className="w-10 h-10 animate-spin text-amber-200" />
+            )}
+            {currentState === VOICE_STATES.SPEAKING && (
+              <div className="flex items-center gap-1.5">
+                <span className="w-1.5 h-5 bg-white rounded-full animate-pulse" />
+                <span className="w-1.5 h-9 bg-white rounded-full animate-pulse" />
+                <span className="w-1.5 h-12 bg-white rounded-full animate-pulse" />
+                <span className="w-1.5 h-8 bg-white rounded-full animate-pulse" />
+                <span className="w-1.5 h-4 bg-white rounded-full animate-pulse" />
+              </div>
+            )}
+            {currentState === VOICE_STATES.ERROR && (
+              <AlertTriangle className="w-10 h-10 text-white" />
+            )}
+            {currentState === VOICE_STATES.ENDED && (
+              <RotateCcw className="w-9 h-9 text-slate-300" />
+            )}
+          </button>
+        </div>
+
+        {/* State Headline & Subtitle */}
+        <div className="mt-4 sm:mt-5">
+          <h3 className="text-xl sm:text-2xl font-bold tracking-tight text-white">
+            {currentState === VOICE_STATES.IDLE && 'Tap to speak'}
+            {currentState === VOICE_STATES.LISTENING && 'Listening...'}
+            {currentState === VOICE_STATES.PROCESSING && 'Thinking...'}
+            {currentState === VOICE_STATES.SPEAKING && 'Gemini is speaking...'}
+            {currentState === VOICE_STATES.ERROR && 'Voice Error'}
+            {currentState === VOICE_STATES.ENDED && 'Conversation ended'}
+          </h3>
+          <p className="text-xs text-slate-400 mt-1 max-w-xs mx-auto">
+            {currentState === VOICE_STATES.IDLE &&
+              `Classroom ${classroom} • Controls light, fan, projector`}
+            {currentState === VOICE_STATES.LISTENING &&
+              'Speak naturally in English. Tap orb when finished.'}
+            {currentState === VOICE_STATES.PROCESSING &&
+              'Executing classroom command and updating hardware...'}
+            {currentState === VOICE_STATES.SPEAKING &&
+              'Tap orb anytime to interrupt or speak again.'}
+            {currentState === VOICE_STATES.ERROR &&
+              (errorMessage || 'Microphone or connection error occurred.')}
+            {currentState === VOICE_STATES.ENDED &&
+              'Tap the button to start a new voice session.'}
+          </p>
+
+          {currentState === VOICE_STATES.ERROR && (
+            <button
+              type="button"
+              onClick={handleRetry}
+              className="mt-3 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-semibold text-white transition-colors cursor-pointer"
+            >
+              <RotateCcw className="w-3.5 h-3.5 text-indigo-400" />
+              <span>Retry</span>
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Latest Spoken Transcript Area (Concise, Secondary) */}
+      {(latestUserText || latestGeminiText) && (
+        <div className="relative z-10 w-full max-w-md mx-auto p-3.5 rounded-2xl bg-slate-800/60 border border-slate-700/50 text-xs text-left shadow-sm space-y-2 mb-4">
+          {latestUserText && (
+            <div className="flex items-start gap-2">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 w-12 shrink-0 pt-0.5">
+                You
+              </span>
+              <span className="text-white font-medium italic break-words">
+                "{latestUserText}"
+              </span>
+            </div>
+          )}
+          {latestGeminiText && (
+            <div className="flex items-start gap-2 border-t border-slate-700/40 pt-1.5">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-indigo-400 w-12 shrink-0 pt-0.5">
+                Gemini
+              </span>
+              <span className="text-slate-200 break-words font-medium">
+                "{latestGeminiText}"
+              </span>
+            </div>
+          )}
         </div>
       )}
 
-      {/* Manual Input Fallback */}
-      <div className="pt-2 border-t border-slate-200">
-        <form onSubmit={handleManualSubmit} className="flex gap-2">
-          <input
-            type="text"
-            value={manualText}
-            onChange={(e) => setManualText(e.target.value)}
-            placeholder="Or type an English voice command..."
-            className="flex-1 px-4 py-2.5 bg-white border border-slate-200/80 rounded-2xl text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/10 font-sans shadow-sm"
-          />
-          <Button
-            type="submit"
-            variant="outline"
-            size="sm"
-            disabled={!manualText.trim() || currentState === VOICE_STATES.PROCESSING}
-          >
-            <Send className="w-3.5 h-3.5 mr-1" />
-            Send
-          </Button>
-        </form>
-      </div>
+      {/* ACTION RESULT CARDS (Compact transient notifications) */}
+      {actionCards.length > 0 && (
+        <div className="relative z-10 w-full max-w-sm mx-auto space-y-1.5 pt-2">
+          {actionCards.map((card) => {
+            const isRgb = card.action === 'SET_COLOR' || !!card.color
+            const isCurrentlyOn = card.action.toUpperCase() === 'ON' || isRgb
+            const devName = card.device.charAt(0).toUpperCase() + card.device.slice(1)
+            const colorLabel = card.color?.name
+              ? card.color.name.charAt(0).toUpperCase() + card.color.name.slice(1)
+              : 'Purple'
+            const displayLabel = isRgb
+              ? `${devName} ${colorLabel}`
+              : `${devName} ${card.action.toUpperCase()}`
+            const reverseLabel = card.oppositeAction || (isRgb ? 'WHITE' : 'OFF')
+
+            return (
+              <div
+                key={card.id}
+                className="compact-action-badge flex items-center justify-between px-3 py-2 rounded-xl bg-slate-900/80 backdrop-blur-md border border-slate-700/60 shadow-lg text-xs"
+              >
+                <div className="flex items-center gap-2 min-w-0">
+                  {isRgb ? (
+                    <span
+                      className="w-2.5 h-2.5 rounded-full shrink-0 shadow-sm animate-pulse"
+                      style={{
+                        backgroundColor: card.color?.hex || '#a855f7',
+                        boxShadow: `0 0 8px ${card.color?.hex || '#a855f7'}`,
+                      }}
+                    />
+                  ) : (
+                    <CheckCircle2
+                      className={`w-3.5 h-3.5 shrink-0 ${
+                        isCurrentlyOn ? 'text-emerald-400' : 'text-slate-400'
+                      }`}
+                    />
+                  )}
+                  <span className="font-semibold text-slate-200 truncate">
+                    {displayLabel}
+                  </span>
+                </div>
+
+                {/* Compact Opposite Action Button */}
+                <button
+                  type="button"
+                  disabled={card.isReverting}
+                  onClick={() => handleOppositeAction(card.id)}
+                  className="ml-2 px-2.5 py-1 rounded-lg text-[10px] font-bold tracking-wider uppercase transition-all cursor-pointer flex items-center gap-1 active:scale-95 disabled:opacity-60 bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-600/50 hover:border-slate-500"
+                  title={`Switch ${card.device} to ${reverseLabel}`}
+                >
+                  {card.isReverting ? (
+                    <Loader2 className="w-2.5 h-2.5 animate-spin text-indigo-400" />
+                  ) : (
+                    <span>[{reverseLabel}]</span>
+                  )}
+                </button>
+              </div>
+            )
+          })}
+        </div>
+      )}
+
+      {/* Suggested Spoken Commands (When Idle) */}
+      {currentState === VOICE_STATES.IDLE && (
+        <div className="relative z-10 pt-4 flex flex-wrap items-center justify-center gap-1.5 max-w-sm mx-auto">
+          {SAMPLE_COMMANDS.map((phrase) => (
+            <button
+              key={phrase}
+              type="button"
+              onClick={() => {
+                handleStartListening()
+              }}
+              className="px-2.5 py-1 rounded-full bg-slate-800/80 hover:bg-slate-700 border border-slate-700/60 text-[11px] text-slate-400 hover:text-slate-200 transition-colors cursor-pointer font-sans"
+            >
+              "{phrase}"
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   )
 }

@@ -319,8 +319,27 @@ async function runTests() {
   await Device.updateOne({ deviceId: 'ESP32-RM302-PROJ-01' }, { isActive: true })
   console.log('✅ PASS: Test 11 (partial execution failure does not hide successful actions)')
 
+  // --- TEST 12: stringified JSON actions normalization (Format B) ---
+  console.log('\n--- 12. Test stringified JSON actions normalization (Format B) ---')
+  const res12 = await callLiveCommand({
+    actions: [
+      JSON.stringify({ device: 'fan', action: 'ON' }),
+      JSON.stringify({ device: 'light', action: 'ON' }),
+    ],
+    classroom,
+  })
+  console.log('Response:', JSON.stringify(res12.data))
+  if (
+    res12.status !== 200 ||
+    res12.data.data?.actions?.length !== 2 ||
+    !res12.data.data.actions.every((a) => a.success)
+  ) {
+    throw new Error('Test 12 failed: Stringified JSON actions were not normalized')
+  }
+  console.log('✅ PASS: Test 12 (Format B stringified JSON actions successfully normalized)')
+
   console.log('\n' + '='.repeat(70))
-  console.log('🎉 ALL 11 GEMINI LIVE BATCH COMMAND TESTS PASSED SUCCESSFULLY!')
+  console.log('🎉 ALL GEMINI LIVE BATCH COMMAND TESTS PASSED SUCCESSFULLY!')
   console.log('='.repeat(70))
 
   await mongoose.disconnect()

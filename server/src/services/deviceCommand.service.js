@@ -360,6 +360,7 @@ async function executeDeviceCommand({
   // 9. Update device commanded state in MongoDB
   device.state = newState
   device.requestedState = newState
+  device.confirmedState = newState
   device.lastCommandedAt = new Date()
 
   // Projector Master Relay state synchronization with RGB:

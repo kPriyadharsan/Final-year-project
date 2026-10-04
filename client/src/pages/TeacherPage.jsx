@@ -28,6 +28,7 @@ import {
   Wifi,
   AlertTriangle,
 } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { useSocket, useSocketEvent } from '../context/SocketContext'
 import { testProtectedRoute } from '../services/auth.service'
@@ -46,12 +47,12 @@ import {
   BentoContainer,
   CircularColorPicker,
 } from '../components/ui'
-import { VoiceAssistant } from '../components/voice'
 import { API_BASE_URL } from '../config/api'
 
 export function TeacherPage() {
+  const navigate = useNavigate()
   const { user, token } = useAuth()
-  const { socket, isConnected, joinClassroom, leaveClassroom } = useSocket()
+  const { socket, isConnected, transport, joinClassroom, leaveClassroom } = useSocket()
 
   const apiBaseUrl = API_BASE_URL
 
@@ -720,10 +721,10 @@ export function TeacherPage() {
                 variant="primary"
                 size="sm"
                 leftIcon={<Mic className="w-3.5 h-3.5 text-purple-200 animate-pulse" />}
-                onClick={() => setActiveModal('voice')}
+                onClick={() => navigate('/voice')}
                 className="bg-gradient-to-r from-purple-600 via-indigo-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 shadow-md shadow-purple-500/20 text-white font-semibold rounded-xl h-8 px-3 text-xs"
               >
-                Voice Assistant
+                AI Voice Control
               </Button>
               <Button
                 variant="outline"
@@ -761,7 +762,7 @@ export function TeacherPage() {
             {/* Action 2: Voice Control */}
             <button
               type="button"
-              onClick={() => setActiveModal('voice')}
+              onClick={() => navigate('/voice')}
               className="p-4 flex flex-col justify-between hover:bg-slate-50/70 transition-colors group cursor-pointer text-left focus:outline-none"
             >
               <div className="w-9 h-9 rounded-2xl bg-purple-50 border border-purple-100 flex items-center justify-center text-purple-600 group-hover:scale-110 transition-transform shadow-2xs">
@@ -769,9 +770,9 @@ export function TeacherPage() {
               </div>
               <div className="mt-3">
                 <div className="text-xs font-bold text-slate-900 group-hover:text-purple-700 transition-colors">
-                  Voice Control
+                  AI Voice Control
                 </div>
-                <div className="text-[10px] text-slate-400 mt-0.5 font-medium">English & Tamil Audio</div>
+                <div className="text-[10px] text-slate-400 mt-0.5 font-medium">ChatGPT Voice Mode</div>
               </div>
             </button>
 
@@ -1496,39 +1497,6 @@ export function TeacherPage() {
         </div>
 
         {/* ---------------- 4. INTERACTIVE MODALS FOR QUICK ACTIONS ---------------- */}
-
-        {/* Modal 1: Voice Assistant & Voice Control */}
-        <Modal
-          isOpen={activeModal === 'voice'}
-          onClose={() => setActiveModal(null)}
-          title="Classroom Voice Assistant"
-          description="English voice engine for Room 302 IoT appliances and educational AI triggers."
-          size="lg"
-        >
-          <VoiceAssistant
-            classroom="Room 302"
-            onClose={() => setActiveModal(null)}
-            onCommandExecuted={(cmdData) => {
-              fetchRecentActivity()
-              if (cmdData.executionStatus === 'EXECUTED') {
-                setActionAlert({
-                  type: 'success',
-                  message: cmdData.message,
-                })
-              } else if (cmdData.executionStatus === 'FAILED') {
-                setActionAlert({
-                  type: 'danger',
-                  message: cmdData.message || 'Command could not be delivered.',
-                })
-              } else {
-                setActionAlert({
-                  type: 'info',
-                  message: cmdData.message || `Voice command: ${cmdData.transcript}`,
-                })
-              }
-            }}
-          />
-        </Modal>
 
         {/* Modal 2: Create Notes */}
         <Modal

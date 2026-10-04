@@ -45,6 +45,7 @@ async function handleVoiceCommand(req, res) {
         const cmdResult = await deviceCommandService.executeDeviceCommand({
           deviceType: parsed.device,
           action: parsed.action,
+          color: parsed.color,
           classroom,
           user: currentUser,
           source: 'VOICE_COMMAND',

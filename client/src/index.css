@@ -221,3 +221,183 @@ input::placeholder, textarea::placeholder {
               0 0 25px -5px rgba(255, 75, 145, 0.12);
 }
 
+/* =========================================================================
+   ChatGPT Voice Mode Dedicated Theme & Celestial Fluid Orb Styles
+   ========================================================================= */
+
+.chatgpt-voice-page {
+  background-color: #000000 !important;
+  color: #ffffff !important;
+  min-height: 100vh;
+}
+
+.chatgpt-voice-page * {
+  border-color: rgba(255, 255, 255, 0.12);
+}
+
+.chatgpt-voice-page .text-white {
+  color: #ffffff !important;
+}
+
+.chatgpt-voice-page .text-slate-400 {
+  color: #94a3b8 !important;
+}
+
+.chatgpt-voice-page .text-slate-300 {
+  color: #cbd5e1 !important;
+}
+
+.chatgpt-voice-page .text-black {
+  color: #000000 !important;
+}
+
+/* Fluid Celestial Cloud Orb matching Juniper / ChatGPT */
+.chatgpt-celestial-orb {
+  position: relative;
+  width: 220px;
+  height: 220px;
+  border-radius: 50%;
+  overflow: hidden;
+  box-shadow: 
+    0 0 50px rgba(56, 189, 248, 0.45),
+    0 0 100px rgba(37, 99, 235, 0.3),
+    inset 0 0 30px rgba(255, 255, 255, 0.4);
+  transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.4s ease;
+  cursor: pointer;
+  background: #000000;
+}
+
+@media (min-width: 640px) {
+  .chatgpt-celestial-orb {
+    width: 260px;
+    height: 260px;
+  }
+}
+
+.chatgpt-celestial-orb:active {
+  transform: scale(0.96);
+}
+
+/* Multi-layer atmospheric gradient inside the orb matching Juniper / ChatGPT */
+.chatgpt-orb-nebula {
+  position: absolute;
+  inset: -20%;
+  background: 
+    radial-gradient(circle at 35% 30%, rgba(255, 255, 255, 0.95) 0%, rgba(255, 255, 255, 0.6) 20%, transparent 45%),
+    radial-gradient(circle at 65% 35%, rgba(125, 211, 252, 0.9) 0%, rgba(56, 189, 248, 0.7) 35%, transparent 60%),
+    radial-gradient(circle at 45% 75%, rgba(37, 99, 235, 0.95) 0%, rgba(29, 78, 216, 0.8) 40%, rgba(30, 58, 138, 0.6) 70%),
+    linear-gradient(135deg, #e0f2fe 0%, #38bdf8 30%, #2563eb 70%, #1e3a8a 100%);
+  filter: blur(14px);
+  animation: orb-drift 14s ease-in-out infinite alternate;
+}
+
+/* Listening State: Pulsating and expanding waves */
+.chatgpt-celestial-orb.is-listening {
+  box-shadow: 
+    0 0 70px rgba(56, 189, 248, 0.6),
+    0 0 130px rgba(37, 99, 235, 0.45),
+    inset 0 0 40px rgba(255, 255, 255, 0.6);
+  animation: orb-breathe 2.4s ease-in-out infinite alternate;
+}
+
+.chatgpt-celestial-orb.is-listening .chatgpt-orb-nebula {
+  animation: orb-drift 6s ease-in-out infinite alternate;
+}
+
+/* Speaking State: Fluid energetic audio ripples */
+.chatgpt-celestial-orb.is-speaking {
+  box-shadow: 
+    0 0 80px rgba(52, 211, 153, 0.6),
+    0 0 140px rgba(14, 165, 233, 0.5),
+    inset 0 0 45px rgba(255, 255, 255, 0.7);
+  animation: orb-speak-pulse 1.2s ease-in-out infinite alternate;
+}
+
+.chatgpt-celestial-orb.is-speaking .chatgpt-orb-nebula {
+  background: 
+    radial-gradient(circle at 35% 30%, rgba(255, 255, 255, 0.95) 0%, rgba(255, 255, 255, 0.6) 20%, transparent 45%),
+    radial-gradient(circle at 65% 35%, rgba(110, 231, 183, 0.9) 0%, rgba(56, 189, 248, 0.7) 35%, transparent 60%),
+    radial-gradient(circle at 45% 75%, rgba(16, 185, 129, 0.95) 0%, rgba(14, 165, 233, 0.8) 40%, rgba(30, 58, 138, 0.6) 70%),
+    linear-gradient(135deg, #d1fae5 0%, #38bdf8 30%, #10b981 70%, #065f46 100%);
+  animation: orb-drift 4s ease-in-out infinite alternate;
+}
+
+/* Processing / Thinking State: Glowing purple-indigo swirl */
+.chatgpt-celestial-orb.is-processing {
+  box-shadow: 
+    0 0 75px rgba(168, 85, 247, 0.65),
+    0 0 130px rgba(99, 102, 241, 0.5),
+    inset 0 0 40px rgba(255, 255, 255, 0.6);
+  animation: orb-breathe 1.5s ease-in-out infinite alternate;
+}
+
+.chatgpt-celestial-orb.is-processing .chatgpt-orb-nebula {
+  background: 
+    radial-gradient(circle at 40% 30%, rgba(255, 255, 255, 0.95) 0%, rgba(216, 180, 254, 0.7) 25%, transparent 50%),
+    radial-gradient(circle at 65% 65%, rgba(168, 85, 247, 0.95) 0%, rgba(129, 140, 248, 0.8) 35%, transparent 60%),
+    radial-gradient(circle at 30% 70%, rgba(79, 70, 229, 0.95) 0%, rgba(59, 130, 246, 0.7) 40%, transparent 70%),
+    linear-gradient(135deg, #f3e8ff 0%, #c084fc 35%, #6366f1 70%, #312e81 100%);
+  filter: blur(12px);
+  animation: orb-spin-think 3.5s linear infinite;
+}
+
+/* Compact Transient Action Notification Badge */
+.compact-action-badge {
+  animation: badge-appear 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes badge-appear {
+  0% {
+    opacity: 0;
+    transform: translateY(10px) scale(0.97);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes orb-spin-think {
+  0% {
+    transform: rotate(0deg) scale(1.1);
+  }
+  100% {
+    transform: rotate(360deg) scale(1.1);
+  }
+}
+
+/* Animations */
+@keyframes orb-drift {
+  0% {
+    transform: rotate(0deg) scale(1.05) translate(0%, 0%);
+  }
+  50% {
+    transform: rotate(180deg) scale(1.15) translate(-4%, 3%);
+  }
+  100% {
+    transform: rotate(360deg) scale(1.05) translate(3%, -3%);
+  }
+}
+
+@keyframes orb-breathe {
+  0% {
+    transform: scale(0.97);
+  }
+  100% {
+    transform: scale(1.04);
+  }
+}
+
+@keyframes orb-speak-pulse {
+  0% {
+    transform: scale(0.96);
+  }
+  50% {
+    transform: scale(1.05);
+  }
+  100% {
+    transform: scale(0.98);
+  }
+}
+
+
