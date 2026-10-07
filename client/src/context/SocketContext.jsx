@@ -68,6 +68,13 @@ export function SocketProvider({ children }) {
       console.warn('[Socket.IO Security Alert] ⚠️ Unauthorized action:', err.message)
     })
 
+    const handleDemoRevocation = (payload) => {
+      console.warn('[Socket.IO] 🛑 Demo presentation session revoked event received:', payload)
+      window.dispatchEvent(new CustomEvent('auth:demo_revoked', { detail: payload }))
+    }
+    socketInstance.on('auth:demo_revoked', handleDemoRevocation)
+    socketInstance.on('demo:revoked', handleDemoRevocation)
+
     setSocket(socketInstance)
 
     return () => {

@@ -9,6 +9,7 @@ import { TeacherPage } from './pages/TeacherPage'
 import { StudentPage } from './pages/StudentPage'
 import { DeviceControlPage } from './pages/DeviceControlPage'
 import { VoiceControlPage } from './pages/VoiceControlPage'
+import { DemoLoginPage } from './pages/DemoLoginPage'
 import { NotFoundPage } from './pages/NotFoundPage'
 
 /**
@@ -90,6 +91,10 @@ function App() {
                   </PublicLayout>
                 }
               />
+
+              {/* Public Temporary Demo QR Login Routes */}
+              <Route path="/demo-login/:token" element={<DemoLoginPage />} />
+              <Route path="/demo-login" element={<DemoLoginPage />} />
 
               {/* Protected route: /admin (SUPER_ADMIN only) */}
               <Route

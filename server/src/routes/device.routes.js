@@ -10,9 +10,23 @@ const {
   simulateDeviceStatus,
 } = require('../controllers/device.controller')
 
-// Restrict all device endpoints to authenticated SUPER_ADMIN and TEACHER users
+// Restrict all device endpoints to authenticated SUPER_ADMIN, TEACHER, and active DEMO students
 router.use(requireAuth)
-router.use(requireRole(ROLES.SUPER_ADMIN, ROLES.TEACHER))
+router.use((req, res, next) => {
+  const isDemoStudent = req.isDemo === true || req.user?.isDemo === true || req.user?.authType === 'DEMO_QR' || req.user?.email === 'demo-student@smartclassroom.edu'
+  if (
+    req.user?.role === ROLES.SUPER_ADMIN ||
+    req.user?.role === ROLES.TEACHER ||
+    isDemoStudent
+  ) {
+    return next()
+  }
+  return res.status(403).json({
+    status: 'error',
+    code: 'FORBIDDEN',
+    message: 'Access restricted to faculty, administrators, and active demo students.',
+  })
+})
 
 /**
  * @route   GET /api/devices

@@ -13,6 +13,7 @@ const { initVoiceStream, closeVoiceStream } = require('./services/voiceStream.se
 const { initDeviceSync } = require('./services/deviceSync.service')
 const healthRoutes = require('./routes/health.routes')
 const authRoutes = require('./routes/auth.routes')
+const demoRoutes = require('./routes/demo.routes')
 const adminRoutes = require('./routes/admin.routes')
 const teacherRoutes = require('./routes/teacher.routes')
 const deviceRoutes = require('./routes/device.routes')
@@ -54,6 +55,7 @@ app.use(express.urlencoded({ extended: true }))
 
 // Routes
 app.use('/api', healthRoutes)
+app.use('/api/auth/demo', demoRoutes)
 app.use('/api/auth', authRoutes)
 app.use('/api/admin', adminRoutes)
 app.use('/api/teacher', teacherRoutes)
@@ -71,6 +73,10 @@ app.get('/', (req, res) => {
     authEndpoints: {
       login: 'POST /api/auth/login',
       me: 'GET /api/auth/me',
+      demoGenerate: 'POST /api/auth/demo/generate (SUPER_ADMIN only)',
+      demoLogin: 'POST /api/auth/demo/login (Public scanned QR token)',
+      demoReset: 'POST /api/auth/demo/reset (SUPER_ADMIN only)',
+      demoStatus: 'GET /api/auth/demo/status (SUPER_ADMIN only)',
     },
     aiEndpoints: {
       test: 'POST /api/ai/test',

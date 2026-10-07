@@ -15,6 +15,7 @@ import {
   BookOpen,
   Volume2,
   Zap,
+  QrCode,
 } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
 
@@ -78,6 +79,22 @@ export function MacDock({ activeTab, onTabChange, onTriggerVoice }) {
           icon: Sparkles,
           gradient: 'from-violet-500 to-fuchsia-600',
           shadow: 'shadow-violet-500/25',
+        },
+        {
+          id: 'ai-voice',
+          label: 'AI Voice',
+          href: '/voice',
+          icon: Mic,
+          gradient: 'from-emerald-500 to-teal-600',
+          shadow: 'shadow-emerald-500/25',
+        },
+        {
+          id: 'demo-login',
+          label: 'Demo QR',
+          href: '/admin#demo-login',
+          icon: QrCode,
+          gradient: 'from-blue-600 to-cyan-500',
+          shadow: 'shadow-blue-500/25',
         },
         {
           id: 'settings',

@@ -99,8 +99,9 @@ async function executeDeviceCommand({
     }
   }
 
-  // 1b. Prevent unauthorized device control: Students are not permitted to operate classroom relays
-  if (user && user.role === 'STUDENT') {
+  // 1b. Prevent unauthorized device control: Standard students are not permitted, but active DEMO students are permitted
+  const isDemoStudent = user && (user.isDemo === true || user.authType === 'DEMO_QR' || user.email === 'demo-student@smartclassroom.edu')
+  if (user && user.role === 'STUDENT' && !isDemoStudent) {
     return {
       success: false,
       delivered: false,
@@ -499,8 +500,9 @@ async function executeDeviceColorCommand({
     }
   }
 
-  // 1. Role Authorization Guard: Students cannot operate classroom hardware
-  if (user && user.role === 'STUDENT') {
+  // 1. Role Authorization Guard: Standard students cannot operate classroom hardware, but DEMO students are permitted
+  const isDemoStudent = user && (user.isDemo === true || user.authType === 'DEMO_QR' || user.email === 'demo-student@smartclassroom.edu')
+  if (user && user.role === 'STUDENT' && !isDemoStudent) {
     return {
       success: false,
       delivered: false,

@@ -13,6 +13,7 @@
     "test:db": "node scripts/test-db.js",
     "test:password": "node scripts/test-password.js",
     "test:auth": "node scripts/test-auth.js",
+    "test:demo": "node scripts/test-demo-auth.js",
     "test:roles": "node scripts/test-roles.js",
     "test:devices": "node scripts/test-devices.js",
     "test:mqtt": "node scripts/test-mqtt.js",

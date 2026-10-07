@@ -54,6 +54,19 @@ async function requireAuth(req, res, next) {
       })
     }
 
+    // 3b. Verify demo generation version for temporary DEMO_QR sessions
+    if (decoded.authType === 'DEMO_QR') {
+      const { getCurrentDemoGeneration } = require('../services/demoAuth.service')
+      const currentGen = await getCurrentDemoGeneration()
+      if (!decoded.demoGeneration || decoded.demoGeneration !== currentGen) {
+        return res.status(401).json({
+          status: 'error',
+          code: 'DEMO_SESSION_REVOKED',
+          message: 'This demo session has been reset or revoked by the administrator. Please scan the latest QR code to continue.',
+        })
+      }
+    }
+
     // 4. Ensure payload contains valid MongoDB user id
     if (!decoded.id || !mongoose.Types.ObjectId.isValid(decoded.id)) {
       return res.status(401).json({
@@ -82,8 +95,12 @@ async function requireAuth(req, res, next) {
       })
     }
 
-    // 7. Attach authenticated user to request
+    // 7. Attach authenticated user and demo metadata to request
     req.user = user
+    req.user.isDemo = decoded.authType === 'DEMO_QR'
+    req.isDemo = decoded.authType === 'DEMO_QR'
+    req.demoGeneration = decoded.demoGeneration || null
+    req.authType = decoded.authType || 'PASSWORD'
     next()
   } catch (err) {
     console.error('Auth Middleware Internal Error:', err)
@@ -160,9 +177,20 @@ async function optionalAuth(req, res, next) {
     try {
       const decoded = verifyToken(token)
       if (decoded && decoded.id && mongoose.Types.ObjectId.isValid(decoded.id)) {
+        if (decoded.authType === 'DEMO_QR') {
+          const { getCurrentDemoGeneration } = require('../services/demoAuth.service')
+          const currentGen = await getCurrentDemoGeneration()
+          if (!decoded.demoGeneration || decoded.demoGeneration !== currentGen) {
+            req.user = null
+            return next()
+          }
+        }
         const user = await User.findById(decoded.id)
         if (user && user.isActive) {
           req.user = user
+          req.isDemo = decoded.authType === 'DEMO_QR'
+          req.demoGeneration = decoded.demoGeneration || null
+          req.authType = decoded.authType || 'PASSWORD'
         }
       }
     } catch {

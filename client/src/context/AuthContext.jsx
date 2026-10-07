@@ -86,13 +86,43 @@ export function AuthProvider({ children }) {
     }
   }
 
+  // Set session directly when logging in via temporary scanned QR token
+  const loginWithToken = useCallback((receivedToken, receivedUser) => {
+    tokenStorage.set(receivedToken)
+    setToken(receivedToken)
+    setUser(receivedUser)
+    setAuthError(null)
+    setIsLoading(false)
+  }, [])
+
+  // Listen for real-time demo session revocation events
+  const [demoRevoked, setDemoRevoked] = useState(false)
+
+  useEffect(() => {
+    const handleDemoRevoked = () => {
+      if (user?.isDemo || user?.authType === 'DEMO_QR') {
+        console.warn('[AuthContext] ⚠️ Active demo session revoked by Super Admin reset.')
+        setDemoRevoked(true)
+        // Give grace period for soft exit animation before clearing session
+        setTimeout(() => {
+          tokenStorage.clear()
+        }, 8000)
+      }
+    }
+
+    window.addEventListener('auth:demo_revoked', handleDemoRevoked)
+    return () => window.removeEventListener('auth:demo_revoked', handleDemoRevoked)
+  }, [user])
+
   const value = {
     user,
     token,
     isAuthenticated: !!user && !!token,
     isLoading,
     authError,
+    demoRevoked,
     login,
+    loginWithToken,
     logout,
     clearError,
   }

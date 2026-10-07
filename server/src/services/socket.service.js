@@ -43,7 +43,7 @@ function initSocket(httpServer) {
 
   // 1. Handshake Authentication Middleware
   // Protects the socket gateway without bypassing JWT verification or exposing MQTT credentials
-  io.use((socket, next) => {
+  io.use(async (socket, next) => {
     try {
       const rawToken =
         socket.handshake.auth?.token ||
@@ -54,6 +54,17 @@ function initSocket(httpServer) {
         const token = rawToken.startsWith('Bearer ') ? rawToken.slice(7).trim() : rawToken.trim()
         try {
           const decoded = jwt.verify(token, env.JWT_SECRET)
+          if (decoded.authType === 'DEMO_QR') {
+            const { getCurrentDemoGeneration } = require('./demoAuth.service')
+            const currentGen = await getCurrentDemoGeneration()
+            if (decoded.demoGeneration !== currentGen) {
+              console.warn(
+                `[Socket.IO] ⚠️ Rejected stale demo session socket connection (${socket.id}) [Gen ${decoded.demoGeneration} !== current ${currentGen}]`
+              )
+              return next(new Error('DEMO_SESSION_REVOKED'))
+            }
+            socket.isDemo = true
+          }
           socket.user = decoded
           console.log(`[Socket.IO] 🔐 Authenticated client connection (${socket.id}) for user: ${decoded.email || decoded.id} [${decoded.role || 'USER'}]`)
         } catch (jwtErr) {

@@ -22,11 +22,13 @@ import {
   Fan,
   Projector,
   Layers,
+  QrCode,
 } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import { useSocket, useSocketEvent } from '../context/SocketContext'
 import { testProtectedRoute } from '../services/auth.service'
 import { DashboardLayout } from '../components/layout'
+import { DemoLoginSection } from '../components/admin/DemoLoginSection'
 import {
   Button,
   Badge,
@@ -57,10 +59,10 @@ export function AdminPage() {
     onClick: () => navigate('/voice'),
   })
 
-  // Navigation tab state synced with URL hash (#overview, #teachers, #classes, #devices, #ai-system, #settings)
+  // Navigation tab state synced with URL hash (#overview, #teachers, #classes, #devices, #ai-system, #demo-login, #settings)
   const getInitialTab = () => {
     const hash = location.hash.replace('#', '')
-    const validTabs = ['overview', 'teachers', 'classes', 'devices', 'ai-system', 'settings']
+    const validTabs = ['overview', 'teachers', 'classes', 'devices', 'ai-system', 'demo-login', 'settings']
     return validTabs.includes(hash) ? hash : 'overview'
   }
 
@@ -632,6 +634,15 @@ export function AdminPage() {
                 AI Voice Simulator
               </Button>
               <Button
+                variant="primary"
+                size="sm"
+                leftIcon={<QrCode className="w-3.5 h-3.5 text-blue-200" />}
+                onClick={() => handleTabChange('demo-login')}
+                className="bg-gradient-to-r from-blue-600 via-indigo-600 to-cyan-600 hover:from-blue-500 hover:to-cyan-500 shadow-md shadow-blue-500/20 text-white font-semibold rounded-xl h-8 px-3 text-xs"
+              >
+                Demo QR Login
+              </Button>
+              <Button
                 variant="outline"
                 size="sm"
                 leftIcon={<Sliders className="w-3.5 h-3.5" />}
@@ -1030,6 +1041,29 @@ export function AdminPage() {
                       </div>
                     )}
                   </CardContent>
+                </Card>
+
+                {/* Temporary QR Demo Access Bento Card */}
+                <Card className="border-indigo-100 bg-gradient-to-br from-white via-indigo-50/20 to-purple-50/20 shadow-xs">
+                  <CardHeader>
+                    <div>
+                      <CardTitle className="flex items-center gap-2">
+                        <QrCode className="w-4 h-4 text-indigo-500" />
+                        <span>Temporary QR Demo Access</span>
+                      </CardTitle>
+                      <CardDescription>
+                        Generate or display live presentation QR credentials for guest students.
+                      </CardDescription>
+                    </div>
+                    <Button
+                      variant="primary"
+                      size="sm"
+                      onClick={() => handleTabChange('demo-login')}
+                      className="bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-xl h-8 px-3 text-xs shadow-sm font-semibold"
+                    >
+                      Open Demo QR
+                    </Button>
+                  </CardHeader>
                 </Card>
 
                 {/* Backend Admin Route Security Test */}
@@ -1846,6 +1880,14 @@ export function AdminPage() {
               </CardContent>
             </Card>
           </div>
+        )}
+
+        {/* 7. DEMO QR LOGIN MANAGEMENT TAB */}
+        {activeTab === 'demo-login' && (
+          <DemoLoginSection
+            token={token}
+            onNotify={(alert) => setAdminAlert(alert)}
+          />
         )}
 
         {/* Modal for Informational Actions / Settings */}

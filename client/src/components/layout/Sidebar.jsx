@@ -13,6 +13,9 @@ import {
   ChevronRight,
   ShieldAlert,
   Sparkles,
+  QrCode,
+  Zap,
+  GraduationCap,
   X,
 } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
@@ -43,7 +46,7 @@ export function Sidebar({
 
   const isSuperAdmin = user?.role === 'SUPER_ADMIN'
 
-  // Navigation items matching specification
+  // Navigation items matching specification - Full Super Admin Access
   const navItems = isSuperAdmin
     ? [
         {
@@ -51,6 +54,20 @@ export function Sidebar({
           label: 'Overview',
           href: '/admin#overview',
           icon: <LayoutDashboard className="w-4 h-4" />,
+        },
+        {
+          id: 'device-control',
+          label: 'Hardware Control',
+          href: '/admin/device-control',
+          icon: <Zap className="w-4 h-4" />,
+          tag: 'Live IoT',
+        },
+        {
+          id: 'voice-control',
+          label: 'AI Voice Assistant',
+          href: '/voice',
+          icon: <Mic className="w-4 h-4" />,
+          tag: 'Real-Time',
         },
         {
           id: 'teachers',
@@ -72,6 +89,27 @@ export function Sidebar({
           href: '/admin#devices',
           icon: <Cpu className="w-4 h-4" />,
           tag: '24 IoT',
+        },
+        {
+          id: 'teacher-view',
+          label: 'Teacher Portal',
+          href: '/teacher',
+          icon: <School className="w-4 h-4" />,
+          tag: 'Full Access',
+        },
+        {
+          id: 'student-view',
+          label: 'Student Portal',
+          href: '/student',
+          icon: <GraduationCap className="w-4 h-4" />,
+          tag: 'Full Access',
+        },
+        {
+          id: 'demo-login',
+          label: 'Demo QR Login',
+          href: '/admin#demo-login',
+          icon: <QrCode className="w-4 h-4" />,
+          tag: 'QR Access',
         },
         {
           id: 'ai-system',

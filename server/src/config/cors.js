@@ -57,6 +57,14 @@ function validateOrigin(origin, callback) {
     return callback(null, true)
   }
 
+  // Always permit production Vercel deployment and project preview deployments
+  if (
+    normalized === 'https://smart-classroom-2763.vercel.app' ||
+    /^https:\/\/smart-classroom-2763(-[a-z0-9-]+)?\.vercel\.app$/.test(normalized)
+  ) {
+    return callback(null, true)
+  }
+
   // In development, permit localhost/127.0.0.1 on any port (e.g. Vite dynamic ports 5174, 5175)
   if (env.NODE_ENV === 'development') {
     if (/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(normalized)) {

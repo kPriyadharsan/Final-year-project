@@ -175,6 +175,22 @@ function validateAndLoadEnv() {
   const mqttUsername = process.env.MQTT_USERNAME || ''
   const mqttPassword = process.env.MQTT_PASSWORD || ''
 
+  // 10. Demo QR Authentication Configuration
+  const rawDemoExpiry = process.env.DEMO_QR_EXPIRY_MINUTES || '120'
+  let parsedDemoExpiry = parseInt(rawDemoExpiry, 10)
+  if (isNaN(parsedDemoExpiry) || parsedDemoExpiry < 1) {
+    warnings.push({
+      key: 'DEMO_QR_EXPIRY_MINUTES',
+      message: `Invalid demo QR expiry duration "${rawDemoExpiry}". Defaulting to 120 minutes.`,
+    })
+    parsedDemoExpiry = 120
+  }
+
+  const demoBaseUrl = (
+    process.env.DEMO_QR_BASE_URL ||
+    (clientUrl ? clientUrl.split(',')[0].trim() : 'http://localhost:5173')
+  ).replace(/\/+$/, '')
+
   // If fatal validation errors exist, print an informative formatted banner and halt process
   if (errors.length > 0) {
     console.error('\n' + '='.repeat(78))
@@ -222,6 +238,8 @@ function validateAndLoadEnv() {
     MQTT_CLIENT_ID: mqttClientId,
     MQTT_USERNAME: mqttUsername,
     MQTT_PASSWORD: mqttPassword,
+    DEMO_QR_EXPIRY_MINUTES: parsedDemoExpiry,
+    DEMO_QR_BASE_URL: demoBaseUrl,
     // Utilities
     maskSecret,
     maskUrlCredentials,
