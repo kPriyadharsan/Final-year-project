@@ -90,7 +90,7 @@ async function getOrCreateDemoStudent() {
  * @param {Object} adminUser - Authenticated Super Admin user object
  * @returns {Promise<Object>} QR credentials (does NOT include tokenHash)
  */
-async function generateDemoCredential(adminUser) {
+async function generateDemoCredential(adminUser, options = {}) {
   const currentGen = await getCurrentDemoGeneration()
 
   // Generate cryptographically secure 256-bit random token
@@ -125,8 +125,8 @@ async function generateDemoCredential(adminUser) {
     { upsert: true }
   )
 
-  const baseUrl = env.DEMO_QR_BASE_URL || 'http://localhost:5173'
-  const qrUrl = `${baseUrl.replace(/\/+$/, '')}/demo-login/${rawToken}`
+  const baseUrl = (options.baseUrl || env.DEMO_QR_BASE_URL || 'https://smart-classroom-2763.vercel.app').replace(/\/+$/, '')
+  const qrUrl = `${baseUrl}/demo-login/${rawToken}`
 
   // Cache in memory for immediate display on status check
   currentActiveDemoToken = {
@@ -278,7 +278,7 @@ async function loginWithDemoToken(rawToken, meta = {}) {
  * @param {Object} adminUser - Authenticated Super Admin user object
  * @returns {Promise<Object>} Brand new QR credential
  */
-async function resetDemoSessions(adminUser) {
+async function resetDemoSessions(adminUser, options = {}) {
   const currentGen = await getCurrentDemoGeneration()
   const nextGen = currentGen + 1
 
@@ -360,8 +360,8 @@ async function resetDemoSessions(adminUser) {
     `[DemoAuth] 🔄 Super Admin (${adminUser.email}) performed global demo reset: Generation bumped from ${currentGen} to ${nextGen}. All active demo sessions revoked.`
   )
 
-  const baseUrl = env.DEMO_QR_BASE_URL || 'http://localhost:5173'
-  const qrUrl = `${baseUrl.replace(/\/+$/, '')}/demo-login/${rawToken}`
+  const baseUrl = (options.baseUrl || env.DEMO_QR_BASE_URL || 'https://smart-classroom-2763.vercel.app').replace(/\/+$/, '')
+  const qrUrl = `${baseUrl}/demo-login/${rawToken}`
 
   // Cache in memory for immediate display on status check
   currentActiveDemoToken = {
@@ -388,9 +388,10 @@ async function resetDemoSessions(adminUser) {
 /**
  * Retrieves current demo management telemetry and active QR status.
  *
+ * @param {Object} [options] - Optional context options (baseUrl)
  * @returns {Promise<Object>}
  */
-async function getDemoStatus() {
+async function getDemoStatus(options = {}) {
   const currentGen = await getCurrentDemoGeneration()
 
   const activeSession = await DemoSession.findOne({
@@ -410,15 +411,25 @@ async function getDemoStatus() {
     currentActiveDemoToken.generation === currentGen &&
     currentActiveDemoToken.expiresAt > new Date()
 
+  let resolvedQrUrl = hasCachedToken ? currentActiveDemoToken.qrUrl : null
+  if (resolvedQrUrl && options.baseUrl) {
+    try {
+      const parsed = new URL(resolvedQrUrl)
+      resolvedQrUrl = `${options.baseUrl.replace(/\/+$/, '')}${parsed.pathname}${parsed.search}`
+    } catch {
+      // ignore
+    }
+  }
+
   return {
     generation: currentGen,
     hasActiveQr: !!activeSession && !isExpired && !!hasCachedToken,
-    qrUrl: hasCachedToken ? currentActiveDemoToken.qrUrl : null,
+    qrUrl: resolvedQrUrl,
     session:
       activeSession && !isExpired
         ? {
             id: activeSession._id,
-            qrUrl: hasCachedToken ? currentActiveDemoToken.qrUrl : null,
+            qrUrl: resolvedQrUrl,
             tokenPrefix: `${activeSession.tokenPrefix}...`,
             generation: activeSession.generation,
             expiresAt: activeSession.expiresAt,

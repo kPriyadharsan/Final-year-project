@@ -151,9 +151,8 @@ export function DemoLoginSection({ token, onNotify }) {
 
   // Copy current QR URL to clipboard
   const handleCopyLink = () => {
-    const url = demoState?.qrUrl || demoState?.session?.qrUrl
-    if (!url) return
-    navigator.clipboard.writeText(url)
+    if (!activeQrUrl) return
+    navigator.clipboard.writeText(activeQrUrl)
     setCopied(true)
     setTimeout(() => setCopied(false), 2000)
     onNotify?.({
@@ -204,7 +203,28 @@ export function DemoLoginSection({ token, onNotify }) {
     }
   }, [demoState?.session?.expiresAt, now])
 
-  const activeQrUrl = demoState?.qrUrl || demoState?.session?.qrUrl
+  // Dynamically resolve active QR URL: ensures that when browsing on a live hosted site (like Vercel),
+  // the QR code URL and links dynamically use the live domain so mobile phone camera scans never hit localhost!
+  const activeQrUrl = useMemo(() => {
+    const raw = demoState?.qrUrl || demoState?.session?.qrUrl
+    if (!raw) return ''
+    if (typeof window === 'undefined') return raw
+    try {
+      const currentOrigin = window.location.origin
+      const parsed = new URL(raw)
+      // If we are browsing on a hosted domain (e.g. vercel.app or any domain other than localhost)
+      // but the backend returned a localhost URL, replace origin with current window.location.origin:
+      if (!window.location.hostname.includes('localhost') && !window.location.hostname.includes('127.0.0.1')) {
+        if (parsed.hostname.includes('localhost') || parsed.hostname.includes('127.0.0.1')) {
+          return `${currentOrigin}${parsed.pathname}${parsed.search}`
+        }
+      }
+      return raw
+    } catch {
+      return raw
+    }
+  }, [demoState?.qrUrl, demoState?.session?.qrUrl])
+
   const hasValidActiveQr = !!activeQrUrl && !isExpired && demoState?.session?.isActive !== false
   const currentGen = demoState?.generation || demoState?.session?.generation || 1
 

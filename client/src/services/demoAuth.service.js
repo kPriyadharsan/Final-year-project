@@ -4,10 +4,12 @@ import { API_BASE_URL } from '../config/api'
  * Helper to construct authorized request headers
  */
 function getAuthHeaders(token) {
+  const origin = typeof window !== 'undefined' ? window.location.origin : ''
   return {
     'Content-Type': 'application/json',
     Accept: 'application/json',
     Authorization: token ? `Bearer ${token}` : '',
+    ...(origin ? { 'x-client-origin': origin } : {}),
   }
 }
 
@@ -17,7 +19,9 @@ function getAuthHeaders(token) {
  * @returns {Promise<Object>}
  */
 export async function fetchDemoStatus(token) {
-  const response = await fetch(`${API_BASE_URL}/api/auth/demo/status`, {
+  const origin = typeof window !== 'undefined' ? window.location.origin : ''
+  const query = origin ? `?baseUrl=${encodeURIComponent(origin)}` : ''
+  const response = await fetch(`${API_BASE_URL}/api/auth/demo/status${query}`, {
     method: 'GET',
     headers: getAuthHeaders(token),
   })
@@ -39,9 +43,11 @@ export async function fetchDemoStatus(token) {
  * @returns {Promise<Object>}
  */
 export async function generateDemoQr(token) {
+  const origin = typeof window !== 'undefined' ? window.location.origin : ''
   const response = await fetch(`${API_BASE_URL}/api/auth/demo/generate`, {
     method: 'POST',
     headers: getAuthHeaders(token),
+    body: JSON.stringify({ baseUrl: origin }),
   })
 
   const data = await response.json()
@@ -62,9 +68,11 @@ export async function generateDemoQr(token) {
  * @returns {Promise<Object>}
  */
 export async function resetDemoSessions(token) {
+  const origin = typeof window !== 'undefined' ? window.location.origin : ''
   const response = await fetch(`${API_BASE_URL}/api/auth/demo/reset`, {
     method: 'POST',
     headers: getAuthHeaders(token),
+    body: JSON.stringify({ baseUrl: origin }),
   })
 
   const data = await response.json()

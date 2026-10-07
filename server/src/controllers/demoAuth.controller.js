@@ -1,13 +1,61 @@
 const demoAuthService = require('../services/demoAuth.service')
 
 /**
+ * Extracts the client application base URL from headers or request payload
+ * Ensures QR codes generated from Vercel or any live host always point to the live domain
+ */
+function extractClientBaseUrl(req) {
+  // 1. Explicit body or query parameter
+  if (req.body?.baseUrl && typeof req.body.baseUrl === 'string' && req.body.baseUrl.trim() !== '') {
+    return req.body.baseUrl.trim().replace(/\/+$/, '')
+  }
+  if (req.query?.baseUrl && typeof req.query.baseUrl === 'string' && req.query.baseUrl.trim() !== '') {
+    return req.query.baseUrl.trim().replace(/\/+$/, '')
+  }
+
+  // 2. Custom origin header
+  const customOrigin = req.headers['x-client-origin'] || req.headers['x-forwarded-host']
+  if (req.headers['x-client-origin'] && typeof req.headers['x-client-origin'] === 'string') {
+    return req.headers['x-client-origin'].trim().replace(/\/+$/, '')
+  }
+
+  // 3. Request Origin (e.g. https://smart-classroom-2763.vercel.app)
+  if (req.headers.origin && typeof req.headers.origin === 'string') {
+    const origin = req.headers.origin.trim().replace(/\/+$/, '')
+    if (origin && !origin.includes('localhost') && !origin.includes('127.0.0.1')) {
+      return origin
+    }
+  }
+
+  // 4. Request Referer (e.g. https://smart-classroom-2763.vercel.app/admin)
+  if (req.headers.referer && typeof req.headers.referer === 'string') {
+    try {
+      const u = new URL(req.headers.referer)
+      if (u.origin && !u.origin.includes('localhost') && !u.origin.includes('127.0.0.1')) {
+        return u.origin
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  // 5. If origin is localhost or not provided, return undefined to use default
+  if (req.headers.origin && typeof req.headers.origin === 'string') {
+    return req.headers.origin.trim().replace(/\/+$/, '')
+  }
+
+  return null
+}
+
+/**
  * @route   POST /api/auth/demo/generate
  * @desc    Generate a new temporary QR-based demo credential
  * @access  Private (SUPER_ADMIN only)
  */
 async function generateDemoQr(req, res) {
   try {
-    const data = await demoAuthService.generateDemoCredential(req.user)
+    const baseUrl = extractClientBaseUrl(req)
+    const data = await demoAuthService.generateDemoCredential(req.user, { baseUrl })
     return res.status(200).json({
       status: 'success',
       message: 'Demo QR credential generated successfully.',
@@ -66,7 +114,8 @@ async function loginDemo(req, res) {
  */
 async function resetDemo(req, res) {
   try {
-    const data = await demoAuthService.resetDemoSessions(req.user)
+    const baseUrl = extractClientBaseUrl(req)
+    const data = await demoAuthService.resetDemoSessions(req.user, { baseUrl })
     return res.status(200).json({
       status: 'success',
       message: 'Demo sessions reset successfully. All previous demo sessions and QR tokens are now invalidated.',
@@ -89,7 +138,8 @@ async function resetDemo(req, res) {
  */
 async function getDemoStatus(req, res) {
   try {
-    const data = await demoAuthService.getDemoStatus()
+    const baseUrl = extractClientBaseUrl(req)
+    const data = await demoAuthService.getDemoStatus({ baseUrl })
     return res.status(200).json({
       status: 'success',
       data,
