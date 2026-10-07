@@ -418,5 +418,39 @@ input::placeholder, textarea::placeholder {
   scrollbar-width: none;  /* Firefox */
 }
 
+/* Mobile Slide-Up Sheet Animation */
+@keyframes slideUp {
+  0% {
+    transform: translateY(100%);
+    opacity: 0.8;
+  }
+  100% {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
 
+.animate-slideUp {
+  animation: slideUp 0.28s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
 
+/* Mobile Touch Tap Highlight Removal */
+* {
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Mobile dynamic app height utility */
+.app-screen-height {
+  height: 100vh;
+  height: calc(var(--vh, 1vh) * 100);
+  min-height: calc(var(--vh, 1vh) * 100);
+}
+
+/* Safe area padding utilities */
+.safe-padding-bottom {
+  padding-bottom: max(1rem, env(safe-area-inset-bottom));
+}
+
+.safe-padding-top {
+  padding-top: max(1rem, env(safe-area-inset-top));
+}

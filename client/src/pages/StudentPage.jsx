@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { API_BASE_URL } from '../config/api'
 import {
@@ -11,10 +12,15 @@ import {
   BookOpen,
   Sparkles,
   RefreshCw,
+  Mic,
 } from 'lucide-react'
+import { useMobileLayout, useHaptics } from '../hooks'
 
 export function StudentPage() {
+  const navigate = useNavigate()
   const { user, token, logout } = useAuth()
+  const { isMobile } = useMobileLayout()
+  const { triggerHaptic } = useHaptics()
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
@@ -108,6 +114,19 @@ export function StudentPage() {
             <p className="text-xs sm:text-sm text-slate-600 leading-relaxed">
               Your student account allows you to view active smart classroom facilities and schedule information. Device controls and administrative features are restricted to authorized Faculty and Super Administrators.
             </p>
+            <div className="mt-4 flex items-center gap-2.5 flex-wrap">
+              <button
+                type="button"
+                onClick={() => {
+                  triggerHaptic('medium')
+                  navigate('/voice')
+                }}
+                className="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-gradient-to-r from-purple-600 via-indigo-600 to-pink-500 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-md shadow-indigo-500/20 active:scale-95 cursor-pointer"
+              >
+                <Mic className="w-4 h-4 animate-pulse" />
+                <span>Launch AI Voice Assistant</span>
+              </button>
+            </div>
           </div>
         </div>
 

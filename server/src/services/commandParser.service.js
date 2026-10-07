@@ -295,6 +295,38 @@ function parseWithRuleFallback(text) {
     }
   }
 
+  // 1b. Fast-Path: 50+ Standard RGB Color Commands (Zero-latency local execution without calling AI!)
+  const { resolveRgbColor, COLOR_PALETTE } = require('../constants/deviceCapabilities')
+  const matchedColorObj = resolveRgbColor(lower)
+  const isColorPhrase = /\b(color|colour|glow|light|projector|rgb|set|change|make)\b/i.test(lower) || COLOR_PALETTE[lower.trim()]
+
+  if (matchedColorObj && isColorPhrase) {
+    // Parse optional brightness or percentage, e.g. "purple color like 100", "blue at 50"
+    const brightnessMatch = lower.match(/\b(?:like|at|to|brightness|value|level)?\s*(\d{1,3})\s*%?\b/i)
+    let finalColor = { ...matchedColorObj }
+
+    if (brightnessMatch && brightnessMatch[1]) {
+      const val = parseInt(brightnessMatch[1], 10)
+      if (!isNaN(val) && val > 0 && val <= 100) {
+        const factor = val / 100.0
+        finalColor.r = Math.min(255, Math.max(0, Math.round(matchedColorObj.r * factor)))
+        finalColor.g = Math.min(255, Math.max(0, Math.round(matchedColorObj.g * factor)))
+        finalColor.b = Math.min(255, Math.max(0, Math.round(matchedColorObj.b * factor)))
+      }
+    }
+
+    return {
+      intent: 'DEVICE_CONTROL',
+      device: 'projector',
+      action: 'SET_COLOR',
+      color: finalColor,
+      confidence: 0.98,
+      rawInput: text,
+      isValid: true,
+      source: 'local_color_engine',
+    }
+  }
+
   // Check other classroom intents
   if (/\b(note|notes|summary|summarize|lecture\s+notes)\b/i.test(lower)) {
     return {

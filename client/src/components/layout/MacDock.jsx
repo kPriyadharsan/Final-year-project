@@ -156,7 +156,7 @@ export function MacDock({ activeTab, onTabChange, onTriggerVoice }) {
   return (
     <nav
       aria-label="Liquid Glass Dock"
-      className="fixed bottom-3 sm:bottom-6 left-1/2 -translate-x-1/2 z-40 pointer-events-auto max-w-[calc(100vw-1rem)]"
+      className="hidden md:block fixed bottom-3 sm:bottom-6 left-1/2 -translate-x-1/2 z-40 pointer-events-auto max-w-[calc(100vw-1rem)]"
     >
       {/* Liquid Glass Dock Outer Container */}
       <div className="relative px-2 py-1.5 sm:px-4 sm:py-2.5 rounded-[22px] sm:rounded-full bg-white/75 backdrop-blur-3xl border border-white/80 shadow-[0_20px_50px_rgba(0,0,0,0.12),0_1px_1px_rgba(255,255,255,0.9)_inset,0_0_0_1px_rgba(0,0,0,0.03)] flex items-center gap-1 sm:gap-2.5 transition-all duration-300 max-w-full overflow-x-auto scrollbar-none">

@@ -537,6 +537,7 @@ void setup() {
 
   // 5. Begin Wi-Fi Connection
   WiFi.mode(WIFI_STA);
+  WiFi.setSleep(false); // Ultra low-latency: Keep 2.4 GHz radio active continuously (0ms DTIM wake delay)
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
   lastWifiRetryMs = millis();
 }

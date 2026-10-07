@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { Sparkles, Lock, Mail, Eye, EyeOff, ShieldCheck } from 'lucide-react'
+import { useMobileLayout, useHaptics } from '../hooks'
 
 const TEST_ACCOUNTS = {
   admin: {
@@ -31,6 +32,8 @@ export function LoginPage() {
   const { login, authError, clearError, isLoading, isAuthenticated, user } = useAuth()
   const navigate = useNavigate()
   const location = useLocation()
+  const { isMobile } = useMobileLayout()
+  const { triggerHaptic } = useHaptics()
 
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -87,6 +90,7 @@ export function LoginPage() {
 
   // Test account shortcut selector (populates fields, DOES NOT auto-submit)
   const handleSelectTestAccount = (roleKey) => {
+    triggerHaptic('selection')
     const account = TEST_ACCOUNTS[roleKey]
     if (!account) return
 
@@ -160,7 +164,7 @@ export function LoginPage() {
                   if (fieldErrors.email) setFieldErrors({ ...fieldErrors, email: null })
                 }}
                 disabled={isLoading}
-                className={`w-full pl-10 pr-3.5 py-2.5 sm:py-3 rounded-2xl bg-slate-100/80 hover:bg-slate-100 focus:bg-white border text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-4 focus:ring-blue-500/10 transition-all font-sans ${
+                className={`w-full pl-10 pr-3.5 py-3 sm:py-3 rounded-2xl bg-slate-100/80 hover:bg-slate-100 focus:bg-white border text-base sm:text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-4 focus:ring-blue-500/10 transition-all font-sans ${
                   fieldErrors.email
                     ? 'border-rose-400 focus:border-rose-500'
                     : 'border-slate-200/80 focus:border-blue-500'
@@ -195,7 +199,7 @@ export function LoginPage() {
                   if (fieldErrors.password) setFieldErrors({ ...fieldErrors, password: null })
                 }}
                 disabled={isLoading}
-                className={`w-full pl-10 pr-10 py-2.5 sm:py-3 rounded-2xl bg-slate-100/80 hover:bg-slate-100 focus:bg-white border text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-4 focus:ring-blue-500/10 transition-all font-sans ${
+                className={`w-full pl-10 pr-10 py-3 sm:py-3 rounded-2xl bg-slate-100/80 hover:bg-slate-100 focus:bg-white border text-base sm:text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-4 focus:ring-blue-500/10 transition-all font-sans ${
                   fieldErrors.password
                     ? 'border-rose-400 focus:border-rose-500'
                     : 'border-slate-200/80 focus:border-blue-500'
@@ -215,11 +219,11 @@ export function LoginPage() {
             )}
           </div>
 
-          {/* Submit Button */}
+          {/* Submit Button: Centered with 48px height on mobile */}
           <button
             type="submit"
             disabled={isLoading}
-            className="w-full mt-3 py-3 px-5 rounded-2xl bg-[#0071e3] hover:bg-[#0077ed] active:bg-[#0062c4] text-white font-semibold text-sm transition-all duration-150 shadow-md shadow-blue-500/25 active:scale-[0.98] cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+            className="w-full mt-3 min-h-[48px] py-3 px-5 rounded-2xl bg-[#0071e3] hover:bg-[#0077ed] active:bg-[#0062c4] text-white font-bold text-sm transition-all duration-150 shadow-md shadow-blue-500/25 active:scale-[0.98] cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
           >
             {isLoading ? (
               <>

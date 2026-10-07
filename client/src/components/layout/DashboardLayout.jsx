@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { TopNav } from './TopNav'
 import { MacDock } from './MacDock'
 import { Sidebar } from './Sidebar'
+import { MobileBottomBar } from './MobileBottomBar'
 
 export function DashboardLayout({
   children,
@@ -40,15 +41,24 @@ export function DashboardLayout({
         onToggleMobileMenu={() => setIsMobileMenuOpen((prev) => !prev)}
       />
 
-      {/* Full-Width Spacious Main Viewport with Generous Bottom Clearance for Dock */}
-      <main className="flex-1 w-full max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 pt-4 sm:pt-8 pb-44 sm:pb-56 space-y-6">
+      {/* Full-Width Spacious Main Viewport with Optimized Mobile Padding */}
+      <main className="flex-1 w-full max-w-7xl mx-auto px-2.5 sm:px-6 lg:px-8 pt-3 sm:pt-8 pb-28 sm:pb-36 md:pb-52 space-y-4 sm:space-y-6">
         {children}
-        {/* Bottom clearance spacer ensuring no card is ever obscured by the floating Mac Dock */}
-        <div className="h-12 w-full pointer-events-none" aria-hidden="true" />
+        {/* Bottom clearance spacer ensuring no card is obscured */}
+        <div className="h-8 md:h-12 w-full pointer-events-none" aria-hidden="true" />
       </main>
 
-      {/* Bottom Liquid Glass macOS Dock */}
-      <MacDock
+      {/* Desktop macOS Liquid Glass Dock (Hidden on mobile) */}
+      <div className="hidden md:block">
+        <MacDock
+          activeTab={activeTab}
+          onTabChange={onTabChange}
+          onTriggerVoice={onTriggerVoice}
+        />
+      </div>
+
+      {/* Mobile Ergonomic Bottom Bar with Elevated Center Voice Button (Mobile only) */}
+      <MobileBottomBar
         activeTab={activeTab}
         onTabChange={onTabChange}
         onTriggerVoice={onTriggerVoice}

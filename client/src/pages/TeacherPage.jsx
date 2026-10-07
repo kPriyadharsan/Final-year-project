@@ -48,11 +48,20 @@ import {
   CircularColorPicker,
 } from '../components/ui'
 import { API_BASE_URL } from '../config/api'
+import { useMobileLayout, useHaptics, useCenterAction } from '../hooks'
 
 export function TeacherPage() {
   const navigate = useNavigate()
   const { user, token } = useAuth()
   const { socket, isConnected, transport, joinClassroom, leaveClassroom } = useSocket()
+  const { isMobile } = useMobileLayout()
+  const { triggerHaptic } = useHaptics()
+  useCenterAction({
+    id: 'voice',
+    label: 'Voice',
+    ariaLabel: 'AI Voice Control',
+    onClick: () => navigate('/voice'),
+  })
 
   const apiBaseUrl = API_BASE_URL
 
@@ -948,34 +957,45 @@ export function TeacherPage() {
               </p>
             </div>
 
-            {/* Master Batch & Socket Status */}
-            <div className="flex items-center gap-2 flex-wrap">
+            {/* Master Batch & Socket Status: Responsive centered layout on mobile */}
+            <div className="flex items-center justify-between sm:justify-end gap-2 w-full sm:w-auto flex-wrap sm:flex-nowrap pt-2 sm:pt-0 border-t sm:border-t-0 border-slate-100">
               <Badge
                 variant={isConnected ? 'success' : 'warning'}
                 dot
                 pulse={isConnected}
                 size="sm"
                 title={`Socket.IO Real-Time Engine (${transport})`}
+                className="shrink-0"
               >
                 {isConnected ? 'Socket.IO Live' : 'Connecting...'}
               </Badge>
 
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => handleAllDevices(true)}
-                disabled={devicesLoading || devices.length === 0}
-              >
-                All ON
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => handleAllDevices(false)}
-                disabled={devicesLoading || devices.length === 0}
-              >
-                All OFF
-              </Button>
+              <div className="flex items-center gap-2 flex-1 sm:flex-initial justify-end">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    triggerHaptic('medium')
+                    handleAllDevices(true)
+                  }}
+                  disabled={devicesLoading || devices.length === 0}
+                  className="flex-1 sm:flex-initial h-9 rounded-xl font-bold text-xs"
+                >
+                  All ON
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    triggerHaptic('medium')
+                    handleAllDevices(false)
+                  }}
+                  disabled={devicesLoading || devices.length === 0}
+                  className="flex-1 sm:flex-initial h-9 rounded-xl font-bold text-xs"
+                >
+                  All OFF
+                </Button>
+              </div>
             </div>
           </div>
 
@@ -1082,23 +1102,35 @@ export function TeacherPage() {
                   </div>
 
                   {/* Control Button (ON/OFF Toggle) & Real-time Simulation */}
-                  <div className="pt-2 border-t border-slate-100 flex items-center justify-between gap-3">
-                    <div className="flex items-center gap-1.5">
-                      <span
-                        className={`w-2 h-2 rounded-full ${
-                          device.isOn ? 'bg-emerald-500 animate-pulse' : 'bg-slate-300'
-                        }`}
-                      ></span>
-                      <span className="text-[11px] text-slate-500 font-medium">
-                        Power: {device.isOn ? 'ON' : 'OFF'}
-                      </span>
-                    </div>
+                  <div className="pt-2.5 border-t border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+                    <div className="flex items-center justify-between sm:justify-start gap-1.5">
+                      <div className="flex items-center gap-1.5">
+                        <span
+                          className={`w-2 h-2 rounded-full ${
+                            device.isOn ? 'bg-emerald-500 animate-pulse' : 'bg-slate-300'
+                          }`}
+                        />
+                        <span className="text-[11px] text-slate-500 font-medium">
+                          Power: {device.isOn ? 'ON' : 'OFF'}
+                        </span>
+                      </div>
 
-                    <div className="flex items-center gap-1.5">
                       <Button
                         variant="ghost"
                         size="sm"
-                        className="text-[11px] h-8 px-2 text-slate-500 hover:text-blue-600"
+                        className="text-[10px] h-7 px-2 text-slate-400 hover:text-blue-600 sm:hidden"
+                        title="Simulate incoming MQTT status message"
+                        onClick={() => handleSimulateStatus(device)}
+                      >
+                        Simulate
+                      </Button>
+                    </div>
+
+                    <div className="flex items-center gap-1.5 w-full sm:w-auto">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="text-[11px] h-8 px-2 text-slate-500 hover:text-blue-600 hidden sm:inline-flex"
                         title="Simulate incoming MQTT status message from ESP32"
                         onClick={() => handleSimulateStatus(device)}
                       >
@@ -1108,8 +1140,11 @@ export function TeacherPage() {
                         variant={device.isOn ? 'danger' : 'primary'}
                         size="sm"
                         leftIcon={<Power className="w-3.5 h-3.5" />}
-                        onClick={() => handleToggleDevice(device)}
-                        className="rounded-xl"
+                        onClick={() => {
+                          triggerHaptic('medium')
+                          handleToggleDevice(device)
+                        }}
+                        className="rounded-xl flex-1 sm:flex-initial h-10 sm:h-9 justify-center font-bold text-xs"
                       >
                         {device.isOn ? 'Turn OFF' : 'Turn ON'}
                       </Button>

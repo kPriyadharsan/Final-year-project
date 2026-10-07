@@ -41,12 +41,21 @@ import {
   SiriCard,
 } from '../components/ui'
 import { API_BASE_URL } from '../config/api'
+import { useMobileLayout, useHaptics, useCenterAction } from '../hooks'
 
 export function AdminPage() {
   const { user, token } = useAuth()
   const { isConnected: isSocketConnected } = useSocket()
   const location = useLocation()
   const navigate = useNavigate()
+  const { isMobile } = useMobileLayout()
+  const { triggerHaptic } = useHaptics()
+  useCenterAction({
+    id: 'voice',
+    label: 'Voice',
+    ariaLabel: 'AI Voice Control',
+    onClick: () => navigate('/voice'),
+  })
 
   // Navigation tab state synced with URL hash (#overview, #teachers, #classes, #devices, #ai-system, #settings)
   const getInitialTab = () => {

@@ -1,6 +1,7 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { AuthProvider, useAuth } from './context/AuthContext'
 import { SocketProvider } from './context/SocketContext'
+import { CenterActionProvider } from './hooks'
 import { ProtectedRoute } from './components/ProtectedRoute'
 import { LoginPage } from './components/LoginPage'
 import { AdminPage } from './pages/AdminPage'
@@ -75,88 +76,90 @@ function App() {
     <BrowserRouter>
       <AuthProvider>
         <SocketProvider>
-          <Routes>
-            {/* Root index route: Smart role-based redirect */}
-            <Route path="/" element={<HomeRedirect />} />
+          <CenterActionProvider>
+            <Routes>
+              {/* Root index route: Smart role-based redirect */}
+              <Route path="/" element={<HomeRedirect />} />
 
-            {/* Public route: /login */}
-            <Route
-              path="/login"
-              element={
-                <PublicLayout>
-                  <LoginPage />
-                </PublicLayout>
-              }
-            />
+              {/* Public route: /login */}
+              <Route
+                path="/login"
+                element={
+                  <PublicLayout>
+                    <LoginPage />
+                  </PublicLayout>
+                }
+              />
 
-            {/* Protected route: /admin (SUPER_ADMIN only) */}
-            <Route
-              path="/admin"
-              element={
-                <ProtectedRoute allowedRoles={['SUPER_ADMIN']}>
-                  <AdminPage />
-                </ProtectedRoute>
-              }
-            />
+              {/* Protected route: /admin (SUPER_ADMIN only) */}
+              <Route
+                path="/admin"
+                element={
+                  <ProtectedRoute allowedRoles={['SUPER_ADMIN']}>
+                    <AdminPage />
+                  </ProtectedRoute>
+                }
+              />
 
-            {/* Dedicated Hardware Console: /admin/device-control (SUPER_ADMIN, TEACHER) */}
-            <Route
-              path="/admin/device-control"
-              element={
-                <ProtectedRoute allowedRoles={['SUPER_ADMIN', 'TEACHER']}>
-                  <DeviceControlPage />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/device-control"
-              element={
-                <ProtectedRoute allowedRoles={['SUPER_ADMIN', 'TEACHER']}>
-                  <DeviceControlPage />
-                </ProtectedRoute>
-              }
-            />
+              {/* Dedicated Hardware Console: /admin/device-control (SUPER_ADMIN, TEACHER) */}
+              <Route
+                path="/admin/device-control"
+                element={
+                  <ProtectedRoute allowedRoles={['SUPER_ADMIN', 'TEACHER']}>
+                    <DeviceControlPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/device-control"
+                element={
+                  <ProtectedRoute allowedRoles={['SUPER_ADMIN', 'TEACHER']}>
+                    <DeviceControlPage />
+                  </ProtectedRoute>
+                }
+              />
 
-            {/* Protected route: /teacher (TEACHER only) */}
-            <Route
-              path="/teacher"
-              element={
-                <ProtectedRoute allowedRoles={['TEACHER', 'SUPER_ADMIN']}>
-                  <TeacherPage />
-                </ProtectedRoute>
-              }
-            />
+              {/* Protected route: /teacher (TEACHER only) */}
+              <Route
+                path="/teacher"
+                element={
+                  <ProtectedRoute allowedRoles={['TEACHER', 'SUPER_ADMIN']}>
+                    <TeacherPage />
+                  </ProtectedRoute>
+                }
+              />
 
-            {/* Dedicated Standalone Voice Control (ChatGPT Voice UI) */}
-            <Route
-              path="/voice"
-              element={
-                <ProtectedRoute allowedRoles={['SUPER_ADMIN', 'TEACHER', 'STUDENT']}>
-                  <VoiceControlPage />
-                </ProtectedRoute>
-              }
-            />
+              {/* Dedicated Standalone Voice Control (ChatGPT Voice UI) */}
+              <Route
+                path="/voice"
+                element={
+                  <ProtectedRoute allowedRoles={['SUPER_ADMIN', 'TEACHER', 'STUDENT']}>
+                    <VoiceControlPage />
+                  </ProtectedRoute>
+                }
+              />
 
-            {/* Protected route: /student (STUDENT only) */}
-            <Route
-              path="/student"
-              element={
-                <ProtectedRoute allowedRoles={['STUDENT', 'SUPER_ADMIN']}>
-                  <StudentPage />
-                </ProtectedRoute>
-              }
-            />
+              {/* Protected route: /student (STUDENT only) */}
+              <Route
+                path="/student"
+                element={
+                  <ProtectedRoute allowedRoles={['STUDENT', 'SUPER_ADMIN']}>
+                    <StudentPage />
+                  </ProtectedRoute>
+                }
+              />
 
-            {/* 404 Catch-All Route */}
-            <Route
-              path="*"
-              element={
-                <PublicLayout>
-                  <NotFoundPage />
-                </PublicLayout>
-              }
-            />
-          </Routes>
+              {/* 404 Catch-All Route */}
+              <Route
+                path="*"
+                element={
+                  <PublicLayout>
+                    <NotFoundPage />
+                  </PublicLayout>
+                }
+              />
+            </Routes>
+          </CenterActionProvider>
         </SocketProvider>
       </AuthProvider>
     </BrowserRouter>

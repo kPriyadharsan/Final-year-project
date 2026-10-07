@@ -9,6 +9,7 @@ const { connectDB, closeDB } = require('./config/db')
 const { connectMQTT, disconnectMQTT } = require('./services/mqtt.service')
 const { startEmbeddedBroker, stopEmbeddedBroker } = require('./services/embeddedBroker.service')
 const { initSocket, closeSocket } = require('./services/socket.service')
+const { initVoiceStream, closeVoiceStream } = require('./services/voiceStream.service')
 const { initDeviceSync } = require('./services/deviceSync.service')
 const healthRoutes = require('./routes/health.routes')
 const authRoutes = require('./routes/auth.routes')
@@ -110,6 +111,9 @@ const server = http.createServer(app)
 // Initialize Socket.IO real-time server
 initSocket(server)
 
+// Initialize dedicated Real-Time Voice WebSocket server (/ws/voice)
+initVoiceStream(server)
+
 // Initialize device MQTT-to-database-to-Socket.IO sync
 initDeviceSync()
 
@@ -157,6 +161,9 @@ const handleShutdown = async (signal) => {
 
     // 2. Disconnect Socket.IO clients cleanly
     await closeSocket()
+
+    // 2b. Disconnect VoiceStream WebSocket clients cleanly
+    await closeVoiceStream()
 
     // 3. Disconnect MQTT client cleanly
     await disconnectMQTT()

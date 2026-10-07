@@ -123,6 +123,13 @@ async function executeDeviceCommand({
         deviceId: deviceId.trim().toUpperCase(),
       })
     }
+    if (!device && Object.values(DEVICE_TYPES).includes(deviceId.trim().toUpperCase())) {
+      device = await Device.findOne({
+        type: deviceId.trim().toUpperCase(),
+        isActive: true,
+        ...(classroom ? { classroom: { $regex: new RegExp(`^${classroom.trim()}$`, 'i') } } : {}),
+      })
+    }
   }
 
   // 2b. If no specific deviceId, search by generic type in target classroom
