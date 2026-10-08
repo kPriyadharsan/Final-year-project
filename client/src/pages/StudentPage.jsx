@@ -15,9 +15,7 @@ import {
   Radio,
   CheckCircle2,
   Lock,
-  ArrowRight,
   RefreshCw,
-  Zap,
   Volume2,
   RotateCcw,
   AlertTriangle,
@@ -25,6 +23,7 @@ import {
   Palette,
   Sliders,
   ChevronRight,
+  Maximize2,
 } from 'lucide-react'
 import { useHaptics } from '../hooks'
 import { CircularColorPicker } from '../components/ui/CircularColorPicker'
@@ -37,7 +36,7 @@ export const VOICE_STATES = {
   ERROR: 'error',
 }
 
-// 25+ Rich Fast Colors with zero-latency hardware RGB mapping
+// 25+ Rich Colors with zero-latency hardware RGB mapping
 const FAST_COLORS = {
   green: { name: 'green', hex: '#10B981', r: 16, g: 185, b: 129 },
   'mint green': { name: 'mint green', hex: '#10B981', r: 16, g: 185, b: 129 },
@@ -71,7 +70,7 @@ const CHATGPT_VOICES = [
   { id: 'vale', name: 'Vale', gender: 'female', pitch: 1.1, rate: 1.08 },
 ]
 
-// Preset Mood Lighting Colors for One-Tap Mobile Selection
+// Preset Colors for One-Tap Mobile Selection
 const PRESET_COLORS = [
   { name: 'Mint Green', hex: '#10b981', r: 16, g: 185, b: 129 },
   { name: 'Pure White', hex: '#ffffff', r: 255, g: 255, b: 255 },
@@ -87,7 +86,7 @@ const QUICK_SUGGESTIONS = [
   { label: 'Turn on light', text: 'turn on the lights' },
   { label: 'Turn off fan', text: 'turn off the fan' },
   { label: 'Set projector green', text: 'set projector to green' },
-  { label: 'Change color to blue', text: 'change projector color to blue' },
+  { label: 'Change color blue', text: 'change projector color to blue' },
   { label: 'Turn off projector light', text: 'turn off projector light' },
   { label: 'Everything ON', text: 'turn on everything' },
 ]
@@ -98,13 +97,14 @@ function getOppositeAction(action) {
 
 /**
  * Fast-Path Pattern Matcher:
- * Detects common classroom commands (<1ms) locally without cloud LLM latency
+ * Detects common classroom commands (<1ms) locally without cloud LLM latency.
+ * Supports natural English + Tamil keywords.
  */
 function matchFastCommand(text) {
   if (!text) return null
   const t = text.toLowerCase().trim()
 
-  // 1. RGB Light OFF matching
+  // 1. RGB Light OFF
   if (
     (/\b(projector|rgb|led)\b/i.test(t) &&
       /\b(light|glow|color|led|rgb)\b/i.test(t) &&
@@ -114,7 +114,7 @@ function matchFastCommand(text) {
     return { type: 'RGB_POWER', power: 'OFF' }
   }
 
-  // 2. RGB Color Matching
+  // 2. RGB Color Matching (e.g. "set projector to green", "projector blue", "color red")
   for (const [colorName, colorObj] of Object.entries(FAST_COLORS)) {
     const colorRegex = new RegExp(`\\b${colorName}\\b`, 'i')
     if (colorRegex.test(t)) {
@@ -137,21 +137,25 @@ function matchFastCommand(text) {
   }
 
   // 4. All devices ON / OFF
-  const hasOn = /\b(turn\s+on|switch\s+on|power\s+on|enable|start)\b/i.test(t) || /\b(on)\b/i.test(t)
-  const hasOff = /\b(turn\s+off|switch\s+off|power\s+off|disable|stop|shutdown)\b/i.test(t) || /\b(off)\b/i.test(t)
+  const hasOn =
+    /\b(turn\s+on|switch\s+on|power\s+on|enable|start|இயக்கு|போடு)\b/i.test(t) ||
+    /\b(on)\b/i.test(t)
+  const hasOff =
+    /\b(turn\s+off|switch\s+off|power\s+off|disable|stop|shutdown|அணை)\b/i.test(t) ||
+    /\b(off)\b/i.test(t)
 
   if (/\b(everything|all|all devices|classroom)\b/i.test(t) && (hasOn || hasOff)) {
     return { type: 'ALL_DEVICES', action: hasOff ? 'OFF' : 'ON' }
   }
 
-  // 5. Individual devices
+  // 5. Individual devices (with English & Tamil terms)
   let device = null
-  if (/\b(light|lights|lamp|bulb)\b/i.test(t)) device = 'light'
-  else if (/\b(fan|fans)\b/i.test(t)) device = 'fan'
-  else if (/\b(projector|screen)\b/i.test(t)) device = 'projector'
+  if (/\b(light|lights|lamp|bulb|விளக்கு|விளக்கை)\b/i.test(t)) device = 'light'
+  else if (/\b(fan|fans|மின்விசிறி|காத்தாடி)\b/i.test(t)) device = 'fan'
+  else if (/\b(projector|screen|ப்ரோஜெக்டர்)\b/i.test(t)) device = 'projector'
 
   if (device && (hasOn || hasOff)) {
-    const isOff = /\b(off|turn off|switch off|power off|disable|stop)\b/i.test(t)
+    const isOff = hasOff && !hasOn
     return { type: 'DEVICE', device, action: isOff ? 'OFF' : 'ON' }
   }
 
@@ -216,6 +220,12 @@ export function StudentPage() {
   const [isMuted, setIsMuted] = useState(false)
   const [micVolume, setMicVolume] = useState(0)
 
+  // Immediate Execution Guard Refs
+  const lastExecutedCommandRef = useRef({ text: '', time: 0 })
+  const fastCommandTimerRef = useRef(null)
+  const speakingTimeoutRef = useRef(null)
+  const currentUtteranceRef = useRef(null)
+  const isSpeakingRef = useRef(false)
   const recognitionRef = useRef(null)
   const isListeningRef = useRef(false)
   const isMutedRef = useRef(false)
@@ -396,8 +406,8 @@ export function StudentPage() {
       const audioCtx = new (window.AudioContext || window.webkitAudioContext)()
       const source = audioCtx.createMediaStreamSource(stream)
       const analyser = audioCtx.createAnalyser()
-      analyser.fftSize = 256
-      analyser.smoothingTimeConstant = 0.5
+      analyser.fftSize = 128
+      analyser.smoothingTimeConstant = 0.4
       source.connect(analyser)
       analyserRef.current = { audioCtx, analyser }
 
@@ -415,7 +425,7 @@ export function StudentPage() {
       }
       checkVolume()
     } catch (e) {
-      console.warn('[StudentPage] Analyser warning:', e.message)
+      console.warn('[StudentPage] Analyser notice:', e.message)
     }
   }, [])
 
@@ -437,8 +447,12 @@ export function StudentPage() {
     (text) => {
       if (!('speechSynthesis' in window) || !text) return
       try {
+        isSpeakingRef.current = true
         window.speechSynthesis.cancel()
+        clearTimeout(speakingTimeoutRef.current)
+
         const utterance = new SpeechSynthesisUtterance(text)
+        currentUtteranceRef.current = utterance // Prevent JavaScript GC mid-speech
         const persona = CHATGPT_VOICES[selectedVoiceIndex] || CHATGPT_VOICES[3]
         const voices = window.speechSynthesis.getVoices()
 
@@ -456,9 +470,14 @@ export function StudentPage() {
         utterance.rate = persona.rate || 1.12
 
         utterance.onstart = () => {
+          isSpeakingRef.current = true
           setCurrentState(VOICE_STATES.SPEAKING)
         }
-        utterance.onend = () => {
+
+        const handleDoneSpeaking = () => {
+          isSpeakingRef.current = false
+          currentUtteranceRef.current = null
+          clearTimeout(speakingTimeoutRef.current)
           if (isListeningRef.current) {
             setCurrentState(VOICE_STATES.LISTENING)
             setStatusMessage('Listening... Speak now')
@@ -466,14 +485,17 @@ export function StudentPage() {
             setCurrentState(VOICE_STATES.IDLE)
           }
         }
-        utterance.onerror = () => {
-          if (isListeningRef.current) {
-            setCurrentState(VOICE_STATES.LISTENING)
-          }
-        }
+
+        utterance.onend = handleDoneSpeaking
+        utterance.onerror = handleDoneSpeaking
+
+        // Safety fallback timer so recognition never gets deadlocked on mobile browsers
+        const safeDuration = Math.min(3000, Math.max(1200, text.length * 80))
+        speakingTimeoutRef.current = setTimeout(handleDoneSpeaking, safeDuration)
 
         window.speechSynthesis.speak(utterance)
       } catch (err) {
+        isSpeakingRef.current = false
         console.warn('[StudentPage] TTS warning:', err.message)
       }
     },
@@ -481,10 +503,12 @@ export function StudentPage() {
   )
 
   // ==========================================
-  // FAST VOICE EXECUTION (<50ms ZERO LATENCY)
+  // FAST VOICE EXECUTION (<15ms ZERO LATENCY)
   // ==========================================
   const executeFastCommand = useCallback(
     async (match, rawText) => {
+      triggerHaptic?.('medium')
+
       if (activeAiAbortControllerRef.current) {
         activeAiAbortControllerRef.current.abort()
         activeAiAbortControllerRef.current = null
@@ -496,7 +520,7 @@ export function StudentPage() {
         const act = match.action
         const cardId = `${dev}-${Date.now()}`
 
-        // Optimistically update device states
+        // Instant optimistic device state update
         setDevices((prev) =>
           prev.map((d) => {
             const isTarget =
@@ -526,13 +550,16 @@ export function StudentPage() {
         speakUtterance(feedback)
 
         try {
-          await fetch(`${API_BASE_URL}/api/voice/command`, {
+          await fetch(`${API_BASE_URL}/api/voice/live/command`, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
               ...(token ? { Authorization: `Bearer ${token}` } : {}),
             },
-            body: JSON.stringify({ transcript: rawText, classroom: selectedRoom }),
+            body: JSON.stringify({
+              actions: [{ device: dev, action: act }],
+              classroom: selectedRoom,
+            }),
           })
         } catch (err) {
           console.warn('[StudentPage] Fast device command error:', err.message)
@@ -561,7 +588,7 @@ export function StudentPage() {
           ...prev,
         ].slice(0, 4))
 
-        const feedback = `Projector light set to ${colorName}.`
+        const feedback = `Projector set to ${colorName}.`
         setStatusMessage(feedback)
         setAssistantText(feedback)
         speakUtterance(feedback)
@@ -643,7 +670,7 @@ export function StudentPage() {
         speakUtterance(feedback)
       }
     },
-    [token, selectedRoom, speakUtterance, devices]
+    [token, selectedRoom, speakUtterance, devices, triggerHaptic]
   )
 
   // Execute Complex Commands via Gemini AI
@@ -729,7 +756,9 @@ export function StudentPage() {
     [token, selectedRoom, speakUtterance]
   )
 
-  // Web Speech API Continuous Engine
+  // ==========================================
+  // ULTRA-RESPONSIVE WEB SPEECH API ENGINE
+  // ==========================================
   const startFreshRecognition = useCallback(() => {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition
     if (!SpeechRecognition) return null
@@ -756,7 +785,7 @@ export function StudentPage() {
       }
 
       recognition.onresult = (event) => {
-        if (isMutedRef.current) return
+        if (isMutedRef.current || isSpeakingRef.current) return
 
         let fullTranscript = ''
         let hasInterim = false
@@ -769,32 +798,62 @@ export function StudentPage() {
         }
 
         const trimmedText = fullTranscript.trim()
+        if (!trimmedText) return
 
-        if (trimmedText) {
-          setIsUserSpeaking(true)
-          setUserTranscript(trimmedText)
+        // 1. LIVE STREAMING TRANSCRIPT: Immediate 0ms word-by-word streaming
+        setIsUserSpeaking(true)
+        setUserTranscript(trimmedText)
 
-          // Barge-in interruption
-          if (activeAiAbortControllerRef.current) {
-            activeAiAbortControllerRef.current.abort()
-            activeAiAbortControllerRef.current = null
+        // Real-time barge-in: If user speaks while AI is thinking/speaking, cancel immediately
+        if (activeAiAbortControllerRef.current) {
+          activeAiAbortControllerRef.current.abort()
+          activeAiAbortControllerRef.current = null
+        }
+        if (window.speechSynthesis && window.speechSynthesis.speaking) {
+          window.speechSynthesis.cancel()
+          isSpeakingRef.current = false
+          setCurrentState(VOICE_STATES.LISTENING)
+        }
+
+        const dispatchCommand = (text) => {
+          const now = Date.now()
+          if (
+            now - lastExecutedCommandRef.current.time < 1200 &&
+            lastExecutedCommandRef.current.text.toLowerCase() === text.toLowerCase()
+          ) {
+            return
           }
-          if (window.speechSynthesis && window.speechSynthesis.speaking) {
-            window.speechSynthesis.cancel()
-            setCurrentState(VOICE_STATES.LISTENING)
+          lastExecutedCommandRef.current = { text, time: now }
+          setIsUserSpeaking(false)
+
+          const fastMatch = matchFastCommand(text)
+          if (fastMatch) {
+            console.log('[StudentPage] ⚡ Instant fast command triggered:', fastMatch, text)
+            executeFastCommand(fastMatch, text)
+          } else {
+            console.log('[StudentPage] 🤖 Complex command -> Routing to Gemini AI:', text)
+            executeAiCommand(text)
           }
         }
 
-        if (!hasInterim && trimmedText) {
-          setIsUserSpeaking(false)
-          console.log('[StudentPage] 🎙️ Speech received:', trimmedText)
-
-          const fastMatch = matchFastCommand(trimmedText)
-          if (fastMatch) {
-            executeFastCommand(fastMatch, trimmedText)
-          } else {
-            executeAiCommand(trimmedText)
+        // Fast-path instant debouncer (<200ms): If speech matches a hardware command, execute immediately!
+        const fastMatch = matchFastCommand(trimmedText)
+        if (fastMatch) {
+          if (fastCommandTimerRef.current) {
+            clearTimeout(fastCommandTimerRef.current)
           }
+          fastCommandTimerRef.current = setTimeout(() => {
+            dispatchCommand(trimmedText)
+          }, 200)
+        }
+
+        // Final utterance fallback (when user pauses and silence is confirmed)
+        if (!hasInterim && trimmedText) {
+          if (fastCommandTimerRef.current) {
+            clearTimeout(fastCommandTimerRef.current)
+            fastCommandTimerRef.current = null
+          }
+          dispatchCommand(trimmedText)
         }
       }
 
@@ -810,6 +869,11 @@ export function StudentPage() {
 
       recognition.onend = () => {
         setIsUserSpeaking(false)
+        if (fastCommandTimerRef.current) {
+          clearTimeout(fastCommandTimerRef.current)
+          fastCommandTimerRef.current = null
+        }
+        // Auto-restart continuously if active session and not muted (rock-solid loop)
         if (isListeningRef.current && !isMutedRef.current) {
           setTimeout(() => {
             if (isListeningRef.current && !isMutedRef.current) {
@@ -839,6 +903,16 @@ export function StudentPage() {
     setCurrentState(VOICE_STATES.IDLE)
     setStatusMessage('Tap orb to speak')
     stopVolumeAnalyser()
+
+    if (fastCommandTimerRef.current) {
+      clearTimeout(fastCommandTimerRef.current)
+      fastCommandTimerRef.current = null
+    }
+    if (speakingTimeoutRef.current) {
+      clearTimeout(speakingTimeoutRef.current)
+      speakingTimeoutRef.current = null
+    }
+    isSpeakingRef.current = false
 
     if (activeAiAbortControllerRef.current) {
       activeAiAbortControllerRef.current.abort()
@@ -876,13 +950,14 @@ export function StudentPage() {
       return
     }
 
+    // Acquire microphone audio stream safely without blocking speech recognition
     if (!micStreamRef.current) {
       try {
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
         micStreamRef.current = stream
         startVolumeAnalyser(stream)
       } catch (err) {
-        console.warn('[StudentPage] Microphone audio stream note:', err.message)
+        console.warn('[StudentPage] Optional mic analyser bypassed for mobile compatibility')
       }
     }
 
@@ -1112,15 +1187,18 @@ export function StudentPage() {
     sendLiveProjectorColor(preset, true)
   }
 
-  // Dynamic orb scaling according to voice volume meter
+  // Dynamic orb scaling according to voice volume meter or active speaking
   const voiceScale =
-    currentState === VOICE_STATES.LISTENING && micVolume > 5
-      ? 1 + (micVolume / 100) * 0.14
+    isUserSpeaking
+      ? 1.08 + (micVolume / 100) * 0.12
+      : currentState === VOICE_STATES.LISTENING && micVolume > 5
+      ? 1 + (micVolume / 100) * 0.12
       : 1
 
   // Projector device object
   const projectorDevice = devices.find((d) => d.type === 'PROJECTOR') || devices[2]
   const isProjectorOn = projectorDevice?.state === 'ON'
+  const isProjectorPending = !!pendingToggles[projectorDevice?.deviceId || projectorDevice?._id]
 
   return (
     <div className="min-h-screen bg-[#f8fafc] text-slate-800 selection:bg-emerald-500/20 selection:text-emerald-900 relative pb-24 font-sans">
@@ -1132,34 +1210,34 @@ export function StudentPage() {
       </div>
 
       {/* 1. TOP STICKY HEADER */}
-      <header className="sticky top-0 z-30 border-b border-emerald-100/80 bg-white/85 backdrop-blur-2xl px-3.5 sm:px-6 py-3 shadow-[0_2px_15px_rgba(16,185,129,0.03)]">
-        <div className="max-w-2xl mx-auto flex items-center justify-between gap-2.5">
-          <div className="flex items-center gap-2.5">
-            <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center text-white shadow-md shadow-emerald-500/25 shrink-0">
-              <Sparkles className="w-5 h-5 text-white" />
+      <header className="sticky top-0 z-30 border-b border-emerald-100/80 bg-white/85 backdrop-blur-2xl px-3 sm:px-6 py-2.5 sm:py-3 shadow-[0_2px_15px_rgba(16,185,129,0.03)]">
+        <div className="max-w-2xl mx-auto flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2 sm:gap-2.5 min-w-0">
+            <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-xl sm:rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center text-white shadow-md shadow-emerald-500/25 shrink-0">
+              <Sparkles className="w-4 h-4 sm:w-5 sm:h-5 text-white" />
             </div>
-            <div>
+            <div className="min-w-0">
               <div className="flex items-center gap-1.5">
-                <h1 className="text-sm sm:text-base font-extrabold text-slate-900 tracking-tight">
+                <h1 className="text-xs sm:text-base font-extrabold text-slate-900 tracking-tight truncate">
                   Smart Classroom
                 </h1>
-                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider bg-emerald-50 text-emerald-700 border border-emerald-200/80">
+                <span className="inline-flex items-center gap-1 px-1.5 py-0.2 rounded-full text-[9px] font-bold uppercase tracking-wider bg-emerald-50 text-emerald-700 border border-emerald-200/80 shrink-0">
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
                   Live
                 </span>
               </div>
-              <p className="text-[11px] text-slate-500 truncate max-w-[170px] sm:max-w-xs">
+              <p className="text-[10px] sm:text-[11px] text-slate-500 truncate">
                 {user?.name || 'Demo Student'} &bull; {selectedRoom}
               </p>
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
             <button
               type="button"
               onClick={() => fetchDevices(true)}
               disabled={isRefreshing}
-              className="p-2 rounded-xl bg-slate-50 hover:bg-emerald-50 text-slate-500 hover:text-emerald-700 border border-slate-200/80 transition-all cursor-pointer active:scale-95"
+              className="p-1.5 sm:p-2 rounded-xl bg-slate-50 hover:bg-emerald-50 text-slate-500 hover:text-emerald-700 border border-slate-200/80 transition-all cursor-pointer active:scale-95"
               title="Refresh Devices"
             >
               <RefreshCw className={`w-3.5 h-3.5 ${isRefreshing ? 'animate-spin' : ''}`} />
@@ -1177,7 +1255,7 @@ export function StudentPage() {
       </header>
 
       {/* 2. MOBILE-OPTIMIZED SEGMENTED TAB SWITCHER */}
-      <div className="max-w-2xl mx-auto px-3.5 sm:px-6 pt-3">
+      <div className="max-w-2xl mx-auto px-3 sm:px-6 pt-2.5 sm:pt-3">
         <div className="p-1 rounded-2xl bg-slate-200/60 backdrop-blur-md grid grid-cols-2 gap-1 border border-slate-200/80">
           <button
             type="button"
@@ -1185,14 +1263,14 @@ export function StudentPage() {
               triggerHaptic?.('light')
               setActiveTab('voice')
             }}
-            className={`py-2 px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer ${
+            className={`py-2 px-2.5 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 sm:gap-2 transition-all cursor-pointer truncate ${
               activeTab === 'voice'
                 ? 'bg-white text-slate-900 shadow-sm shadow-slate-300/50'
                 : 'text-slate-500 hover:text-slate-800'
             }`}
           >
-            <Mic className={`w-3.5 h-3.5 ${activeTab === 'voice' ? 'text-emerald-600' : ''}`} />
-            <span>Voice AI Assistant</span>
+            <Mic className={`w-3.5 h-3.5 shrink-0 ${activeTab === 'voice' ? 'text-emerald-600' : ''}`} />
+            <span className="truncate">Voice Assistant</span>
           </button>
 
           <button
@@ -1201,41 +1279,41 @@ export function StudentPage() {
               triggerHaptic?.('light')
               setActiveTab('devices')
             }}
-            className={`py-2 px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer ${
+            className={`py-2 px-2.5 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 sm:gap-2 transition-all cursor-pointer truncate ${
               activeTab === 'devices'
                 ? 'bg-white text-slate-900 shadow-sm shadow-slate-300/50'
                 : 'text-slate-500 hover:text-slate-800'
             }`}
           >
-            <Sliders className={`w-3.5 h-3.5 ${activeTab === 'devices' ? 'text-teal-600' : ''}`} />
-            <span>Devices &amp; RGB Wheel</span>
+            <Sliders className={`w-3.5 h-3.5 shrink-0 ${activeTab === 'devices' ? 'text-teal-600' : ''}`} />
+            <span className="truncate">Device Switches</span>
           </button>
         </div>
       </div>
 
       {/* 3. MAIN CONTENT CONTAINER */}
-      <main className="max-w-2xl mx-auto px-3.5 sm:px-6 pt-3 space-y-4">
+      <main className="max-w-2xl mx-auto px-3 sm:px-6 pt-3 space-y-3.5">
         {/* =========================================================================
-            TAB 1: VOICE AI ASSISTANT VIEW (HERO PULSING ORB + TRANSCRIPTS + ACTIONS)
+            TAB 1: VOICE AI ASSISTANT VIEW (PULSING ORB + TRANSCRIPTS + ACTIONS)
             ========================================================================= */}
         {activeTab === 'voice' && (
-          <div className="space-y-3.5 animate-fadeIn">
+          <div className="space-y-3 animate-fadeIn">
             {/* Live Hardware Mini Status Strip */}
-            <div className="bg-white/80 border border-emerald-100/80 rounded-2xl p-2.5 sm:p-3 backdrop-blur-xl shadow-xs flex items-center justify-between gap-2">
-              <div className="flex items-center gap-1.5 overflow-x-auto py-0.5 no-scrollbar">
+            <div className="bg-white/80 border border-emerald-100/80 rounded-2xl p-2 sm:p-2.5 backdrop-blur-xl shadow-xs flex items-center justify-between gap-1.5">
+              <div className="flex items-center gap-1.5 overflow-x-auto py-0.5 no-scrollbar min-w-0">
                 {devices.map((d) => {
                   const isOn = d.state === 'ON'
                   const isProj = d.type === 'PROJECTOR'
                   return (
                     <div
                       key={d.deviceId || d.type}
-                      className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-xl text-[11px] font-semibold border shrink-0 transition-all ${
+                      className={`inline-flex items-center gap-1 px-2 py-0.5 sm:px-2.5 sm:py-1 rounded-xl text-[10px] sm:text-[11px] font-semibold border shrink-0 transition-all ${
                         isOn
                           ? 'bg-emerald-50 text-emerald-800 border-emerald-200/80 shadow-2xs'
                           : 'bg-slate-50 text-slate-500 border-slate-200/70'
                       }`}
                     >
-                      {isProj && isProj && (
+                      {isProj && (
                         <span
                           className="w-2 h-2 rounded-full inline-block shrink-0"
                           style={{
@@ -1255,22 +1333,33 @@ export function StudentPage() {
                 })}
               </div>
 
-              <div className="flex items-center gap-1 shrink-0 text-[10px] font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200/70">
-                <Radio className="w-3 h-3" />
-                <span className="hidden sm:inline">Socket Live</span>
+              <div className="flex items-center gap-1.5 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => navigate('/voice')}
+                  className="hidden sm:flex items-center gap-1 px-2 py-0.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-[10px] font-bold text-slate-600 transition-all cursor-pointer"
+                  title="Full Screen Immersive Voice Mode"
+                >
+                  <Maximize2 className="w-2.5 h-2.5" />
+                  <span>Full Screen</span>
+                </button>
+                <div className="flex items-center gap-1 text-[10px] font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200/70">
+                  <Radio className="w-3 h-3" />
+                  <span className="hidden sm:inline">Socket Live</span>
+                </div>
               </div>
             </div>
 
-            {/* Voice Arena Hero Card (Black / Celestial Dark Chamber for Stunning Contrast) */}
-            <div className="bg-gradient-to-b from-[#090d16] via-[#0b1329] to-[#040814] border border-slate-800/80 rounded-[32px] p-5 sm:p-7 shadow-[0_12px_45px_rgba(0,0,0,0.25)] relative overflow-hidden text-center text-white flex flex-col items-center justify-between min-h-[460px]">
+            {/* Voice Arena Hero Card (Celestial Dark Chamber for Contrast) */}
+            <div className="bg-gradient-to-b from-[#090d16] via-[#0b1329] to-[#040814] border border-slate-800/80 rounded-[28px] sm:rounded-[32px] p-4 sm:p-7 shadow-[0_12px_45px_rgba(0,0,0,0.25)] relative overflow-hidden text-center text-white flex flex-col items-center justify-between min-h-[430px] sm:min-h-[460px]">
               {/* Background ambient glow inside card */}
               <div className="absolute inset-0 pointer-events-none overflow-hidden">
-                <div className="absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[380px] h-[380px] bg-sky-500/15 rounded-full blur-[90px] pointer-events-none" />
+                <div className="absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[340px] h-[340px] bg-sky-500/15 rounded-full blur-[80px] pointer-events-none" />
               </div>
 
               {/* Top Subheader: Status & Persona Dots */}
-              <div className="w-full flex items-center justify-between z-10 gap-2 mb-2">
-                <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/[0.06] border border-white/10 text-[11px] backdrop-blur-md">
+              <div className="w-full flex items-center justify-between z-10 gap-2 mb-1.5">
+                <div className="flex items-center gap-1.5 px-2.5 py-0.5 sm:px-3 sm:py-1 rounded-full bg-white/[0.06] border border-white/10 text-[10px] sm:text-[11px] backdrop-blur-md">
                   <span
                     className={`w-2 h-2 rounded-full ${
                       isListeningActive
@@ -1288,34 +1377,45 @@ export function StudentPage() {
                       : currentState === VOICE_STATES.PROCESSING
                       ? 'Thinking'
                       : currentState === VOICE_STATES.LISTENING
-                      ? 'Listening'
+                      ? 'Listening...'
                       : 'Voice Ready'}
                   </span>
                 </div>
 
-                {/* Voice persona dots */}
-                <div className="flex items-center gap-1 px-2 py-1 rounded-full bg-white/[0.06] border border-white/10">
-                  {CHATGPT_VOICES.map((voice, idx) => (
-                    <button
-                      key={voice.id}
-                      type="button"
-                      onClick={() => {
-                        triggerHaptic?.('light')
-                        setSelectedVoiceIndex(idx)
-                      }}
-                      className={`transition-all rounded-full cursor-pointer ${
-                        idx === selectedVoiceIndex
-                          ? 'w-2 h-2 bg-white'
-                          : 'w-1 h-1 bg-white/20 hover:bg-white/40'
-                      }`}
-                      title={`Voice: ${voice.name}`}
-                    />
-                  ))}
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => navigate('/voice')}
+                    className="p-1 rounded-lg bg-white/10 hover:bg-white/20 text-white/70 hover:text-white transition-all cursor-pointer"
+                    title="Open Full Screen ChatGPT Voice UI"
+                  >
+                    <Maximize2 className="w-3.5 h-3.5" />
+                  </button>
+
+                  {/* Voice persona dots */}
+                  <div className="flex items-center gap-1 px-2 py-1 rounded-full bg-white/[0.06] border border-white/10">
+                    {CHATGPT_VOICES.map((voice, idx) => (
+                      <button
+                        key={voice.id}
+                        type="button"
+                        onClick={() => {
+                          triggerHaptic?.('light')
+                          setSelectedVoiceIndex(idx)
+                        }}
+                        className={`transition-all rounded-full cursor-pointer ${
+                          idx === selectedVoiceIndex
+                            ? 'w-2 h-2 bg-white'
+                            : 'w-1 h-1 bg-white/20 hover:bg-white/40'
+                        }`}
+                        title={`Voice: ${voice.name}`}
+                      />
+                    ))}
+                  </div>
                 </div>
               </div>
 
               {/* Luminous Celestial Cloud Orb */}
-              <div className="my-auto py-3 z-10">
+              <div className="my-auto py-2 z-10">
                 <div
                   onClick={handleOrbClick}
                   style={{ transform: `scale(${voiceScale})` }}
@@ -1330,8 +1430,8 @@ export function StudentPage() {
                 </div>
               </div>
 
-              {/* Status Indicator text */}
-              <div className="z-10 mt-2 flex flex-col items-center gap-1.5 w-full">
+              {/* Status Indicator & Live Transcripts Area */}
+              <div className="z-10 mt-1 flex flex-col items-center gap-1.5 w-full">
                 <div className="text-xs sm:text-sm font-medium tracking-wide">
                   {currentState === VOICE_STATES.LISTENING && (
                     <span className="text-sky-300 flex items-center gap-2">
@@ -1368,30 +1468,47 @@ export function StudentPage() {
                 {/* ======================================================== */}
                 {/* COMPACT & MODERN LIVE TRANSCRIPT DISPLAY                 */}
                 {/* ======================================================== */}
-                <div className="w-full max-w-[280px] sm:max-w-[340px] flex flex-col items-center gap-1.5 my-1.5">
-                  {/* User Speech Transcript (Interim & Final with Crisp White Text) */}
+                <div className="w-full max-w-[310px] sm:max-w-[360px] flex flex-col items-center gap-2 my-1">
+                  {/* Real-Time Live User Speech (Interim + Final streaming) */}
                   {userTranscript ? (
                     <div
-                      className="w-full px-3.5 py-2 rounded-2xl border flex items-start gap-2.5 text-left shadow-lg backdrop-blur-md animate-fadeIn"
+                      className="w-full px-3.5 py-2.5 rounded-2xl border flex items-start gap-2.5 text-left shadow-lg backdrop-blur-md animate-fadeIn"
                       style={{
-                        backgroundColor: 'rgba(24, 24, 27, 0.88)',
-                        borderColor: 'rgba(255, 255, 255, 0.18)',
+                        backgroundColor: 'rgba(15, 23, 42, 0.94)',
+                        borderColor: isUserSpeaking ? 'rgba(56, 189, 248, 0.55)' : 'rgba(16, 185, 129, 0.4)',
+                        boxShadow: isUserSpeaking ? '0 0 20px rgba(56, 189, 248, 0.22)' : '0 0 12px rgba(16, 185, 129, 0.12)',
                       }}
                     >
-                      <span
-                        className={`w-2 h-2 rounded-full mt-1 shrink-0 ${
-                          isUserSpeaking ? 'bg-sky-400 animate-ping' : 'bg-emerald-400'
-                        }`}
-                      />
+                      {/* Live Audio Equalizer Waveform Indicator */}
+                      <div className="mt-1 shrink-0 flex items-center gap-0.5">
+                        {isUserSpeaking ? (
+                          <div className="flex items-center gap-0.5 h-3.5">
+                            <span className="w-0.5 h-2.5 bg-sky-400 rounded-full animate-pulse" />
+                            <span className="w-0.5 h-3.5 bg-sky-300 rounded-full animate-bounce" style={{ animationDelay: '100ms' }} />
+                            <span className="w-0.5 h-2 bg-sky-400 rounded-full animate-bounce" style={{ animationDelay: '200ms' }} />
+                            <span className="w-0.5 h-3 bg-sky-300 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+                          </div>
+                        ) : (
+                          <span className="w-2 h-2 rounded-full bg-emerald-400 shrink-0" />
+                        )}
+                      </div>
+
                       <div className="flex-1 min-w-0">
-                        <span
-                          className="text-[10px] uppercase tracking-wider block font-bold mb-0.5"
-                          style={{ color: isUserSpeaking ? '#38bdf8' : '#34d399' }}
-                        >
-                          {isUserSpeaking ? 'Listening...' : 'Heard:'}
-                        </span>
+                        <div className="flex items-center justify-between gap-1 mb-1">
+                          <span
+                            className="text-[9px] sm:text-[10px] uppercase tracking-wider font-extrabold flex items-center gap-1.5"
+                            style={{ color: isUserSpeaking ? '#38bdf8' : '#34d399' }}
+                          >
+                            <span>{isUserSpeaking ? 'Listening to speech...' : 'Recognized:'}</span>
+                          </span>
+                          {isUserSpeaking && (
+                            <span className="px-1.5 py-0.2 rounded-full text-[8px] font-mono font-bold bg-sky-500/25 text-sky-200 border border-sky-400/30 uppercase tracking-widest animate-pulse">
+                              Live 0ms
+                            </span>
+                          )}
+                        </div>
                         <p
-                          className="text-xs sm:text-sm font-semibold tracking-wide break-words leading-relaxed select-text"
+                          className="no-light-override text-xs sm:text-sm font-bold tracking-wide break-words leading-relaxed select-text"
                           style={{ color: '#ffffff' }}
                         >
                           &ldquo;{userTranscript}&rdquo;
@@ -1400,12 +1517,35 @@ export function StudentPage() {
                     </div>
                   ) : (
                     <div
-                      className="w-full py-1.5 px-3 text-center text-[11px] font-medium tracking-wide rounded-full bg-white/[0.05] border border-white/10"
+                      className="w-full py-1.5 px-3 text-center text-[10px] sm:text-[11px] font-medium tracking-wide rounded-full bg-white/[0.06] border border-white/10"
                       style={{ color: '#cbd5e1' }}
                     >
                       {currentState === VOICE_STATES.LISTENING
-                        ? 'Listening... Speak now'
-                        : 'Speak naturally in English or Tamil'}
+                        ? 'Listening... Speak naturally in English or Tamil'
+                        : 'Tap the orb to start speaking'}
+                    </div>
+                  )}
+
+                  {/* Immediate Response Feedback Pill */}
+                  {actionCards.length > 0 && (
+                    <div
+                      className="w-full px-3 py-1.5 rounded-xl border flex items-center justify-between gap-2 shadow-xs backdrop-blur-md animate-fadeIn"
+                      style={{
+                        backgroundColor: 'rgba(6, 78, 59, 0.45)',
+                        borderColor: 'rgba(16, 185, 129, 0.45)',
+                      }}
+                    >
+                      <div className="flex items-center gap-1.5 min-w-0 text-xs font-semibold text-emerald-300">
+                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                        <span className="no-light-override truncate text-[11px]" style={{ color: '#a7f3d0' }}>
+                          {actionCards[0].action === 'SET_COLOR'
+                            ? `Projector light set to ${actionCards[0].color?.name || 'color'}`
+                            : `${actionCards[0].device?.toUpperCase()} switched ${actionCards[0].action}`}
+                        </span>
+                      </div>
+                      <span className="text-[9px] font-mono font-bold text-emerald-300 px-1.5 py-0.5 rounded-md bg-emerald-500/25 border border-emerald-400/30 shrink-0">
+                        ⚡ Instant
+                      </span>
                     </div>
                   )}
 
@@ -1420,7 +1560,7 @@ export function StudentPage() {
                       }}
                     >
                       <Sparkles className="w-3.5 h-3.5 text-purple-300 mt-0.5 shrink-0" />
-                      <p className="text-[11px] sm:text-xs text-purple-100 font-medium break-words leading-snug">
+                      <p className="no-light-override text-[10px] sm:text-xs text-purple-100 font-medium break-words leading-snug" style={{ color: '#f3e8ff' }}>
                         {assistantText}
                       </p>
                     </div>
@@ -1429,7 +1569,7 @@ export function StudentPage() {
 
                 {/* Error Helper */}
                 {currentState === VOICE_STATES.ERROR && (
-                  <div className="w-full max-w-xs mt-1 p-2.5 bg-rose-500/15 border border-rose-500/30 rounded-xl text-left text-xs text-rose-200 space-y-1.5">
+                  <div className="w-full max-w-xs mt-1 p-2 bg-rose-500/15 border border-rose-500/30 rounded-xl text-left text-xs text-rose-200 space-y-1">
                     <p className="text-[11px] leading-tight">{errorMessage}</p>
                     <button
                       type="button"
@@ -1443,14 +1583,14 @@ export function StudentPage() {
 
                 {/* Recent Action Badges with One-Tap Revert / Undo */}
                 {actionCards.length > 0 && (
-                  <div className="w-full max-w-sm mt-1 space-y-1.5 max-h-28 overflow-y-auto px-1 no-scrollbar">
+                  <div className="w-full max-w-sm mt-1 space-y-1.5 max-h-24 overflow-y-auto px-1 no-scrollbar">
                     {actionCards.map((card) => {
                       const isOn = String(card.action).toUpperCase() === 'ON'
                       const isRgb = card.action === 'SET_COLOR'
                       return (
                         <div
                           key={card.id}
-                          className="w-full flex items-center justify-between px-3 py-1.5 rounded-full bg-white/[0.08] hover:bg-white/[0.12] border border-white/10 backdrop-blur-md shadow-xs transition-all text-xs"
+                          className="w-full flex items-center justify-between px-2.5 py-1 rounded-full bg-white/[0.08] hover:bg-white/[0.12] border border-white/10 backdrop-blur-md shadow-xs transition-all text-xs"
                         >
                           <div className="flex items-center gap-1.5 text-xs font-medium text-white tracking-wide truncate mr-2">
                             {isRgb ? (
@@ -1472,11 +1612,11 @@ export function StudentPage() {
                                 ✓
                               </span>
                             )}
-                            <span className="capitalize text-white/95 truncate">
+                            <span className="capitalize text-white/95 truncate text-[11px]">
                               {card.device}
                             </span>
                             <span
-                              className={`font-semibold uppercase text-[10px] shrink-0 ${
+                              className={`font-semibold uppercase text-[9px] shrink-0 ${
                                 isOn
                                   ? 'text-emerald-400'
                                   : isRgb
@@ -1512,7 +1652,7 @@ export function StudentPage() {
               </div>
 
               {/* Bottom Dock: Mic Mute / Unmute & Restart */}
-              <div className="w-full max-w-xs flex items-center justify-between z-10 gap-3 pt-3 mt-2 border-t border-white/10">
+              <div className="w-full max-w-xs flex items-center justify-between z-10 gap-2.5 pt-2.5 mt-2 border-t border-white/10">
                 <button
                   type="button"
                   onClick={() => {
@@ -1524,7 +1664,7 @@ export function StudentPage() {
                       return next
                     })
                   }}
-                  className={`w-10 h-10 rounded-full border border-white/15 flex items-center justify-center transition-all active:scale-95 cursor-pointer shrink-0 ${
+                  className={`w-9 h-9 sm:w-10 sm:h-10 rounded-full border border-white/15 flex items-center justify-center transition-all active:scale-95 cursor-pointer shrink-0 ${
                     isMuted
                       ? 'bg-rose-500/20 text-rose-400 border-rose-500/30'
                       : 'bg-white/10 text-white hover:bg-white/20'
@@ -1541,7 +1681,7 @@ export function StudentPage() {
                     if (isListeningActive) stopVoiceSession()
                     else startVoiceSession()
                   }}
-                  className={`flex-1 py-2 px-4 rounded-full font-bold text-xs transition-all active:scale-95 cursor-pointer flex items-center justify-center gap-1.5 shadow-md ${
+                  className={`flex-1 py-2 px-3 rounded-full font-bold text-xs transition-all active:scale-95 cursor-pointer flex items-center justify-center gap-1.5 shadow-md ${
                     isListeningActive
                       ? 'bg-rose-500/90 hover:bg-rose-600 text-white shadow-rose-500/20'
                       : 'bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-white shadow-emerald-500/25'
@@ -1566,12 +1706,12 @@ export function StudentPage() {
                     triggerHaptic?.('light')
                     if (isListeningActive) {
                       stopVoiceSession()
-                      setTimeout(startVoiceSession, 120)
+                      setTimeout(startVoiceSession, 100)
                     } else {
                       startVoiceSession()
                     }
                   }}
-                  className="w-10 h-10 rounded-full bg-white/10 hover:bg-white/20 active:scale-95 flex items-center justify-center text-white/80 hover:text-white transition-all cursor-pointer border border-white/15 shrink-0"
+                  className="w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-white/10 hover:bg-white/20 active:scale-95 flex items-center justify-center text-white/80 hover:text-white transition-all cursor-pointer border border-white/15 shrink-0"
                   title="Restart Voice Session"
                 >
                   <RotateCcw className="w-4 h-4" />
@@ -1579,9 +1719,9 @@ export function StudentPage() {
               </div>
             </div>
 
-            {/* Quick Try-It Chips (Swipeable / Wrapped on mobile) */}
-            <div className="bg-white/80 border border-slate-200/80 rounded-2xl p-3.5 shadow-xs backdrop-blur-xl space-y-2">
-              <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">
+            {/* Quick Try-It Chips */}
+            <div className="bg-white/80 border border-slate-200/80 rounded-2xl p-3 shadow-xs backdrop-blur-xl space-y-1.5">
+              <span className="text-[10px] sm:text-[11px] font-bold text-slate-500 uppercase tracking-wider block">
                 Quick Voice Commands (Tap to execute)
               </span>
               <div className="flex flex-wrap gap-1.5">
@@ -1590,7 +1730,7 @@ export function StudentPage() {
                     key={item.label}
                     type="button"
                     onClick={() => handleQuickSuggestion(item)}
-                    className="px-2.5 py-1.5 rounded-xl bg-slate-50 hover:bg-emerald-50 hover:text-emerald-700 active:scale-95 text-slate-700 font-semibold text-[11px] border border-slate-200/80 transition-all cursor-pointer flex items-center gap-1"
+                    className="px-2.5 py-1 rounded-xl bg-slate-50 hover:bg-emerald-50 hover:text-emerald-700 active:scale-95 text-slate-700 font-semibold text-[11px] border border-slate-200/80 transition-all cursor-pointer flex items-center gap-1"
                   >
                     <span>{item.label}</span>
                     <ChevronRight className="w-3 h-3 opacity-40" />
@@ -1602,11 +1742,11 @@ export function StudentPage() {
         )}
 
         {/* =========================================================================
-            TAB 2: CLASSROOM DEVICES & CIRCULAR RGB WHEEL VIEW
+            TAB 2: CLASSROOM DEVICES VIEW (CONSISTENT MOBILE BUTTON SIZES)
             ========================================================================= */}
         {activeTab === 'devices' && (
-          <div className="space-y-4 animate-fadeIn">
-            {/* Devices Grid */}
+          <div className="space-y-3.5 animate-fadeIn">
+            {/* Devices Grid: Light & Fan */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               {/* Device 1: Main Classroom Light */}
               {(() => {
@@ -1618,7 +1758,7 @@ export function StudentPage() {
                 return (
                   <div
                     key={devId}
-                    className={`bg-white/90 border rounded-[26px] p-4.5 backdrop-blur-xl shadow-xs transition-all duration-200 flex flex-col justify-between space-y-3.5 ${
+                    className={`bg-white/95 border rounded-[24px] p-4 backdrop-blur-xl shadow-xs transition-all duration-200 flex flex-col justify-between space-y-3 ${
                       isOn
                         ? 'border-emerald-300 shadow-md shadow-emerald-500/10 ring-1 ring-emerald-400/20'
                         : 'border-slate-200/80'
@@ -1662,7 +1802,7 @@ export function StudentPage() {
                       type="button"
                       disabled={isPending}
                       onClick={() => handleToggleDevice(lightDevice)}
-                      className={`w-full py-2.5 rounded-xl font-bold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer active:scale-95 disabled:opacity-60 ${
+                      className={`w-full py-2.5 rounded-xl font-bold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer active:scale-95 disabled:opacity-60 min-h-[42px] ${
                         isOn
                           ? 'bg-rose-600 hover:bg-rose-500 text-white shadow-sm shadow-rose-600/20'
                           : 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-sm shadow-emerald-600/20'
@@ -1685,7 +1825,7 @@ export function StudentPage() {
                 return (
                   <div
                     key={devId}
-                    className={`bg-white/90 border rounded-[26px] p-4.5 backdrop-blur-xl shadow-xs transition-all duration-200 flex flex-col justify-between space-y-3.5 ${
+                    className={`bg-white/95 border rounded-[24px] p-4 backdrop-blur-xl shadow-xs transition-all duration-200 flex flex-col justify-between space-y-3 ${
                       isOn
                         ? 'border-emerald-300 shadow-md shadow-emerald-500/10 ring-1 ring-emerald-400/20'
                         : 'border-slate-200/80'
@@ -1729,7 +1869,7 @@ export function StudentPage() {
                       type="button"
                       disabled={isPending}
                       onClick={() => handleToggleDevice(fanDevice)}
-                      className={`w-full py-2.5 rounded-xl font-bold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer active:scale-95 disabled:opacity-60 ${
+                      className={`w-full py-2.5 rounded-xl font-bold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer active:scale-95 disabled:opacity-60 min-h-[42px] ${
                         isOn
                           ? 'bg-rose-600 hover:bg-rose-500 text-white shadow-sm shadow-rose-600/20'
                           : 'bg-teal-600 hover:bg-teal-500 text-white shadow-sm shadow-teal-600/20'
@@ -1743,66 +1883,84 @@ export function StudentPage() {
               })()}
             </div>
 
-            {/* Device 3: Smart Projector with Circular RGB Color Wheel */}
-            <div className="bg-white/95 border border-emerald-200/90 rounded-[28px] p-5 sm:p-6 backdrop-blur-xl shadow-md shadow-emerald-500/5 space-y-4">
-              <div className="flex items-center justify-between gap-3">
+            {/* Device 3: Smart Projector (Unified Card with Identical Sized Button) */}
+            <div className="bg-white/95 border border-emerald-200/90 rounded-[26px] p-4 sm:p-5 backdrop-blur-xl shadow-md shadow-emerald-500/5 space-y-3.5">
+              {/* Header: Exact same layout as Light & Fan */}
+              <div className="flex items-start justify-between">
                 <div className="flex items-center gap-3">
                   <div
-                    className={`w-12 h-12 rounded-2xl flex items-center justify-center transition-all ${
+                    className={`w-11 h-11 rounded-2xl flex items-center justify-center transition-all ${
                       isProjectorOn
                         ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/30'
                         : 'bg-slate-100 text-slate-400'
                     }`}
                   >
-                    <Projector className="w-6 h-6" />
+                    <Projector className="w-5 h-5" />
                   </div>
                   <div>
-                    <h3 className="text-base font-extrabold text-slate-900 tracking-tight">
-                      Smart Projector &amp; Mood Lighting
+                    <h3 className="text-sm sm:text-base font-extrabold text-slate-900 tracking-tight">
+                      Smart Projector
                     </h3>
-                    <p className="text-xs text-slate-500">
-                      GPIO 21 &bull; Hardware RGB LED via MQTT
+                    <p className="text-[11px] text-slate-400 font-mono">
+                      GPIO 21 &bull; Relay 3 &bull; RGB LED
                     </p>
                   </div>
                 </div>
 
-                <button
-                  type="button"
-                  onClick={() => handleToggleDevice(projectorDevice)}
-                  className={`px-3 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer active:scale-95 ${
+                <span
+                  className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-bold tracking-wider ${
                     isProjectorOn
-                      ? 'bg-rose-50 text-rose-700 border border-rose-200/80 hover:bg-rose-100'
-                      : 'bg-indigo-600 text-white hover:bg-indigo-500 shadow-sm shadow-indigo-600/20'
+                      ? 'bg-indigo-50 text-indigo-700 border border-indigo-200/80'
+                      : 'bg-slate-100 text-slate-500 border border-slate-200/60'
                   }`}
                 >
-                  <Power className="w-3.5 h-3.5" />
-                  <span>{isProjectorOn ? 'Turn OFF' : 'Turn ON'}</span>
-                </button>
+                  <span
+                    className={`w-1.5 h-1.5 rounded-full ${
+                      isProjectorOn ? 'bg-indigo-500 animate-pulse' : 'bg-slate-400'
+                    }`}
+                  />
+                  <span>{isProjectorOn ? 'ACTIVE (ON)' : 'STANDBY (OFF)'}</span>
+                </span>
               </div>
 
-              {/* Exact Circular Color Wheel */}
-              <div className="p-4 rounded-2xl bg-slate-50/70 border border-slate-200/70 flex flex-col items-center justify-center space-y-3">
-                <div className="flex items-center justify-between w-full px-1">
-                  <div className="flex items-center gap-2">
+              {/* Exact full-width Turn ON/OFF Button matching Fan and Light */}
+              <button
+                type="button"
+                disabled={isProjectorPending}
+                onClick={() => handleToggleDevice(projectorDevice)}
+                className={`w-full py-2.5 rounded-xl font-bold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer active:scale-95 disabled:opacity-60 min-h-[42px] ${
+                  isProjectorOn
+                    ? 'bg-rose-600 hover:bg-rose-500 text-white shadow-sm shadow-rose-600/20'
+                    : 'bg-indigo-600 hover:bg-indigo-500 text-white shadow-sm shadow-indigo-600/20'
+                }`}
+              >
+                <Power className={`w-3.5 h-3.5 ${isProjectorPending ? 'animate-spin' : ''}`} />
+                <span>{isProjectorOn ? 'Turn OFF' : 'Turn ON'}</span>
+              </button>
+
+              {/* Interactive RGB Color Wheel Section */}
+              <div className="p-3.5 sm:p-4 rounded-2xl bg-slate-50/80 border border-slate-200/70 flex flex-col items-center justify-center space-y-2.5">
+                <div className="flex items-center justify-between w-full px-0.5">
+                  <div className="flex items-center gap-1.5">
                     <Palette className="w-4 h-4 text-emerald-600" />
                     <span className="text-xs font-bold text-slate-800">
-                      Interactive RGB Color Wheel
+                      RGB Color Wheel
                     </span>
                   </div>
                   <div className="flex items-center gap-1.5">
                     <span
-                      className="w-3.5 h-3.5 rounded-full border border-black/10 shadow-xs"
+                      className="w-3 h-3 rounded-full border border-black/10 shadow-xs"
                       style={{
                         backgroundColor: `rgb(${projectorColor.r}, ${projectorColor.g}, ${projectorColor.b})`,
                       }}
                     />
-                    <span className="text-[11px] font-mono font-bold text-slate-600 uppercase">
+                    <span className="text-[10px] font-mono font-bold text-slate-600 uppercase">
                       rgb({projectorColor.r},{projectorColor.g},{projectorColor.b})
                     </span>
                   </div>
                 </div>
 
-                <div className="py-2 flex items-center justify-center">
+                <div className="py-1 flex items-center justify-center w-full overflow-hidden">
                   <CircularColorPicker
                     color={projectorColor}
                     power={isProjectorOn && projectorColorPower !== 'OFF' ? 'ON' : 'OFF'}
@@ -1812,23 +1970,23 @@ export function StudentPage() {
                       if (!isProjectorOn) handleToggleDevice(projectorDevice)
                     }}
                     disabled={false}
-                    size={170}
+                    size={155}
                   />
                 </div>
 
-                <p className="text-[11px] text-slate-500 text-center max-w-xs">
+                <p className="text-[10px] sm:text-[11px] text-slate-500 text-center max-w-xs leading-tight">
                   {isProjectorOn
                     ? 'Drag or tap along the wheel for instant zero-latency RGB light color changes.'
                     : 'Projector is currently OFF. Dragging the wheel or tapping a preset turns it ON.'}
                 </p>
               </div>
 
-              {/* Curated Preset Mood Buttons */}
-              <div className="space-y-2">
-                <span className="text-xs font-bold text-slate-700 block">
-                  Quick Mood Presets
+              {/* Color Presets */}
+              <div className="space-y-1.5">
+                <span className="text-[11px] font-bold text-slate-600 block">
+                  Color Presets
                 </span>
-                <div className="grid grid-cols-4 sm:grid-cols-8 gap-2">
+                <div className="grid grid-cols-4 sm:grid-cols-8 gap-1.5">
                   {PRESET_COLORS.map((preset) => {
                     const isSelected =
                       projectorColor.r === preset.r &&
@@ -1840,14 +1998,14 @@ export function StudentPage() {
                         key={preset.name}
                         type="button"
                         onClick={() => handleSelectPresetColor(preset)}
-                        className={`flex flex-col items-center justify-center p-2 rounded-xl border transition-all cursor-pointer active:scale-95 ${
+                        className={`flex flex-col items-center justify-center p-1.5 rounded-xl border transition-all cursor-pointer active:scale-95 ${
                           isSelected
                             ? 'border-emerald-500 bg-emerald-50/80 ring-2 ring-emerald-500/30'
                             : 'border-slate-200/80 bg-white hover:bg-slate-50'
                         }`}
                       >
                         <span
-                          className="w-5 h-5 rounded-full border border-black/10 shadow-xs mb-1"
+                          className="w-4 h-4 sm:w-5 sm:h-5 rounded-full border border-black/10 shadow-xs mb-1"
                           style={{ backgroundColor: preset.hex }}
                         />
                         <span className="text-[9px] font-bold text-slate-700 truncate w-full text-center">
@@ -1863,7 +2021,7 @@ export function StudentPage() {
         )}
 
         {/* Minimal Footer Note */}
-        <p className="text-center text-[11px] text-slate-400 pt-3">
+        <p className="text-center text-[10px] sm:text-[11px] text-slate-400 pt-2 pb-4">
           AI Voice-Controlled Smart Classroom &bull; Demo Access &bull; Room 302
         </p>
       </main>
