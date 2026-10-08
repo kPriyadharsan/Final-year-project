@@ -4,12 +4,10 @@ import { API_BASE_URL } from '../config/api'
  * Helper to construct authorized request headers
  */
 function getAuthHeaders(token) {
-  const origin = typeof window !== 'undefined' ? window.location.origin : ''
   return {
     'Content-Type': 'application/json',
     Accept: 'application/json',
     Authorization: token ? `Bearer ${token}` : '',
-    ...(origin ? { 'x-client-origin': origin } : {}),
   }
 }
 

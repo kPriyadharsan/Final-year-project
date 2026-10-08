@@ -271,9 +271,21 @@ export function DemoLoginSection({ token, onNotify }) {
 
         <CardContent className="p-4 sm:p-6 space-y-6">
           {error && (
-            <div className="p-3.5 rounded-2xl bg-rose-50 border border-rose-200 text-rose-700 text-xs flex items-center gap-2.5">
-              <AlertTriangle className="w-4 h-4 shrink-0 text-rose-600" />
-              <span>{error}</span>
+            <div className="p-3.5 rounded-2xl bg-rose-50 border border-rose-200 text-rose-700 text-xs flex items-center justify-between gap-2.5">
+              <div className="flex items-center gap-2">
+                <AlertTriangle className="w-4 h-4 shrink-0 text-rose-600" />
+                <span>{error}</span>
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => loadStatus(true)}
+                disabled={isLoading}
+                className="text-xs h-7 px-2.5 shrink-0 border-rose-300 text-rose-700 hover:bg-rose-100"
+              >
+                <RefreshCw className={`w-3 h-3 mr-1 ${isLoading ? 'animate-spin' : ''}`} />
+                Retry
+              </Button>
             </div>
           )}
 
