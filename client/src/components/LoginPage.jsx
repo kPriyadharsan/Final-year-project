@@ -1,45 +1,17 @@
 import { useState, useEffect } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
-import { Sparkles, Lock, Mail, Eye, EyeOff, ShieldCheck } from 'lucide-react'
-import { useMobileLayout, useHaptics } from '../hooks'
-
-const TEST_ACCOUNTS = {
-  admin: {
-    key: 'admin',
-    role: 'SUPER_ADMIN',
-    label: 'Super Admin',
-    email: 'admin@smartclassroom.edu',
-    password: 'SuperAdminSecure2026!',
-  },
-  teacher: {
-    key: 'teacher',
-    role: 'TEACHER',
-    label: 'Teacher',
-    email: 'alakesanece@gmail.com',
-    password: '7418529630',
-  },
-  student: {
-    key: 'student',
-    role: 'STUDENT',
-    label: 'Student',
-    email: 'vidhya@gmail.com',
-    password: '147258369',
-  },
-}
+import { Sparkles, Lock, Mail, Eye, EyeOff } from 'lucide-react'
 
 export function LoginPage() {
   const { login, authError, clearError, isLoading, isAuthenticated, user } = useAuth()
   const navigate = useNavigate()
   const location = useLocation()
-  const { isMobile } = useMobileLayout()
-  const { triggerHaptic } = useHaptics()
 
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [fieldErrors, setFieldErrors] = useState({})
-  const [selectedRole, setSelectedRole] = useState(null)
 
   // Helper to determine destination route based on role
   const getRoleDestination = (role) => {
@@ -86,19 +58,6 @@ export function LoginPage() {
     } catch {
       // Error is captured and rendered via AuthContext authError
     }
-  }
-
-  // Test account shortcut selector (populates fields, DOES NOT auto-submit)
-  const handleSelectTestAccount = (roleKey) => {
-    triggerHaptic('selection')
-    const account = TEST_ACCOUNTS[roleKey]
-    if (!account) return
-
-    setSelectedRole(roleKey)
-    setEmail(account.email)
-    setPassword(account.password)
-    setFieldErrors({})
-    clearError()
   }
 
   return (
@@ -160,7 +119,6 @@ export function LoginPage() {
                 value={email}
                 onChange={(e) => {
                   setEmail(e.target.value)
-                  setSelectedRole(null)
                   if (fieldErrors.email) setFieldErrors({ ...fieldErrors, email: null })
                 }}
                 disabled={isLoading}
@@ -195,7 +153,6 @@ export function LoginPage() {
                 value={password}
                 onChange={(e) => {
                   setPassword(e.target.value)
-                  setSelectedRole(null)
                   if (fieldErrors.password) setFieldErrors({ ...fieldErrors, password: null })
                 }}
                 disabled={isLoading}
@@ -238,62 +195,6 @@ export function LoginPage() {
             )}
           </button>
         </form>
-
-        {/* Convenient Test Role Autofill Shortcuts (No Auto-submit) */}
-        <div className="mt-6 sm:mt-8 pt-5 sm:pt-6 border-t border-slate-100 text-center">
-          <p className="text-[11px] uppercase tracking-wider text-slate-400 mb-3 font-semibold">
-            Test Accounts
-          </p>
-
-          <div className="grid grid-cols-3 gap-2 sm:gap-2.5">
-            {/* Admin Test Button */}
-            <button
-              type="button"
-              onClick={() => handleSelectTestAccount('admin')}
-              className={`flex items-center justify-center gap-1.5 py-2 px-2.5 sm:px-3 rounded-xl border text-xs font-semibold transition-all cursor-pointer active:scale-95 ${
-                selectedRole === 'admin'
-                  ? 'bg-blue-600 text-white border-blue-600 shadow-md shadow-blue-500/25 ring-2 ring-blue-500/30'
-                  : 'bg-blue-50/80 hover:bg-blue-100/90 text-blue-700 border-blue-200/80'
-              }`}
-              title="Autofill Super Admin (admin@smartclassroom.edu)"
-            >
-              <ShieldCheck className="w-3.5 h-3.5 shrink-0" />
-              <span>Super Admin</span>
-            </button>
-
-            {/* Teacher Test Button */}
-            <button
-              type="button"
-              onClick={() => handleSelectTestAccount('teacher')}
-              className={`flex items-center justify-center gap-1.5 py-2 px-2.5 sm:px-3 rounded-xl border text-xs font-semibold transition-all cursor-pointer active:scale-95 ${
-                selectedRole === 'teacher'
-                  ? 'bg-indigo-600 text-white border-indigo-600 shadow-md shadow-indigo-500/25 ring-2 ring-indigo-500/30'
-                  : 'bg-indigo-50/80 hover:bg-indigo-100/90 text-indigo-700 border-indigo-200/80'
-              }`}
-              title="Autofill Teacher (alakesanece@gmail.com)"
-            >
-              <span>Teacher</span>
-            </button>
-
-            {/* Student Test Button */}
-            <button
-              type="button"
-              onClick={() => handleSelectTestAccount('student')}
-              className={`flex items-center justify-center gap-1.5 py-2 px-2.5 sm:px-3 rounded-xl border text-xs font-semibold transition-all cursor-pointer active:scale-95 ${
-                selectedRole === 'student'
-                  ? 'bg-emerald-600 text-white border-emerald-600 shadow-md shadow-emerald-500/25 ring-2 ring-emerald-500/30'
-                  : 'bg-emerald-50/80 hover:bg-emerald-100/90 text-emerald-700 border-emerald-200/80'
-              }`}
-              title="Autofill Student (vidhya@gmail.com)"
-            >
-              <span>Student</span>
-            </button>
-          </div>
-
-          <p className="text-[10px] text-slate-400 mt-2.5">
-            Clicking a role autofills the credentials. Click &ldquo;Sign In&rdquo; to log in.
-          </p>
-        </div>
       </div>
     </div>
   )
