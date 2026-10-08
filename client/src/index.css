@@ -251,6 +251,29 @@ input::placeholder, textarea::placeholder {
   color: #000000 !important;
 }
 
+/* High-contrast live transcript box and bright white typography */
+.chatgpt-voice-page .live-transcript-card {
+  background-color: #18181b !important;
+  border: 1px solid rgba(255, 255, 255, 0.25) !important;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.7), 0 0 15px rgba(56, 189, 248, 0.15) !important;
+}
+
+.chatgpt-voice-page .live-transcript-text {
+  color: #ffffff !important;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9);
+}
+
+.chatgpt-voice-page .assistant-feedback-card {
+  background-color: #2e1065 !important;
+  border: 1px solid rgba(168, 85, 247, 0.5) !important;
+  color: #ffffff !important;
+}
+
+.chatgpt-voice-page .assistant-feedback-text {
+  color: #f3e8ff !important;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
+}
+
 /* Fluid Celestial Cloud Orb matching Juniper / ChatGPT */
 .chatgpt-celestial-orb {
   position: relative;

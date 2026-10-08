@@ -49,40 +49,8 @@ export function MacDock({ activeTab, onTabChange, onTriggerVoice }) {
           shadow: 'shadow-amber-500/25',
         },
         {
-          id: 'teachers',
-          label: 'Faculty',
-          href: '/admin#teachers',
-          icon: Users,
-          gradient: 'from-indigo-500 to-purple-600',
-          shadow: 'shadow-indigo-500/25',
-        },
-        {
-          id: 'classes',
-          label: 'Classrooms',
-          href: '/admin#classes',
-          icon: School,
-          gradient: 'from-amber-500 to-orange-600',
-          shadow: 'shadow-amber-500/25',
-        },
-        {
-          id: 'devices',
-          label: 'IoT Devices',
-          href: '/admin#devices',
-          icon: Cpu,
-          gradient: 'from-emerald-500 to-teal-600',
-          shadow: 'shadow-emerald-500/25',
-        },
-        {
-          id: 'ai-system',
-          label: 'AI & Gemini',
-          href: '/admin#ai-system',
-          icon: Sparkles,
-          gradient: 'from-violet-500 to-fuchsia-600',
-          shadow: 'shadow-violet-500/25',
-        },
-        {
           id: 'ai-voice',
-          label: 'AI Voice',
+          label: 'Voice Control',
           href: '/voice',
           icon: Mic,
           gradient: 'from-emerald-500 to-teal-600',
@@ -90,7 +58,7 @@ export function MacDock({ activeTab, onTabChange, onTriggerVoice }) {
         },
         {
           id: 'demo-login',
-          label: 'Demo QR',
+          label: 'Demo QR Login',
           href: '/admin#demo-login',
           icon: QrCode,
           gradient: 'from-blue-600 to-cyan-500',
@@ -165,8 +133,11 @@ export function MacDock({ activeTab, onTabChange, onTriggerVoice }) {
       ]
 
   const handleItemClick = (item, e) => {
-    if (onTabChange) {
-      onTabChange(item.id)
+    if (item.href && item.href.includes('#')) {
+      const hashPart = item.href.split('#')[1]
+      if (onTabChange) {
+        onTabChange(hashPart)
+      }
     }
   }
 

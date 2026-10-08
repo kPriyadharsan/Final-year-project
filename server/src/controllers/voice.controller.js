@@ -89,11 +89,39 @@ async function handleVoiceCommand(req, res) {
         softwareModule: parsed.intent.toLowerCase().replace('_', '-'),
       }
     } else {
-      // UNKNOWN or unsupported commands
-      executionStatus = EXECUTION_STATUSES.UNRECOGNIZED
-      humanReadableMessage = 'Voice command not recognized or unsupported in classroom environment.'
-      executionDetails = {
-        reason: parsed.reason || 'Unrecognized command',
+      // UNKNOWN or conversational questions: query Gemini AI for smart natural response
+      const geminiService = require('../services/gemini.service')
+      if (geminiService.isConfigured()) {
+        try {
+          const aiGen = await geminiService.generateText(transcript, {
+            systemInstruction:
+              'You are the AI Voice Assistant for Smart Classroom Room 302. Answer concisely in 1 to 2 clear sentences suitable for audio speech.',
+            maxOutputTokens: 120,
+          })
+          if (aiGen && aiGen.text) {
+            executionStatus = EXECUTION_STATUSES.DETECTED
+            humanReadableMessage = aiGen.text.trim()
+            executionDetails = {
+              intent: 'CONVERSATIONAL_AI',
+              aiResponse: aiGen.text.trim(),
+            }
+          } else {
+            executionStatus = EXECUTION_STATUSES.UNRECOGNIZED
+            humanReadableMessage = 'I could not process that request. Try a classroom device command.'
+            executionDetails = { reason: parsed.reason || 'Unrecognized command' }
+          }
+        } catch (aiErr) {
+          console.warn('[VoiceController] Conversational AI fallback warning:', aiErr.message)
+          executionStatus = EXECUTION_STATUSES.UNRECOGNIZED
+          humanReadableMessage = 'Command not recognized in classroom.'
+          executionDetails = { reason: aiErr.message }
+        }
+      } else {
+        executionStatus = EXECUTION_STATUSES.UNRECOGNIZED
+        humanReadableMessage = 'Voice command not recognized or unsupported in classroom environment.'
+        executionDetails = {
+          reason: parsed.reason || 'Unrecognized command',
+        }
       }
     }
 

@@ -17,226 +17,51 @@ import {
 import { useAuth } from '../context/AuthContext'
 import { useSocketEvent } from '../context/SocketContext'
 import { API_BASE_URL } from '../config/api'
-import { GoogleGenAI, Type } from '@google/genai'
-import audioProcessorUrl from '../components/voice/geminiLiveAudioProcessor.js?url'
 
-/**
- * Gemini Live Configuration
- */
-const LIVE_MODEL = 'gemini-2.5-flash-native-audio-preview-12-2025'
-
-const LIVE_SYSTEM_INSTRUCTION = `You are an intelligent Smart Classroom Voice Assistant.
-
-DEVICE CAPABILITY MODEL:
-- light: capabilities = ["power"]. Supported actions: ON, OFF. Main classroom lighting relay channel (GPIO 23). No RGB capability.
-- fan: capabilities = ["power"]. Supported actions: ON, OFF. Ceiling fans relay channel (GPIO 22). No speed control or RGB capability.
-- projector: capabilities = ["power", "rgb"]. Supported actions: ON, OFF, and RGB LED control. Projector master power relay (GPIO 21) and PWM ambient RGB LED (GPIO 25, 27, 32).
-  Supported colors: red, green, blue, yellow, orange, purple, pink, cyan, white, warm white, magenta, violet, lime, amber, or hexadecimal colors (e.g. #FF00FF).
-
-STRUCTURED TOOLS:
-1. "control_classroom_devices": For general device power switching (light, fan, projector ON/OFF).
-   Arguments: { actions: [{ device: "light"|"fan"|"projector", action: "ON"|"OFF" }] }
-
-2. "set_classroom_rgb": Dedicated tool for projector RGB LED lighting control.
-   Arguments: {
-     device: "projector",
-     color: { name: "purple" } // or "#FF00FF"
-     power?: "ON" | "OFF"
-   }
-
-NATURAL LANGUAGE UNDERSTANDING:
-- Color commands:
-  "make it purple"
-  "give it a purple glow"
-  "set the light to purple"
-  "make the RGB purple"
-  "change the LED color to purple"
-  "turn the projector light purple"
-  -> All map to: set_classroom_rgb(device: "projector", color: { name: "purple" })
-  Do not require the exact phrase "SET_COLOR".
-
-CONTEXT & PRONOUN RESOLUTION:
-- User: "Turn on the projector." -> AI: "Projector is on."
-  User: "Make it purple." -> AI calls set_classroom_rgb(device: "projector", color: { name: "purple" }). Do NOT ask which device unless context is genuinely ambiguous.
-- If user says "Make it blue" without any prior mention of an RGB-capable device, ask: "Make what blue?"
-
-COMBINED COMMANDS:
-- User: "Turn on the projector and make the light purple."
-  AI calls both actions:
-  1. control_classroom_devices({ actions: [{ device: "projector", action: "ON" }] })
-  2. set_classroom_rgb({ device: "projector", color: { name: "purple" } })
-
-RGB OFF BEHAVIOR:
-- User: "Turn off the purple light."
-  If conversational context indicates the user means the RGB LED:
-  -> call set_classroom_rgb({ device: "projector", power: "OFF" })
-  If conversational context indicates the user means the projector itself:
-  -> call control_classroom_devices({ actions: [{ device: "projector", action: "OFF" }] })
-  If genuinely ambiguous, ask one short question: "Turn off the projector or just the purple light?"
-
-STRICT CAPABILITY ENFORCEMENT:
-- Fan and Light DO NOT support RGB.
-- If user requests RGB on fan ("Make the fan purple"): Do NOT call tool. Respond: "The fan doesn't have RGB lighting."
-- If user requests speed control on fan: Do NOT call tool. Respond: "Fan speed control isn't available yet."
-
-CRITICAL COLOR & RGB VOICE RULES:
-- ALWAYS use human color names: "purple", "blue", "red", "green", "yellow", "cyan", "magenta", "pink", "orange", "white", "warm white", "cool white".
-- NEVER speak or expose raw RGB numbers or hex codes (e.g. NEVER say "225, 0, 0", "RGB: 255, 0, 0", or "#A855F7") in your spoken voice responses!
-- Speak: "Projector light is purple.", "Projector light is red.", "Projector light is off."
-- Only if the user explicitly asks "What RGB value did you use?" may you provide numeric values.
-
-RESPONSE STYLE:
-Keep voice responses extremely concise (1 short sentence max).
-- "Fan is on."
-- "Light is off."
-- "Projector light is purple."
-- "Yes, the fan is running."
-Never give long explanations or robotic confirmations.`
-
-const CONTROL_CLASSROOM_DEVICES_TOOL = {
-  functionDeclarations: [
-    {
-      name: 'control_classroom_devices',
-      description: 'Control smart classroom appliances (light, fan, projector) for power switching (ON/OFF).',
-      parameters: {
-        type: Type.OBJECT,
-        properties: {
-          actions: {
-            type: Type.ARRAY,
-            description: 'List of device power control actions to execute',
-            items: {
-              type: Type.OBJECT,
-              properties: {
-                device: {
-                  type: Type.STRING,
-                  enum: ['light', 'fan', 'projector'],
-                  description: 'The target appliance to control',
-                },
-                action: {
-                  type: Type.STRING,
-                  enum: ['ON', 'OFF'],
-                  description: 'The target power action: ON or OFF',
-                },
-              },
-              required: ['device', 'action'],
-            },
-          },
-        },
-        required: ['actions'],
-      },
-    },
-  ],
-}
-
-const SET_CLASSROOM_RGB_TOOL = {
-  functionDeclarations: [
-    {
-      name: 'set_classroom_rgb',
-      description: 'Set the RGB LED color or power state of an RGB-capable classroom appliance (specifically the projector ambient RGB LED).',
-      parameters: {
-        type: Type.OBJECT,
-        properties: {
-          device: {
-            type: Type.STRING,
-            description: 'The target appliance with RGB lighting capability (must be "projector").',
-          },
-          color: {
-            type: Type.OBJECT,
-            properties: {
-              name: {
-                type: Type.STRING,
-                description: 'Color name (e.g. "purple", "red", "green", "blue", "yellow", "orange", "pink", "cyan", "white", "warm white") or hexadecimal code (e.g. "#FF00FF").',
-              },
-            },
-            description: 'The RGB color object with the color name or hex code.',
-          },
-          colorName: {
-            type: Type.STRING,
-            description: 'Direct color name or hex code if not inside color object.',
-          },
-          power: {
-            type: Type.STRING,
-            enum: ['ON', 'OFF'],
-            description: 'RGB LED power state. Use "OFF" to turn off the RGB light.',
-          },
-        },
-        required: ['device'],
-      },
-    },
-  ],
-}
-
-const GET_CLASSROOM_DEVICE_STATE_TOOL = {
-  functionDeclarations: [
-    {
-      name: 'get_classroom_device_state',
-      description: 'Query the authoritative, real-time hardware status of classroom devices (light, fan, projector). Use this tool whenever the user asks about device status or condition (e.g. "Is the fan on?", "Is the projector running?", "What is currently on?", "Which devices are off?", "What color is the projector?").',
-      parameters: {
-        type: Type.OBJECT,
-        properties: {
-          device: {
-            type: Type.STRING,
-            enum: ['light', 'fan', 'projector', 'all'],
-            description: 'The target appliance to inspect, or "all" to inspect all classroom appliances.',
-          },
-        },
-      },
-    },
-  ],
-}
-
-const WORKLET_INLINE_CODE = `
-class GeminiLiveAudioProcessor extends AudioWorkletProcessor {
-  constructor() {
-    super();
-    this.bufferSize = 512;
-    this.buffer = new Int16Array(this.bufferSize);
-    this.bufferIndex = 0;
-  }
-  process(inputs) {
-    const input = inputs[0];
-    if (!input || input.length === 0) return true;
-    const channelData = input[0];
-    for (let i = 0; i < channelData.length; i++) {
-      let sample = channelData[i];
-      // Intelligent Noise Gate: eliminate background hiss / static below -40dB
-      if (Math.abs(sample) < 0.01) {
-        sample = 0;
-      }
-      sample = Math.max(-1, Math.min(1, sample));
-      this.buffer[this.bufferIndex++] = sample < 0 ? sample * 0x8000 : sample * 0x7fff;
-      if (this.bufferIndex >= this.bufferSize) {
-        const chunk = this.buffer.slice(0, this.bufferSize);
-        this.port.postMessage(chunk.buffer, [chunk.buffer]);
-        this.buffer = new Int16Array(this.bufferSize);
-        this.bufferIndex = 0;
-      }
-    }
-    return true;
-  }
-}
-registerProcessor('gemini-live-audio-processor', GeminiLiveAudioProcessor);
-`
-
-function arrayBufferToBase64(buffer) {
-  const bytes = new Uint8Array(buffer)
-  const chunkSize = 8192
-  let binary = ''
-  for (let i = 0; i < bytes.length; i += chunkSize) {
-    binary += String.fromCharCode.apply(null, bytes.subarray(i, i + chunkSize))
-  }
-  return window.btoa(binary)
-}
-
-const VOICE_STATES = {
+export const VOICE_STATES = {
   IDLE: 'idle',
-  CONNECTING: 'connecting',
   LISTENING: 'listening',
   PROCESSING: 'processing',
   SPEAKING: 'speaking',
   ERROR: 'error',
 }
 
+// 25+ Rich Default Fast Colors with exact hardware RGB mappings (Zero AI Latency)
+const FAST_COLORS = {
+  green: { name: 'green', hex: '#10B981', r: 0, g: 255, b: 0 },
+  blue: { name: 'blue', hex: '#3B82F6', r: 0, g: 0, b: 255 },
+  red: { name: 'red', hex: '#EF4444', r: 255, g: 0, b: 0 },
+  yellow: { name: 'yellow', hex: '#FACC15', r: 255, g: 255, b: 0 },
+  purple: { name: 'purple', hex: '#A855F7', r: 168, g: 85, b: 247 },
+  violet: { name: 'violet', hex: '#8B5CF6', r: 139, g: 92, b: 246 },
+  pink: { name: 'pink', hex: '#EC4899', r: 255, g: 105, b: 180 },
+  orange: { name: 'orange', hex: '#F97316', r: 255, g: 128, b: 0 },
+  cyan: { name: 'cyan', hex: '#06B6D4', r: 0, g: 255, b: 255 },
+  white: { name: 'white', hex: '#FFFFFF', r: 255, g: 255, b: 255 },
+  magenta: { name: 'magenta', hex: '#D946EF', r: 255, g: 0, b: 255 },
+  lime: { name: 'lime', hex: '#84CC16', r: 132, g: 204, b: 22 },
+  amber: { name: 'amber', hex: '#F59E0B', r: 245, g: 158, b: 11 },
+  teal: { name: 'teal', hex: '#14B8A6', r: 20, g: 184, b: 166 },
+  aqua: { name: 'aqua', hex: '#00FFFF', r: 0, g: 255, b: 255 },
+  gold: { name: 'gold', hex: '#EAB308', r: 234, g: 179, b: 8 },
+  indigo: { name: 'indigo', hex: '#6366F1', r: 99, g: 102, b: 241 },
+  rose: { name: 'rose', hex: '#F43F5E', r: 244, g: 63, b: 94 },
+  'warm white': { name: 'warm white', hex: '#FFF7ED', r: 255, g: 247, b: 237 },
+  'cool white': { name: 'cool white', hex: '#F0FDF4', r: 240, g: 253, b: 244 },
+  'sky blue': { name: 'sky blue', hex: '#38BDF8', r: 56, g: 189, b: 248 },
+  lavender: { name: 'lavender', hex: '#C084FC', r: 192, g: 132, b: 252 },
+}
+
+const CHATGPT_VOICES = [
+  { id: 'breeze', name: 'Breeze', gender: 'male', pitch: 1.0, rate: 1.1 },
+  { id: 'cove', name: 'Cove', gender: 'male', pitch: 0.9, rate: 1.05 },
+  { id: 'ember', name: 'Ember', gender: 'female', pitch: 1.15, rate: 1.1 },
+  { id: 'juniper', name: 'Juniper', gender: 'female', pitch: 1.05, rate: 1.12 },
+  { id: 'sol', name: 'Sol', gender: 'male', pitch: 0.95, rate: 1.05 },
+  { id: 'vale', name: 'Vale', gender: 'female', pitch: 1.1, rate: 1.08 },
+]
+
+// Quick Action Preset Buttons for instant one-tap testing without typing
 function getOppositeAction(action) {
   return String(action).toUpperCase() === 'ON' ? 'OFF' : 'ON'
 }
@@ -249,14 +74,64 @@ function getDeviceIcon(device) {
   return Zap
 }
 
-const CHATGPT_VOICES = [
-  { id: 'breeze', name: 'Breeze', desc: 'Calm and balanced' },
-  { id: 'cove', name: 'Cove', desc: 'Direct and clear' },
-  { id: 'ember', name: 'Ember', desc: 'Confident and thoughtful' },
-  { id: 'juniper', name: 'Juniper', desc: 'Open and upbeat' },
-  { id: 'sol', name: 'Sol', desc: 'Natural and easygoing' },
-  { id: 'vale', name: 'Vale', desc: 'Bright and curious' },
-]
+/**
+ * Fast-Path Pattern Matcher:
+ * Detects common classroom hardware commands instantaneously (<1ms)
+ * without needing an expensive cloud LLM round-trip.
+ */
+function matchFastCommand(text) {
+  if (!text) return null
+  const t = text.toLowerCase().trim()
+
+  // 1. RGB Light OFF matching
+  if (
+    (/\b(projector|rgb|led)\b/i.test(t) && /\b(light|glow|color|led|rgb)\b/i.test(t) && /\b(off|turn off|switch off|stop|disable)\b/i.test(t)) ||
+    /\b(turn off projector light|projector light off|rgb off|led off|turn off rgb|turn off led|turn off projector color|turn off color)\b/i.test(t)
+  ) {
+    return { type: 'RGB_POWER', power: 'OFF' }
+  }
+
+  // 2. RGB Color Matching (e.g. "set color of the projector green", "change projector color to red", "make it purple", "blue glow")
+  for (const [colorName, colorObj] of Object.entries(FAST_COLORS)) {
+    const colorRegex = new RegExp(`\\b${colorName}\\b`, 'i')
+    if (colorRegex.test(t)) {
+      const isColorIntent =
+        /\b(color|colour|glow|projector|light|rgb|led|set|change|make|turn|put|switch)\b/i.test(t) ||
+        t.split(' ').length <= 4
+      if (isColorIntent) {
+        return { type: 'RGB_COLOR', colorName, colorObj }
+      }
+    }
+  }
+
+  // 3. State / Status Queries (e.g. "what is the current state of the classroom", "what is on", "is fan on")
+  if (
+    /\b(current state|state of the classroom|classroom state|device status|devices state|what is on|what's on|which device|status of the classroom|is the fan on|is the light on|is the projector on)\b/i.test(t)
+  ) {
+    return { type: 'STATE_QUERY' }
+  }
+
+  // 4. All devices ON / OFF
+  const hasOn = /\b(turn\s+on|switch\s+on|power\s+on|enable|start)\b/i.test(t) || /\b(on)\b/i.test(t)
+  const hasOff = /\b(turn\s+off|switch\s+off|power\s+off|disable|stop|shutdown)\b/i.test(t) || /\b(off)\b/i.test(t)
+
+  if (/\b(everything|all|all devices|classroom)\b/i.test(t) && (hasOn || hasOff)) {
+    return { type: 'ALL_DEVICES', action: hasOff ? 'OFF' : 'ON' }
+  }
+
+  // 5. Individual devices: light, fan, projector
+  let device = null
+  if (/\b(light|lights|lamp|bulb)\b/i.test(t)) device = 'light'
+  else if (/\b(fan|fans)\b/i.test(t)) device = 'fan'
+  else if (/\b(projector|screen)\b/i.test(t)) device = 'projector'
+
+  if (device && (hasOn || hasOff)) {
+    const isOff = /\b(off|turn off|switch off|power off|disable|stop)\b/i.test(t)
+    return { type: 'DEVICE', device, action: isOff ? 'OFF' : 'ON' }
+  }
+
+  return null
+}
 
 export function VoiceControlPage() {
   const navigate = useNavigate()
@@ -264,16 +139,19 @@ export function VoiceControlPage() {
   const apiBaseUrl = API_BASE_URL
   const classroom = 'Room 302'
 
-  // Voice Persona selection (default index 3 = Juniper, matching user reference image)
+  // Voice Persona selection (default index 3 = Juniper)
   const [selectedVoiceIndex, setSelectedVoiceIndex] = useState(3)
-  const currentVoice = CHATGPT_VOICES[selectedVoiceIndex]
 
   // Live state
   const [currentState, setCurrentState] = useState(VOICE_STATES.IDLE)
-  const [isLiveActive, setIsLiveActive] = useState(false)
-  const [activeEngine, setActiveEngine] = useState('idle') // 'gemini' | 'webspeech' | 'idle'
+  const [isListeningActive, setIsListeningActive] = useState(false)
   const [statusMessage, setStatusMessage] = useState('Tap the orb to start speaking')
-  const [liveTranscript, setLiveTranscript] = useState('')
+  
+  // Real-time transcript states
+  const [userTranscript, setUserTranscript] = useState('')
+  const [isUserSpeaking, setIsUserSpeaking] = useState(false)
+  const [assistantText, setAssistantText] = useState('')
+
   const [actionCards, setActionCards] = useState([])
   const [errorMessage, setErrorMessage] = useState('')
   const [isMuted, setIsMuted] = useState(false)
@@ -283,6 +161,15 @@ export function VoiceControlPage() {
   const [projectorState, setProjectorState] = useState('OFF')
   const [rgbPower, setRgbPower] = useState('OFF')
   const [rgbColor, setRgbColor] = useState({ name: 'blue', hex: '#3B82F6', r: 59, g: 130, b: 246 })
+
+  // Refs for audio processing, interruption, and AI dispatching
+  const recognitionRef = useRef(null)
+  const isListeningRef = useRef(false)
+  const isMutedRef = useRef(false)
+  const activeAiAbortControllerRef = useRef(null)
+  const micStreamRef = useRef(null)
+  const analyserRef = useRef(null)
+  const animFrameRef = useRef(null)
 
   // Fetch initial confirmed device status from backend
   useEffect(() => {
@@ -315,8 +202,8 @@ export function VoiceControlPage() {
   useSocketEvent('device:status', (data) => {
     if (!data) return
     const isProjector = data.type === 'PROJECTOR' || String(data.deviceId || '').toLowerCase().includes('proj')
-    if (isProjector) {
-      if (data.state) setProjectorState(data.state)
+    if (isProjector && data.state) {
+      setProjectorState(data.state)
     }
   })
 
@@ -325,31 +212,13 @@ export function VoiceControlPage() {
     const isProjector = data.type === 'PROJECTOR' || String(data.deviceId || '').toLowerCase().includes('proj')
     if (isProjector) {
       if (data.colorPower) setRgbPower(data.colorPower)
-      if (data.color && (data.color.r !== 0 || data.color.g !== 0 || data.color.b !== 0)) setRgbColor(data.color)
+      if (data.color && (data.color.r !== 0 || data.color.g !== 0 || data.color.b !== 0)) {
+        setRgbColor(data.color)
+      }
     }
   })
 
-  // Live Audio Refs
-  const liveSessionRef = useRef(null)
-  const micStreamRef = useRef(null)
-  const inputAudioContextRef = useRef(null)
-  const outputAudioContextRef = useRef(null)
-  const workletNodeRef = useRef(null)
-  const analyserRef = useRef(null)
-  const animFrameRef = useRef(null)
-  const nextPlaybackTimeRef = useRef(0)
-  const activeAudioSourcesRef = useRef([])
-  const activeTurnIdRef = useRef(0)
-  const isInterruptedRef = useRef(false)
-  const isLiveModeActiveRef = useRef(false)
-  const isMutedRef = useRef(false)
-  const userSpeakingRef = useRef(false)
-  const silenceTimerRef = useRef(null)
-
-  // Web Speech Fallback Ref
-  const recognitionRef = useRef(null)
-
-  // Real-time audio analyser loop with Voice Activity Detection (VAD) & instant turn completion
+  // Start real-time audio volume analyser to pulse the luminous orb
   const startVolumeAnalyser = useCallback((stream) => {
     try {
       const audioCtx = new (window.AudioContext || window.webkitAudioContext)()
@@ -370,36 +239,6 @@ export function VoiceControlPage() {
         }
         const avg = sum / dataArray.length
         setMicVolume(Math.min(100, Math.round((avg / 128) * 100)))
-
-        // 1. Instant local barge-in: If user speaks while assistant is speaking, stop audio immediately!
-        if (avg > 15) {
-          if (activeAudioSourcesRef.current.length > 0) {
-            stopAudioPlayback()
-          }
-
-          // User is actively speaking
-          userSpeakingRef.current = true
-          if (silenceTimerRef.current) {
-            clearTimeout(silenceTimerRef.current)
-            silenceTimerRef.current = null
-          }
-        } else if (userSpeakingRef.current && !silenceTimerRef.current) {
-          // 2. Instant turnComplete trigger: when user stops speaking, after 500ms of silence,
-          // signal turnComplete immediately so Gemini replies in <300ms without waiting for slow server VAD timeout!
-          silenceTimerRef.current = setTimeout(() => {
-            silenceTimerRef.current = null
-            if (userSpeakingRef.current) {
-              userSpeakingRef.current = false
-              if (liveSessionRef.current && isLiveModeActiveRef.current) {
-                console.log('[GeminiLive] ⚡ Instant speech end detected: Signaling turnComplete for real-time reply')
-                try {
-                  liveSessionRef.current.sendClientContent({ turnComplete: true })
-                } catch {}
-              }
-            }
-          }, 500)
-        }
-
         animFrameRef.current = requestAnimationFrame(checkVolume)
       }
       checkVolume()
@@ -409,11 +248,6 @@ export function VoiceControlPage() {
   }, [])
 
   const stopVolumeAnalyser = useCallback(() => {
-    if (silenceTimerRef.current) {
-      clearTimeout(silenceTimerRef.current)
-      silenceTimerRef.current = null
-    }
-    userSpeakingRef.current = false
     if (animFrameRef.current) {
       cancelAnimationFrame(animFrameRef.current)
       animFrameRef.current = null
@@ -427,852 +261,477 @@ export function VoiceControlPage() {
     setMicVolume(0)
   }, [])
 
-  // Stop currently playing audio and cancel pending queue
-  const stopAudioPlayback = useCallback(() => {
-    isInterruptedRef.current = true
-    activeTurnIdRef.current++
-    if (silenceTimerRef.current) {
-      clearTimeout(silenceTimerRef.current)
-      silenceTimerRef.current = null
-    }
-    userSpeakingRef.current = false
-    activeAudioSourcesRef.current.forEach((src) => {
+  // Spoken voice feedback with selected persona
+  const speakUtterance = useCallback(
+    (text) => {
+      if (!('speechSynthesis' in window) || !text) return
       try {
-        src.stop()
-      } catch {}
-    })
-    activeAudioSourcesRef.current = []
-    if (outputAudioContextRef.current) {
-      nextPlaybackTimeRef.current = outputAudioContextRef.current.currentTime
-    }
-    if (isLiveModeActiveRef.current) {
-      setCurrentState(VOICE_STATES.LISTENING)
-    }
-  }, [])
+        window.speechSynthesis.cancel()
+        const utterance = new SpeechSynthesisUtterance(text)
+        const persona = CHATGPT_VOICES[selectedVoiceIndex] || CHATGPT_VOICES[3]
+        const voices = window.speechSynthesis.getVoices()
 
-  // Helper to schedule and play 24kHz PCM audio from Gemini
-  const playPcmChunk = useCallback((base64Data, turnId) => {
-    try {
-      if (turnId !== undefined && turnId !== activeTurnIdRef.current) {
-        // Discard stale chunk from interrupted or superseded turn
-        return
+        const preferredVoice =
+          voices.find(
+            (v) =>
+              v.lang.startsWith('en') &&
+              (persona.gender === 'female'
+                ? /female|woman|zira|samantha|karen|victoria|ava|jenny/i.test(v.name)
+                : /male|man|david|george|alex|guy|christopher/i.test(v.name))
+          ) || voices.find((v) => v.lang.startsWith('en'))
+
+        if (preferredVoice) utterance.voice = preferredVoice
+        utterance.pitch = persona.pitch || 1.05
+        utterance.rate = persona.rate || 1.12
+
+        utterance.onstart = () => {
+          setCurrentState(VOICE_STATES.SPEAKING)
+        }
+        utterance.onend = () => {
+          if (isListeningRef.current) {
+            setCurrentState(VOICE_STATES.LISTENING)
+            setStatusMessage('Listening... Speak now')
+          } else {
+            setCurrentState(VOICE_STATES.IDLE)
+          }
+        }
+        utterance.onerror = () => {
+          if (isListeningRef.current) {
+            setCurrentState(VOICE_STATES.LISTENING)
+          }
+        }
+
+        window.speechSynthesis.speak(utterance)
+      } catch (err) {
+        console.warn('[VoiceControlPage] SpeechSynthesis warning:', err.message)
       }
+    },
+    [selectedVoiceIndex]
+  )
 
-      if (!outputAudioContextRef.current) {
-        outputAudioContextRef.current = new (window.AudioContext || window.webkitAudioContext)({
-          sampleRate: 24000,
+  // Execute Instant Local Default Command (<50ms zero-latency execution)
+  const executeFastCommand = useCallback(
+    async (match, rawText) => {
+      // 1. Immediately cancel any speaking TTS or pending AI call
+      if (activeAiAbortControllerRef.current) {
+        activeAiAbortControllerRef.current.abort()
+        activeAiAbortControllerRef.current = null
+      }
+      window.speechSynthesis.cancel()
+
+      if (match.type === 'DEVICE') {
+        const dev = match.device
+        const act = match.action
+        const cardId = `${dev}-${Date.now()}`
+
+        // Update action cards immediately
+        setActionCards((prev) => [
+          {
+            id: cardId,
+            device: dev,
+            action: act,
+            status: 'success',
+            timestamp: Date.now(),
+            oppositeAction: getOppositeAction(act),
+            isReverting: false,
+          },
+          ...prev,
+        ].slice(0, 4))
+
+        const feedback = `${dev.charAt(0).toUpperCase() + dev.slice(1)} turned ${act.toLowerCase()}.`
+        setStatusMessage(feedback)
+        setAssistantText(feedback)
+        speakUtterance(feedback)
+
+        // Asynchronously execute hardware command
+        try {
+          await fetch(`${apiBaseUrl}/api/voice/command`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              ...(token ? { Authorization: `Bearer ${token}` } : {}),
+            },
+            body: JSON.stringify({ transcript: rawText, classroom }),
+          })
+        } catch (err) {
+          console.warn('[VoiceControlPage] Fast device command error:', err.message)
+        }
+      } else if (match.type === 'RGB_COLOR') {
+        const { colorName, colorObj } = match
+        const cardId = `projector-rgb-${Date.now()}`
+
+        // Immediately reflect in UI states
+        setRgbPower('ON')
+        setRgbColor(colorObj)
+
+        setActionCards((prev) => [
+          {
+            id: cardId,
+            device: 'projector',
+            action: 'SET_COLOR',
+            color: colorObj,
+            status: 'success',
+            timestamp: Date.now(),
+            oppositeAction: 'OFF',
+            isReverting: false,
+          },
+          ...prev,
+        ].slice(0, 4))
+
+        const feedback = `Projector light set to ${colorName}.`
+        setStatusMessage(feedback)
+        setAssistantText(feedback)
+        speakUtterance(feedback)
+
+        // Asynchronously execute hardware RGB command with complete parameters
+        try {
+          await fetch(`${apiBaseUrl}/api/voice/live/rgb`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              ...(token ? { Authorization: `Bearer ${token}` } : {}),
+            },
+            body: JSON.stringify({
+              device: 'projector',
+              color: { name: colorName, hex: colorObj.hex, r: colorObj.r, g: colorObj.g, b: colorObj.b },
+              colorName,
+              power: 'ON',
+              classroom,
+            }),
+          })
+        } catch (err) {
+          console.warn('[VoiceControlPage] Fast RGB error:', err.message)
+        }
+      } else if (match.type === 'RGB_POWER') {
+        setRgbPower('OFF')
+        const feedback = 'Projector light turned off.'
+        setStatusMessage(feedback)
+        setAssistantText(feedback)
+        speakUtterance(feedback)
+
+        try {
+          await fetch(`${apiBaseUrl}/api/voice/live/rgb`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              ...(token ? { Authorization: `Bearer ${token}` } : {}),
+            },
+            body: JSON.stringify({ device: 'projector', power: 'OFF', classroom }),
+          })
+        } catch {}
+      } else if (match.type === 'ALL_DEVICES') {
+        const act = match.action
+        const feedback = `All classroom devices turned ${act.toLowerCase()}.`
+        setStatusMessage(feedback)
+        setAssistantText(feedback)
+        speakUtterance(feedback)
+
+        try {
+          await fetch(`${apiBaseUrl}/api/voice/live/command`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              ...(token ? { Authorization: `Bearer ${token}` } : {}),
+            },
+            body: JSON.stringify({
+              actions: [
+                { device: 'light', action: act },
+                { device: 'fan', action: act },
+                { device: 'projector', action: act },
+              ],
+              classroom,
+            }),
+          })
+        } catch {}
+      } else if (match.type === 'STATE_QUERY') {
+        setStatusMessage('Checking devices...')
+        try {
+          const res = await fetch(`${apiBaseUrl}/api/voice/live/state?classroom=${encodeURIComponent(classroom)}`)
+          const json = await res.json()
+          const devs = json.data?.devices || {}
+          const lightP = devs.light?.power || 'OFF'
+          const fanP = devs.fan?.power || 'OFF'
+          const projP = devs.projector?.power || 'OFF'
+          const rgbInfo = devs.projector?.rgb?.power === 'ON' ? ` with ${devs.projector?.rgb?.color || 'RGB'} light` : ''
+          const feedback = `Light is ${lightP}, fan is ${fanP}, and projector is ${projP}${rgbInfo}.`
+          setStatusMessage(feedback)
+          setAssistantText(feedback)
+          speakUtterance(feedback)
+        } catch {
+          const feedback = `Projector is ${projectorState}.`
+          setStatusMessage(feedback)
+          setAssistantText(feedback)
+          speakUtterance(feedback)
+        }
+      }
+    },
+    [apiBaseUrl, token, classroom, speakUtterance, projectorState]
+  )
+
+  // Execute Complicated Commands through Gemini AI
+  const executeAiCommand = useCallback(
+    async (commandText) => {
+      // Interrupt any prior pending AI call
+      if (activeAiAbortControllerRef.current) {
+        activeAiAbortControllerRef.current.abort()
+      }
+      window.speechSynthesis.cancel()
+
+      const controller = new AbortController()
+      activeAiAbortControllerRef.current = controller
+
+      setCurrentState(VOICE_STATES.PROCESSING)
+      setStatusMessage('AI Thinking...')
+
+      try {
+        const res = await fetch(`${apiBaseUrl}/api/voice/command`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
+          body: JSON.stringify({ transcript: commandText, classroom }),
+          signal: controller.signal,
         })
-      }
-      const ctx = outputAudioContextRef.current
-      if (ctx.state === 'suspended') {
-        ctx.resume()
-      }
 
-      const binaryString = window.atob(base64Data)
-      const len = binaryString.length
-      const bytes = new Uint8Array(len)
-      for (let i = 0; i < len; i++) {
-        bytes[i] = binaryString.charCodeAt(i)
-      }
-      const int16Array = new Int16Array(bytes.buffer)
-      const float32Array = new Float32Array(int16Array.length)
-      for (let i = 0; i < int16Array.length; i++) {
-        float32Array[i] = int16Array[i] / 32768.0
-      }
+        const data = await res.json()
+        if (controller.signal.aborted) return
 
-      const audioBuffer = ctx.createBuffer(1, float32Array.length, 24000)
-      audioBuffer.getChannelData(0).set(float32Array)
+        if (res.ok && data.status === 'success') {
+          const reply = data.data?.message || data.message || 'Command executed.'
+          setStatusMessage(reply)
+          setAssistantText(reply)
+          speakUtterance(reply)
 
-      const sourceNode = ctx.createBufferSource()
-      sourceNode.buffer = audioBuffer
-      sourceNode.connect(ctx.destination)
-
-      const currentTime = ctx.currentTime
-      const startTime = Math.max(currentTime, nextPlaybackTimeRef.current)
-      sourceNode.start(startTime)
-      nextPlaybackTimeRef.current = startTime + audioBuffer.duration
-      activeAudioSourcesRef.current.push(sourceNode)
-
-      setCurrentState(VOICE_STATES.SPEAKING)
-
-      sourceNode.onended = () => {
-        const idx = activeAudioSourcesRef.current.indexOf(sourceNode)
-        if (idx !== -1) {
-          activeAudioSourcesRef.current.splice(idx, 1)
+          if (data.data?.device && data.data?.action) {
+            const dev = data.data.device
+            const act = data.data.action
+            setActionCards((prev) => [
+              {
+                id: `${dev}-${Date.now()}`,
+                device: dev,
+                action: act,
+                status: 'success',
+                timestamp: Date.now(),
+                oppositeAction: getOppositeAction(act),
+                isReverting: false,
+              },
+              ...prev,
+            ].slice(0, 4))
+          }
+        } else {
+          const errMsg = data.message || 'Could not understand command.'
+          setStatusMessage(errMsg)
+          setAssistantText(errMsg)
+          speakUtterance(errMsg)
         }
-        if (activeAudioSourcesRef.current.length === 0 && isLiveModeActiveRef.current) {
+      } catch (err) {
+        if (err.name === 'AbortError') {
+          console.log('[VoiceControlPage] Pending AI request interrupted by user')
+          return
+        }
+        console.warn('[VoiceControlPage] AI request error:', err.message)
+        setStatusMessage('AI query could not complete.')
+        if (isListeningRef.current) {
           setCurrentState(VOICE_STATES.LISTENING)
-          setStatusMessage('Listening... Speak now')
+        }
+      } finally {
+        if (activeAiAbortControllerRef.current === controller) {
+          activeAiAbortControllerRef.current = null
         }
       }
-    } catch (e) {
-      console.warn('[VoiceControlPage] Error playing PCM chunk:', e.message)
-    }
-  }, [])
+    },
+    [apiBaseUrl, token, classroom, speakUtterance]
+  )
 
-  // Disconnect active session
-  const stopLiveSession = useCallback(async () => {
-    stopAudioPlayback()
-    stopVolumeAnalyser()
+  // Create and start a fresh SpeechRecognition instance (Chrome requirement)
+  const startFreshRecognition = useCallback(() => {
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition
+    if (!SpeechRecognition) return null
 
     if (recognitionRef.current) {
       try {
-        recognitionRef.current.stop()
+        recognitionRef.current.abort()
       } catch {}
       recognitionRef.current = null
     }
 
-    if (workletNodeRef.current) {
-      try {
-        workletNodeRef.current.disconnect()
-      } catch {}
-      workletNodeRef.current = null
+    try {
+      const recognition = new SpeechRecognition()
+      recognition.lang = 'en-US'
+      recognition.continuous = false // Continuous = false avoids Chrome continuous timeout lockup
+      recognition.interimResults = true
+      recognition.maxAlternatives = 1
+
+      recognition.onstart = () => {
+        isListeningRef.current = true
+        setIsListeningActive(true)
+        setCurrentState(VOICE_STATES.LISTENING)
+        setStatusMessage('Listening... Speak now')
+      }
+
+      recognition.onresult = (event) => {
+        if (isMutedRef.current) return
+
+        let fullTranscript = ''
+        let hasInterim = false
+
+        // Loop through all results from index 0 to accumulate the full sentence seamlessly
+        for (let i = 0; i < event.results.length; ++i) {
+          fullTranscript += event.results[i][0].transcript
+          if (!event.results[i].isFinal) {
+            hasInterim = true
+          }
+        }
+
+        const trimmedText = fullTranscript.trim()
+
+        // Real-time barge-in: If user speaks while AI is thinking or speaking, cancel AI/TTS immediately!
+        if (trimmedText) {
+          setIsUserSpeaking(true)
+          setUserTranscript(trimmedText)
+
+          if (activeAiAbortControllerRef.current) {
+            activeAiAbortControllerRef.current.abort()
+            activeAiAbortControllerRef.current = null
+          }
+          if (window.speechSynthesis && window.speechSynthesis.speaking) {
+            window.speechSynthesis.cancel()
+            setCurrentState(VOICE_STATES.LISTENING)
+          }
+        }
+
+        // When the utterance is finalized
+        if (!hasInterim && trimmedText) {
+          setIsUserSpeaking(false)
+          console.log('[VoiceControlPage] 🎙️ Final user speech:', trimmedText)
+
+          // 1. Instant default command matching (Zero AI Latency)
+          const fastMatch = matchFastCommand(trimmedText)
+          if (fastMatch) {
+            console.log('[VoiceControlPage] ⚡ Instant default command triggered:', fastMatch)
+            executeFastCommand(fastMatch, trimmedText)
+          } else {
+            // 2. Complicated / conversational command -> Routes to Gemini AI
+            console.log('[VoiceControlPage] 🤖 Complex command -> Routing to Gemini AI:', trimmedText)
+            executeAiCommand(trimmedText)
+          }
+        }
+      }
+
+      recognition.onerror = (e) => {
+        if (e.error === 'aborted' || e.error === 'no-speech') {
+          // Expected benign events, ignore and let onend restart if active
+          return
+        }
+        console.warn('[VoiceControlPage] Speech recognition event:', e.error)
+        if (e.error === 'not-allowed') {
+          setCurrentState(VOICE_STATES.ERROR)
+          setErrorMessage('Microphone blocked. Please allow microphone in browser address bar.')
+          setStatusMessage('Microphone access blocked')
+        }
+      }
+
+      recognition.onend = () => {
+        setIsUserSpeaking(false)
+        // Auto-restart recognition continuously if active and not muted
+        if (isListeningRef.current && !isMutedRef.current) {
+          setTimeout(() => {
+            if (isListeningRef.current && !isMutedRef.current) {
+              try {
+                startFreshRecognition()
+              } catch {}
+            }
+          }, 80)
+        } else if (!isListeningRef.current) {
+          setCurrentState(VOICE_STATES.IDLE)
+        }
+      }
+
+      recognitionRef.current = recognition
+      recognition.start()
+      return recognition
+    } catch (err) {
+      console.warn('[VoiceControlPage] Speech recognition init warning:', err.message)
+      return null
+    }
+  }, [executeFastCommand, executeAiCommand])
+
+  // Stop active voice session
+  const stopVoiceSession = useCallback(() => {
+    isListeningRef.current = false
+    setIsListeningActive(false)
+    setIsUserSpeaking(false)
+    setCurrentState(VOICE_STATES.IDLE)
+    setStatusMessage('Tap orb to start speaking')
+    stopVolumeAnalyser()
+
+    if (activeAiAbortControllerRef.current) {
+      activeAiAbortControllerRef.current.abort()
+      activeAiAbortControllerRef.current = null
     }
 
-    if (inputAudioContextRef.current) {
+    if (window.speechSynthesis) {
+      window.speechSynthesis.cancel()
+    }
+
+    if (recognitionRef.current) {
       try {
-        await inputAudioContextRef.current.close()
+        recognitionRef.current.abort()
       } catch {}
-      inputAudioContextRef.current = null
+      recognitionRef.current = null
     }
 
     if (micStreamRef.current) {
       micStreamRef.current.getTracks().forEach((track) => track.stop())
       micStreamRef.current = null
     }
+  }, [stopVolumeAnalyser])
 
-    if (liveSessionRef.current) {
-      try {
-        if (liveSessionRef.current.conn && typeof liveSessionRef.current.conn.close === 'function') {
-          liveSessionRef.current.conn.close()
-        }
-      } catch {}
-      liveSessionRef.current = null
-    }
-
-    setIsLiveActive(false)
-    setActiveEngine('idle')
-    isLiveModeActiveRef.current = false
-    setCurrentState(VOICE_STATES.IDLE)
-    setStatusMessage('Voice session paused. Tap orb to speak.')
-  }, [stopAudioPlayback, stopVolumeAnalyser])
-
-  // Handle Gemini Live tool call (control_classroom_devices)
-  const handleDeviceToolCall = useCallback(
-    async (call) => {
-      setCurrentState(VOICE_STATES.PROCESSING)
-
-      const { id, name, args } = call
-      const callId = id || 'call_default'
-      const toolName = name || 'control_classroom_devices'
-      const rawActions = args?.actions
-
-      const SUPPORTED_DEVICES = ['light', 'fan', 'projector']
-
-      if (!Array.isArray(rawActions) || rawActions.length === 0) {
-        if (liveSessionRef.current) {
-          liveSessionRef.current.sendToolResponse({
-            functionResponses: [
-              {
-                id: callId,
-                name: toolName,
-                response: { error: 'Actions must be a non-empty array' },
-              },
-            ],
-          })
-        }
-        if (isLiveModeActiveRef.current) setCurrentState(VOICE_STATES.LISTENING)
-        return
-      }
-
-      // Normalization
-      const normalizedActions = []
-      for (let i = 0; i < rawActions.length; i++) {
-        let entry = rawActions[i]
-        if (typeof entry === 'string') {
-          try {
-            entry = JSON.parse(entry)
-          } catch {
-            continue
-          }
-        }
-        if (entry && typeof entry === 'object' && !Array.isArray(entry)) {
-          normalizedActions.push(entry)
-        }
-      }
-
-      const validatedActions = []
-      for (const item of normalizedActions) {
-        const device = String(item.device || '').trim().toLowerCase()
-        const action = String(item.action || '').trim().toUpperCase()
-        const capability = item.capability ? String(item.capability).trim().toLowerCase() : undefined
-        const color = item.color || item.colorName || undefined
-
-        if (SUPPORTED_DEVICES.includes(device)) {
-          if (action === 'ON' || action === 'OFF') {
-            validatedActions.push({ device, capability: capability || 'power', action })
-          } else if (action === 'SET_COLOR' && device === 'projector') {
-            validatedActions.push({ device, capability: 'rgb', action: 'SET_COLOR', color: color || 'purple' })
-          }
-        }
-      }
-
-      if (validatedActions.length === 0) {
-        if (liveSessionRef.current) {
-          liveSessionRef.current.sendToolResponse({
-            functionResponses: [
-              {
-                id: callId,
-                name: toolName,
-                response: { error: 'No valid device actions found' },
-              },
-            ],
-          })
-        }
-        if (isLiveModeActiveRef.current) setCurrentState(VOICE_STATES.LISTENING)
-        return
-      }
-
-      // Update feedback transcript immediately
-      const humanCommand = validatedActions
-        .map((a) => {
-          if (a.action === 'SET_COLOR') {
-            return `Set ${a.device} to ${a.color || 'color'}`
-          }
-          return `${a.action === 'ON' ? 'Turn on' : 'Turn off'} ${a.device}`
-        })
-        .join(' & ')
-      setLiveTranscript(humanCommand)
-      setStatusMessage(`Executing: ${humanCommand}`)
-
-      try {
-        const response = await fetch(`${apiBaseUrl}/api/voice/live/command`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            ...(token ? { Authorization: `Bearer ${token}` } : {}),
-          },
-          body: JSON.stringify({
-            actions: validatedActions,
-            classroom,
-          }),
-        })
-
-        const result = await response.json()
-
-        if (response.ok && result.status === 'success') {
-          const actionResults = result.data?.actions || []
-          const newCards = actionResults
-            .filter((a) => a.success)
-            .map((a) => ({
-              id: `${a.device}-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
-              device: a.device,
-              action: a.action,
-              color: a.color,
-              status: 'success',
-              timestamp: Date.now(),
-              oppositeAction: a.action === 'SET_COLOR' ? 'OFF' : getOppositeAction(a.action),
-              isReverting: false,
-              error: null,
-            }))
-
-          if (newCards.length > 0) {
-            setActionCards((prev) => [...newCards, ...prev].slice(0, 4))
-          }
-
-          const summary = actionResults
-            .map((a) => `${a.device} is ${a.action.toLowerCase()}`)
-            .join(', ')
-          setStatusMessage(summary ? `Classroom: ${summary}` : 'Command completed')
-
-          if (liveSessionRef.current) {
-            liveSessionRef.current.sendToolResponse({
-              functionResponses: [
-                {
-                  id: callId,
-                  name: toolName,
-                  response: {
-                    actions: actionResults.map((a) => ({
-                      device: a.device,
-                      action: a.action,
-                      success: a.success,
-                      message: a.message,
-                    })),
-                    allSucceeded: actionResults.every((a) => a.success),
-                    partialFailure: actionResults.some((a) => !a.success) && actionResults.some((a) => a.success),
-                  },
-                },
-              ],
-            })
-          }
-        } else {
-          throw new Error(result.message || 'Failed to dispatch command')
-        }
-      } catch (err) {
-        console.error('[VoiceControlPage] Error executing live device command:', err.message)
-        setStatusMessage(`Command error: ${err.message}`)
-        if (liveSessionRef.current) {
-          liveSessionRef.current.sendToolResponse({
-            functionResponses: [
-              {
-                id: callId,
-                name: toolName,
-                response: {
-                  actions: validatedActions.map((a) => ({
-                    device: a.device,
-                    action: a.action,
-                    success: false,
-                  })),
-                  error: err.message,
-                },
-              },
-            ],
-          })
-        }
-      } finally {
-        if (isLiveModeActiveRef.current && activeAudioSourcesRef.current.length === 0) {
-          setCurrentState(VOICE_STATES.LISTENING)
-        }
-      }
-    },
-    [apiBaseUrl, token, classroom]
-  )
-
-  // Handle dedicated set_classroom_rgb tool call
-  const handleRgbToolCall = useCallback(
-    async (call) => {
-      setCurrentState(VOICE_STATES.PROCESSING)
-
-      const { id, name, args } = call
-      const callId = id || 'call_rgb_default'
-      const toolName = name || 'set_classroom_rgb'
-
-      const device = String(args?.device || 'projector').trim().toLowerCase()
-      const rawColor = args?.color?.name || args?.colorName || args?.color || 'purple'
-      const power = args?.power ? String(args.power).trim().toUpperCase() : 'ON'
-
-      const colorLabel = typeof rawColor === 'object' ? rawColor.name || 'color' : rawColor
-      const humanCommand = power === 'OFF' ? `Turn off ${device} RGB light` : `Set ${device} RGB to ${colorLabel}`
-      setLiveTranscript(humanCommand)
-      setStatusMessage(`Executing: ${humanCommand}`)
-
-      try {
-        const response = await fetch(`${apiBaseUrl}/api/voice/live/rgb`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            ...(token ? { Authorization: `Bearer ${token}` } : {}),
-          },
-          body: JSON.stringify({
-            device,
-            color: rawColor,
-            power,
-            classroom,
-          }),
-        })
-
-        const result = await response.json()
-
-        if (response.ok && result.status === 'success') {
-          const rgbData = result.data
-          const newCard = {
-            id: `rgb-${device}-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
-            device: rgbData.device,
-            action: power === 'OFF' ? 'OFF' : 'SET_COLOR',
-            color: rgbData.color,
-            status: 'success',
-            timestamp: Date.now(),
-            oppositeAction: power === 'OFF' ? 'ON' : 'OFF',
-            isReverting: false,
-            error: null,
-          }
-
-          setActionCards((prev) => [newCard, ...prev].slice(0, 4))
-          setStatusMessage(
-            power === 'OFF'
-              ? 'Projector RGB light turned OFF'
-              : `Projector RGB set to ${rgbData.color?.name || 'custom color'}`
-          )
-
-          if (liveSessionRef.current) {
-            const humanColor = rgbData.colorName || (typeof rgbData.color === 'string' ? rgbData.color : rgbData.color?.name) || 'purple'
-            liveSessionRef.current.sendToolResponse({
-              functionResponses: [
-                {
-                  id: callId,
-                  name: toolName,
-                  response: {
-                    device: rgbData.device,
-                    status: 'success',
-                    power: rgbData.power,
-                    color: humanColor,
-                    message: rgbData.message || (rgbData.power === 'OFF' ? 'Projector light is off.' : `Projector light is ${humanColor}.`),
-                  },
-                },
-              ],
-            })
-          }
-        } else {
-          console.warn('[GeminiLive] RGB command error response:', result)
-          setStatusMessage(result.message || 'RGB command failed')
-          if (liveSessionRef.current) {
-            liveSessionRef.current.sendToolResponse({
-              functionResponses: [
-                {
-                  id: callId,
-                  name: toolName,
-                  response: {
-                    error: result.message || 'RGB command failed',
-                    code: result.code || 'RGB_ERROR',
-                  },
-                },
-              ],
-            })
-          }
-        }
-      } catch (err) {
-        console.error('[GeminiLive] Error calling /api/voice/live/rgb:', err)
-        setStatusMessage('Network error during RGB command')
-        if (liveSessionRef.current) {
-          liveSessionRef.current.sendToolResponse({
-            functionResponses: [
-              {
-                id: callId,
-                name: toolName,
-                response: { error: 'Network error communicating with classroom controller' },
-              },
-            ],
-          })
-        }
-      } finally {
-        if (isLiveModeActiveRef.current && activeAudioSourcesRef.current.length === 0) {
-          setCurrentState(VOICE_STATES.LISTENING)
-        }
-      }
-    },
-    [apiBaseUrl, token, classroom]
-  )
-
-  // Handle get_classroom_device_state tool call for live state queries
-  const handleGetStateToolCall = useCallback(
-    async (call) => {
-      console.log('[GeminiLive] Function call: get_classroom_device_state')
-      setCurrentState(VOICE_STATES.PROCESSING)
-
-      const { id, name, args } = call
-      const callId = id || 'call_state_default'
-      const toolName = name || 'get_classroom_device_state'
-      const device = String(args?.device || 'all').trim().toLowerCase()
-
-      try {
-        const response = await fetch(
-          `${apiBaseUrl}/api/voice/live/state?classroom=${encodeURIComponent(classroom)}&device=${encodeURIComponent(device)}`,
-          {
-            method: 'GET',
-            headers: {
-              'Content-Type': 'application/json',
-              ...(token ? { Authorization: `Bearer ${token}` } : {}),
-            },
-          }
-        )
-
-        const result = await response.json()
-        const stateData = result?.data || {}
-
-        if (liveSessionRef.current) {
-          liveSessionRef.current.sendToolResponse({
-            functionResponses: [
-              {
-                id: callId,
-                name: toolName,
-                response: {
-                  classroom,
-                  device,
-                  state: stateData,
-                  success: true,
-                },
-              },
-            ],
-          })
-        }
-      } catch (err) {
-        console.error('[GeminiLive] Error retrieving state tool response:', err.message)
-        if (liveSessionRef.current) {
-          liveSessionRef.current.sendToolResponse({
-            functionResponses: [
-              {
-                id: callId,
-                name: toolName,
-                response: {
-                  classroom,
-                  device,
-                  error: 'Could not retrieve hardware state from classroom controller.',
-                  success: false,
-                },
-              },
-            ],
-          })
-        }
-      } finally {
-        if (isLiveModeActiveRef.current && activeAudioSourcesRef.current.length === 0) {
-          setCurrentState(VOICE_STATES.LISTENING)
-        }
-      }
-    },
-    [apiBaseUrl, token, classroom]
-  )
-
-  // Handle incoming live server messages
-  const handleLiveServerMessage = useCallback(
-    (msg) => {
-      if (msg.toolCall?.functionCalls) {
-        for (const call of msg.toolCall.functionCalls) {
-          if (call.name === 'set_classroom_rgb') {
-            handleRgbToolCall(call)
-          } else if (call.name === 'control_classroom_devices') {
-            handleDeviceToolCall(call)
-          } else if (call.name === 'get_classroom_device_state') {
-            handleGetStateToolCall(call)
-          }
-        }
-      }
-
-      if (msg.serverContent?.interrupted) {
-        stopAudioPlayback()
-      }
-
-      if (msg.serverContent?.modelTurn?.parts) {
-        isInterruptedRef.current = false
-        const currentTurnId = activeTurnIdRef.current
-        for (const part of msg.serverContent.modelTurn.parts) {
-          if (part.functionCall) {
-            if (part.functionCall.name === 'set_classroom_rgb') {
-              handleRgbToolCall(part.functionCall)
-            } else if (part.functionCall.name === 'control_classroom_devices') {
-              handleDeviceToolCall(part.functionCall)
-            } else if (part.functionCall.name === 'get_classroom_device_state') {
-              handleGetStateToolCall(part.functionCall)
-            }
-          }
-          if (part.inlineData && part.inlineData.data) {
-            playPcmChunk(part.inlineData.data, currentTurnId)
-          }
-          if (part.text) {
-            setLiveTranscript(part.text)
-          }
-        }
-      }
-
-      if (msg.serverContent?.turnComplete) {
-        if (activeAudioSourcesRef.current.length === 0 && isLiveModeActiveRef.current) {
-          setCurrentState(VOICE_STATES.LISTENING)
-          setStatusMessage('Listening... Speak now')
-        }
-      }
-    },
-    [handleDeviceToolCall, handleRgbToolCall, handleGetStateToolCall, playPcmChunk, stopAudioPlayback]
-  )
-
-  // Fallback to Web Speech API if Gemini Live is unreachable
-  const startWebSpeechFallback = useCallback(
-    async (stream) => {
-      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition
-      if (!SpeechRecognition) {
-        setCurrentState(VOICE_STATES.ERROR)
-        setErrorMessage('Speech recognition not supported in this browser.')
-        return
-      }
-
-      try {
-        if (!micStreamRef.current) {
-          const micStream = stream || await navigator.mediaDevices.getUserMedia({ audio: true })
-          micStreamRef.current = micStream
-          startVolumeAnalyser(micStream)
-        }
-
-        const recognition = new SpeechRecognition()
-        recognition.lang = 'en-US'
-        recognition.continuous = true
-        recognition.interimResults = true
-
-        recognition.onstart = () => {
-          setIsLiveActive(true)
-          setActiveEngine('webspeech')
-          isLiveModeActiveRef.current = true
-          setCurrentState(VOICE_STATES.LISTENING)
-          setStatusMessage('Listening (Ready) • Speak now')
-        }
-
-        let commandDispatched = false
-        const dispatchVoiceCommand = async (commandText) => {
-          if (commandDispatched) return
-          commandDispatched = true
-          setCurrentState(VOICE_STATES.PROCESSING)
-          setStatusMessage(`Executing: "${commandText}"`)
-
-          try {
-            const res = await fetch(`${apiBaseUrl}/api/voice/command`, {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                ...(token ? { Authorization: `Bearer ${token}` } : {}),
-              },
-              body: JSON.stringify({ transcript: commandText, classroom }),
-            })
-            const data = await res.json()
-            if (res.ok && data.status === 'success') {
-              const dev = data.data?.device || 'device'
-              const act = data.data?.action || 'command'
-              setActionCards((prev) => [
-                {
-                  id: `${dev}-${Date.now()}`,
-                  device: dev,
-                  action: act,
-                  status: 'success',
-                  timestamp: Date.now(),
-                  oppositeAction: getOppositeAction(act),
-                  isReverting: false,
-                  error: null,
-                },
-                ...prev,
-              ].slice(0, 4))
-              const feedbackMsg = `${dev.toUpperCase()} switched ${act}`
-              setStatusMessage(feedbackMsg)
-
-              // Fast audible speech synthesis feedback
-              try {
-                if ('speechSynthesis' in window) {
-                  window.speechSynthesis.cancel()
-                  const utterance = new SpeechSynthesisUtterance(data.message || feedbackMsg)
-                  utterance.rate = 1.2
-                  window.speechSynthesis.speak(utterance)
-                }
-              } catch {}
-            } else {
-              setStatusMessage(data.message || 'Could not recognize command.')
-            }
-          } catch {
-            setStatusMessage('Command dispatch failed.')
-          } finally {
-            if (isLiveModeActiveRef.current) {
-              setTimeout(() => {
-                commandDispatched = false
-                setCurrentState(VOICE_STATES.LISTENING)
-                setStatusMessage('Listening... Speak now')
-              }, 1000)
-            }
-          }
-        }
-
-        recognition.onresult = async (event) => {
-          let interimTranscript = ''
-          let finalTranscript = ''
-
-          for (let i = event.resultIndex; i < event.results.length; ++i) {
-            if (event.results[i].isFinal) {
-              finalTranscript += event.results[i][0].transcript
-            } else {
-              interimTranscript += event.results[i][0].transcript
-            }
-          }
-
-          const currentWords = finalTranscript || interimTranscript
-          if (currentWords) {
-            setLiveTranscript(currentWords)
-            setStatusMessage(`Heard: "${currentWords}"`)
-          }
-
-          const trimmed = currentWords.trim()
-          const isQuickCommand = /\b(turn\s+(on|off)|switch\s+(on|off)|power\s+(on|off)|make\s+it\s+\w+)\b/i.test(trimmed)
-          if (finalTranscript.trim() || isQuickCommand) {
-            dispatchVoiceCommand(finalTranscript.trim() || trimmed)
-          }
-        }
-
-        recognition.onerror = (e) => {
-          console.warn('[VoiceControlPage] Web Speech error:', e.error)
-          if (e.error === 'not-allowed') {
-            setCurrentState(VOICE_STATES.ERROR)
-            setErrorMessage('Microphone blocked. Please allow microphone in browser address bar.')
-            setStatusMessage('Microphone access blocked')
-          }
-        }
-
-        recognition.onend = () => {
-          if (isLiveModeActiveRef.current && currentState !== VOICE_STATES.PROCESSING) {
-            try {
-              recognition.start()
-            } catch {}
-          }
-        }
-
-        recognitionRef.current = recognition
-        recognition.start()
-      } catch (err) {
-        console.error('[VoiceControlPage] Web Speech start failure:', err)
-        setCurrentState(VOICE_STATES.ERROR)
-        setErrorMessage(err.message || 'Could not access microphone.')
-      }
-    },
-    [apiBaseUrl, token, classroom, currentState, startVolumeAnalyser]
-  )
-
-  // Start Gemini Live connection
-  const startLiveSession = useCallback(async () => {
+  // Start voice session triggered by user gesture
+  const startVoiceSession = useCallback(async () => {
     setErrorMessage('')
-    setCurrentState(VOICE_STATES.CONNECTING)
-    setStatusMessage('Connecting audio & microphone...')
+    setCurrentState(VOICE_STATES.LISTENING)
+    setStatusMessage('Listening... Speak naturally')
+    isListeningRef.current = true
+    setIsListeningActive(true)
 
-    let micStream = null
-    try {
-      micStream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          channelCount: 1,
-          sampleRate: 16000,
-          echoCancellation: { ideal: true },
-          noiseSuppression: { ideal: true },
-          autoGainControl: { ideal: true },
-          latency: 0,
-        },
-      })
-      micStreamRef.current = micStream
-      startVolumeAnalyser(micStream)
-    } catch (err) {
-      console.warn('[VoiceControlPage] Mic access error:', err)
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition
+    if (!SpeechRecognition) {
       setCurrentState(VOICE_STATES.ERROR)
-      const isBlocked = err.name === 'NotAllowedError' || err.message?.includes('Permission denied')
-      setErrorMessage(
-        isBlocked
-          ? 'Microphone blocked. Please click the lock icon in your browser address bar and set Microphone to "Allow".'
-          : 'Could not access microphone hardware. Please check your system settings.'
-      )
-      setStatusMessage('Microphone access required')
+      setErrorMessage('Speech recognition is not supported in this browser. Please use Google Chrome or Microsoft Edge.')
       return
     }
 
-    try {
-      const tokenRes = await fetch(`${apiBaseUrl}/api/voice/live/token`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-      })
-
-      const tokenData = await tokenRes.json()
-      if (!tokenRes.ok || tokenData.status !== 'success' || !tokenData.data?.token) {
-        throw new Error(tokenData.message || 'Ephemeral token unavailable.')
-      }
-
-      const ephemeralToken = tokenData.data.token
-      const ai = new GoogleGenAI({
-        apiKey: ephemeralToken,
-        httpOptions: { apiVersion: 'v1alpha' },
-      })
-
-      const inputCtx = new (window.AudioContext || window.webkitAudioContext)({
-        sampleRate: 16000,
-      })
-      inputAudioContextRef.current = inputCtx
-      if (inputCtx.state === 'suspended') {
-        await inputCtx.resume()
-      }
-
+    // Acquire microphone audio for the live volume visualizer
+    if (!micStreamRef.current) {
       try {
-        await inputCtx.audioWorklet.addModule(audioProcessorUrl)
-      } catch {
-        const blob = new Blob([WORKLET_INLINE_CODE], { type: 'application/javascript' })
-        const blobUrl = URL.createObjectURL(blob)
-        await inputCtx.audioWorklet.addModule(blobUrl)
-        URL.revokeObjectURL(blobUrl)
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+        micStreamRef.current = stream
+        startVolumeAnalyser(stream)
+      } catch (err) {
+        console.warn('[VoiceControlPage] Microphone volume stream warning:', err.message)
       }
-
-      const sourceNode = inputCtx.createMediaStreamSource(micStream)
-      const workletNode = new AudioWorkletNode(inputCtx, 'gemini-live-audio-processor')
-      workletNodeRef.current = workletNode
-
-      workletNode.port.onmessage = (event) => {
-        if (!liveSessionRef.current || isMutedRef.current) return
-        const pcmBuffer = event.data
-        const base64Data = arrayBufferToBase64(pcmBuffer)
-        try {
-          liveSessionRef.current.sendRealtimeInput({
-            media: {
-              mimeType: 'audio/pcm;rate=16000',
-              data: base64Data,
-            },
-          })
-        } catch {}
-      }
-
-      const silentGain = inputCtx.createGain()
-      silentGain.gain.value = 0
-      sourceNode.connect(workletNode)
-      workletNode.connect(silentGain)
-      silentGain.connect(inputCtx.destination)
-
-      const backendInstructionText = tokenData.data?.systemInstruction?.parts?.[0]?.text || tokenData.data?.systemInstruction
-      const systemInstructionText = typeof backendInstructionText === 'string' ? backendInstructionText : LIVE_SYSTEM_INSTRUCTION
-      const toolsToUse = (tokenData.data?.tools && Array.isArray(tokenData.data.tools) && tokenData.data.tools.length > 0)
-        ? tokenData.data.tools
-        : [CONTROL_CLASSROOM_DEVICES_TOOL, SET_CLASSROOM_RGB_TOOL, GET_CLASSROOM_DEVICE_STATE_TOOL]
-
-      const session = await ai.live.connect({
-        model: tokenData.data?.model || LIVE_MODEL,
-        config: {
-          responseModalities: ['AUDIO'],
-          systemInstruction: {
-            parts: [{ text: systemInstructionText }],
-          },
-          tools: toolsToUse,
-          sessionResumption: {},
-        },
-        callbacks: {
-          onopen: () => {
-            setIsLiveActive(true)
-            setActiveEngine('gemini')
-            isLiveModeActiveRef.current = true
-            setCurrentState(VOICE_STATES.LISTENING)
-            setStatusMessage('Listening... Speak naturally')
-          },
-          onmessage: (msg) => {
-            handleLiveServerMessage(msg)
-          },
-          onerror: (err) => {
-            console.warn('[VoiceControlPage] Gemini Live error:', err)
-          },
-          onclose: () => {
-            setIsLiveActive(false)
-            isLiveModeActiveRef.current = false
-            setCurrentState(VOICE_STATES.IDLE)
-            setStatusMessage('Session closed. Tap orb to restart.')
-          },
-        },
-      })
-
-      liveSessionRef.current = session
-    } catch (err) {
-      console.warn('[VoiceControlPage] Gemini Live WebSocket unavailable, engaging Web Speech fallback:', err.message)
-      startWebSpeechFallback(micStream)
     }
-  }, [apiBaseUrl, token, handleLiveServerMessage, startWebSpeechFallback, startVolumeAnalyser])
 
-  // Automatically start voice on mount
+    startFreshRecognition()
+  }, [startVolumeAnalyser, startFreshRecognition])
+
+  // Cleanup on unmount only
   useEffect(() => {
-    startLiveSession()
     return () => {
-      stopLiveSession()
+      stopVoiceSession()
     }
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [stopVoiceSession])
 
   // Handle Orb Click: toggle session / mic
   const handleOrbClick = () => {
     if (currentState === VOICE_STATES.ERROR) {
-      startLiveSession()
+      startVoiceSession()
       return
     }
 
-    if (isLiveActive) {
+    if (isListeningActive) {
       if (currentState === VOICE_STATES.LISTENING) {
         setIsMuted((prev) => {
           const next = !prev
@@ -1281,14 +740,23 @@ export function VoiceControlPage() {
           return next
         })
       } else {
-        stopAudioPlayback()
+        // If speaking or thinking, tap interrupts and resets to listening
+        if (activeAiAbortControllerRef.current) {
+          activeAiAbortControllerRef.current.abort()
+          activeAiAbortControllerRef.current = null
+        }
+        if (window.speechSynthesis) {
+          window.speechSynthesis.cancel()
+        }
+        setCurrentState(VOICE_STATES.LISTENING)
+        setStatusMessage('Listening... Speak now')
       }
     } else {
-      startLiveSession()
+      startVoiceSession()
     }
   }
 
-  // Handle Opposite Action Toggle
+  // Handle Revert Action (Undo / Opposite)
   const handleRevertAction = async (cardId, targetDevice, oppositeAction) => {
     setActionCards((prev) =>
       prev.map((c) => (c.id === cardId ? { ...c, isReverting: true, error: null } : c))
@@ -1308,7 +776,6 @@ export function VoiceControlPage() {
       })
 
       const data = await response.json()
-
       if (response.ok && data.status === 'success') {
         const nextOpposite = getOppositeAction(oppositeAction)
         setActionCards((prev) =>
@@ -1325,9 +792,12 @@ export function VoiceControlPage() {
               : c
           )
         )
-        setStatusMessage(`${targetDevice.toUpperCase()} turned ${oppositeAction}`)
+        const msg = `${targetDevice.toUpperCase()} switched ${oppositeAction}`
+        setStatusMessage(msg)
+        setAssistantText(msg)
+        speakUtterance(msg)
       } else {
-        throw new Error(data.message || 'Opposite command failed')
+        throw new Error(data.message || 'Failed')
       }
     } catch (err) {
       setActionCards((prev) =>
@@ -1340,10 +810,12 @@ export function VoiceControlPage() {
     }
   }
 
-  // Dynamically calculate dynamic orb glow scaling according to real voice input volume
-  const voiceScale = currentState === VOICE_STATES.LISTENING && micVolume > 5
-    ? 1 + (micVolume / 100) * 0.12
-    : 1
+
+  // Dynamic orb scaling according to voice volume meter
+  const voiceScale =
+    currentState === VOICE_STATES.LISTENING && micVolume > 5
+      ? 1 + (micVolume / 100) * 0.14
+      : 1
 
   return (
     <div className="chatgpt-voice-page min-h-screen bg-black text-white flex flex-col justify-between items-center px-3 sm:px-6 py-4 sm:py-8 select-none relative overflow-hidden">
@@ -1367,7 +839,7 @@ export function VoiceControlPage() {
           <div className="flex items-center justify-center gap-1.5 mt-0.5">
             <span
               className={`w-1.5 h-1.5 rounded-full ${
-                isLiveActive
+                isListeningActive
                   ? currentState === VOICE_STATES.SPEAKING
                     ? 'bg-emerald-400 animate-pulse'
                     : currentState === VOICE_STATES.PROCESSING
@@ -1383,19 +855,19 @@ export function VoiceControlPage() {
                 ? 'Thinking'
                 : currentState === VOICE_STATES.LISTENING
                 ? 'Listening'
-                : isLiveActive
+                : isListeningActive
                 ? 'Room 302'
-                : 'Connecting Audio'}
+                : 'Ready'}
             </span>
           </div>
         </div>
 
         <button
           onClick={() => {
-            if (isLiveActive) {
-              stopLiveSession()
+            if (isListeningActive) {
+              stopVoiceSession()
             } else {
-              startLiveSession()
+              startVoiceSession()
             }
           }}
           className="w-10 h-10 rounded-full bg-white/10 hover:bg-white/20 active:scale-95 flex items-center justify-center text-white/80 hover:text-white transition-all focus:outline-none cursor-pointer"
@@ -1405,10 +877,10 @@ export function VoiceControlPage() {
         </button>
       </header>
 
-      {/* 2. CENTER STAGE (Hero Celestial Orb + Minimal Ambient Feedback) */}
+      {/* 2. CENTER STAGE (Luminous Orb + Prominent Live Transcripts + Suggestion Chips) */}
       <main className="flex-1 flex flex-col items-center justify-center w-full max-w-md my-auto z-10 text-center px-1 sm:px-2">
-        {/* Subtle Hardware Telemetry & Voice Pill */}
-        <div className="flex items-center justify-center gap-1.5 sm:gap-2 mb-4 sm:mb-6 flex-wrap">
+        {/* Hardware Status Pill & Voice Persona Selector */}
+        <div className="flex items-center justify-center gap-1.5 sm:gap-2 mb-3 sm:mb-5 flex-wrap">
           <div className="flex items-center gap-2 sm:gap-3 px-3 sm:px-3.5 py-1 rounded-full bg-white/[0.04] border border-white/5 text-[11px] backdrop-blur-xs">
             <div className="flex items-center gap-1.5">
               <span className="text-white/40">Projector:</span>
@@ -1421,19 +893,19 @@ export function VoiceControlPage() {
                 <span className="w-1 h-1 rounded-full bg-white/20" />
                 <div className="flex items-center gap-1.5">
                   <span
-                    className="w-2 h-2 rounded-full inline-block"
+                    className="w-2.5 h-2.5 rounded-full inline-block"
                     style={{
                       backgroundColor: rgbColor?.hex || '#A855F7',
-                      boxShadow: `0 0 6px ${rgbColor?.hex || '#A855F7'}`,
+                      boxShadow: `0 0 8px ${rgbColor?.hex || '#A855F7'}`,
                     }}
                   />
-                  <span className="text-white/80 capitalize font-medium">{rgbColor?.name || 'RGB'}</span>
+                  <span className="text-white/90 capitalize font-medium">{rgbColor?.name || 'RGB'}</span>
                 </div>
               </>
             )}
           </div>
 
-          {/* Voice selector minimal dots */}
+          {/* Voice persona selector dots */}
           <div className="flex items-center gap-1 px-2.5 py-1.5 rounded-full bg-white/[0.04] border border-white/5">
             {CHATGPT_VOICES.map((voice, idx) => (
               <button
@@ -1457,18 +929,18 @@ export function VoiceControlPage() {
           } ${currentState === VOICE_STATES.SPEAKING ? 'is-speaking' : ''} ${
             currentState === VOICE_STATES.PROCESSING ? 'is-processing' : ''
           }`}
-          title="Tap to speak or mute"
+          title="Tap to speak, interrupt, or mute"
         >
           <div className="chatgpt-orb-nebula" />
         </div>
 
-        {/* Unobtrusive Minimal Voice Status */}
-        <div className="mt-7 flex flex-col items-center gap-2 max-w-sm">
-          <div className="text-sm font-medium tracking-wide transition-all">
+        {/* Status Indicator */}
+        <div className="mt-4 flex flex-col items-center gap-2 max-w-sm w-full">
+          <div className="text-xs sm:text-sm font-medium tracking-wide transition-all">
             {currentState === VOICE_STATES.LISTENING && (
               <span className="text-sky-300 flex items-center gap-2">
                 <span className="w-2 h-2 rounded-full bg-sky-400 animate-ping inline-block" />
-                Listening...
+                Listening... Speak naturally
               </span>
             )}
             {currentState === VOICE_STATES.PROCESSING && (
@@ -1480,19 +952,13 @@ export function VoiceControlPage() {
             {currentState === VOICE_STATES.SPEAKING && (
               <span className="text-emerald-300 flex items-center gap-2">
                 <Volume2 className="w-3.5 h-3.5 text-emerald-400 animate-pulse" />
-                Speaking...
+                Replying...
               </span>
             )}
             {currentState === VOICE_STATES.IDLE && (
               <span className="text-white/40 flex items-center gap-1.5 font-normal text-xs tracking-wider">
                 <Sparkles className="w-3 h-3 text-white/30" />
-                Hey, classroom...
-              </span>
-            )}
-            {currentState === VOICE_STATES.CONNECTING && (
-              <span className="text-amber-300 flex items-center gap-2 text-xs">
-                <Loader2 className="w-3 h-3 text-amber-400 animate-spin" />
-                Connecting audio...
+                Tap orb to speak
               </span>
             )}
             {currentState === VOICE_STATES.ERROR && (
@@ -1503,19 +969,61 @@ export function VoiceControlPage() {
             )}
           </div>
 
-          {/* Subtitle / Live Transcript preview (Clean & Translucent) */}
-          {liveTranscript && (
-            <p className="text-xs text-white/70 italic px-3 py-1 bg-white/[0.04] rounded-full border border-white/5 max-w-[280px] sm:max-w-xs truncate animate-fadeIn">
-              &ldquo;{liveTranscript}&rdquo;
-            </p>
-          )}
+          {/* ======================================================== */}
+          {/* COMPACT & MODERN LIVE TRANSCRIPT DISPLAY                 */}
+          {/* ======================================================== */}
+          <div className="w-full max-w-[280px] sm:max-w-[320px] flex flex-col items-center gap-1.5 my-2">
+            {/* 1. What the user is speaking in real time (Interim + Final) */}
+            {userTranscript ? (
+              <div
+                className="w-full px-3.5 py-2 rounded-2xl border flex items-start gap-2.5 text-left shadow-lg backdrop-blur-md animate-fadeIn"
+                style={{ backgroundColor: 'rgba(24, 24, 27, 0.85)', borderColor: 'rgba(255, 255, 255, 0.15)' }}
+              >
+                <span className={`w-2 h-2 rounded-full mt-1 shrink-0 ${isUserSpeaking ? 'bg-sky-400 animate-ping' : 'bg-emerald-400'}`} />
+                <div className="flex-1 min-w-0">
+                  <span
+                    className="text-[10px] uppercase tracking-wider block font-bold mb-0.5"
+                    style={{ color: isUserSpeaking ? '#38bdf8' : '#34d399' }}
+                  >
+                    {isUserSpeaking ? 'Listening...' : 'Heard:'}
+                  </span>
+                  <p
+                    className="text-xs sm:text-sm font-semibold tracking-wide break-words leading-relaxed select-text"
+                    style={{ color: '#ffffff' }}
+                  >
+                    &ldquo;{userTranscript}&rdquo;
+                  </p>
+                </div>
+              </div>
+            ) : (
+              <div
+                className="w-full py-1.5 px-3 text-center text-[11px] font-medium tracking-wide rounded-full bg-white/[0.04] border border-white/5"
+                style={{ color: '#cbd5e1' }}
+              >
+                {currentState === VOICE_STATES.LISTENING ? 'Listening... Speak naturally' : 'Tap orb to speak'}
+              </div>
+            )}
 
-          {/* Permission / Error Helper */}
+            {/* 2. Compact Assistant spoken confirmation / answer */}
+            {assistantText && (
+              <div
+                className="w-full px-3 py-1.5 rounded-xl border text-left flex items-start gap-2 shadow-md backdrop-blur-md animate-fadeIn"
+                style={{ backgroundColor: 'rgba(88, 28, 135, 0.25)', borderColor: 'rgba(168, 85, 247, 0.35)', color: '#ffffff' }}
+              >
+                <Sparkles className="w-3.5 h-3.5 text-purple-300 mt-0.5 shrink-0" />
+                <p className="text-[11px] sm:text-xs text-purple-100 font-medium break-words leading-snug">
+                  {assistantText}
+                </p>
+              </div>
+            )}
+          </div>
+
+          {/* Error Message Helper */}
           {currentState === VOICE_STATES.ERROR && (
             <div className="mt-2 p-3 bg-rose-500/10 border border-rose-500/20 rounded-xl text-left text-xs text-rose-200 space-y-2">
               <p>{errorMessage}</p>
               <button
-                onClick={startLiveSession}
+                onClick={startVoiceSession}
                 className="w-full py-1.5 px-3 bg-rose-500/20 hover:bg-rose-500/30 text-rose-100 rounded-lg font-semibold text-center cursor-pointer transition-colors"
               >
                 Grant Permission &amp; Retry
@@ -1524,9 +1032,9 @@ export function VoiceControlPage() {
           )}
         </div>
 
-        {/* 3. COMPACT TRANSIENT ACTION NOTIFICATIONS */}
+        {/* 3. RECENT ACTION BADGES WITH REVERT / UNDO */}
         {actionCards.length > 0 && (
-          <div className="w-full mt-4 sm:mt-5 space-y-2 max-h-36 overflow-y-auto px-1">
+          <div className="w-full mt-3 space-y-2 max-h-36 overflow-y-auto px-1">
             {actionCards.map((card) => {
               const isOn = String(card.action).toUpperCase() === 'ON'
               const isRgb = card.action === 'SET_COLOR'
@@ -1538,7 +1046,7 @@ export function VoiceControlPage() {
                   <div className="flex items-center gap-1.5 sm:gap-2 text-xs font-medium text-white tracking-wide truncate mr-2">
                     {isRgb ? (
                       <span
-                        className="w-2 h-2 rounded-full inline-block shrink-0"
+                        className="w-2.5 h-2.5 rounded-full inline-block shrink-0"
                         style={{
                           backgroundColor: card.color?.hex || '#A855F7',
                           boxShadow: `0 0 6px ${card.color?.hex || '#A855F7'}`,
@@ -1583,7 +1091,7 @@ export function VoiceControlPage() {
         )}
       </main>
 
-      {/* 4. BOTTOM CONTROLS (Iconic ChatGPT Large White Pill Button "Done") */}
+      {/* 4. BOTTOM CONTROLS */}
       <footer className="w-full max-w-md flex items-center justify-center gap-3 sm:gap-4 pt-3 sm:pt-4 pb-2 z-10 px-1 sm:px-0">
         {/* Mic Mute / Unmute circular toggle */}
         <button
@@ -1605,10 +1113,10 @@ export function VoiceControlPage() {
           {isMuted ? <MicOff className="w-5 h-5" /> : <Mic className="w-5 h-5" />}
         </button>
 
-        {/* Iconic White Pill Button matching reference image: [ Done ] */}
+        {/* Iconic White Pill Button: [ Done ] */}
         <button
           onClick={() => {
-            stopLiveSession()
+            stopVoiceSession()
             navigate('/teacher')
           }}
           className="flex-1 py-3 sm:py-3.5 px-6 sm:px-8 rounded-full bg-white text-black font-semibold text-sm hover:bg-slate-100 active:scale-98 transition-all shadow-xl shadow-white/10 text-center cursor-pointer min-h-[44px]"

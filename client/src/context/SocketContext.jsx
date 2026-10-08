@@ -17,7 +17,7 @@ export function SocketProvider({ children }) {
   useEffect(() => {
     // Initialize Socket.IO connection with automatic reconnection and authenticated handshake
     const socketInstance = io(apiBaseUrl, {
-      transports: ['websocket', 'polling'],
+      transports: ['polling', 'websocket'],
       reconnection: true,
       reconnectionAttempts: Infinity,
       reconnectionDelay: 1000,

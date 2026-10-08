@@ -15,6 +15,7 @@ import {
   Cpu,
   Wifi,
   ChevronRight,
+  QrCode,
 } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
 import { useHaptics, useCenterAction, useSwipeGesture } from '../../hooks'
@@ -51,10 +52,10 @@ export function MobileBottomBar({ activeTab, onTabChange, onTriggerVoice }) {
           icon: Zap,
         },
         {
-          id: 'classes',
-          label: 'Rooms',
-          href: '/admin#classes',
-          icon: School,
+          id: 'demo-login',
+          label: 'Demo QR',
+          href: '/admin#demo-login',
+          icon: QrCode,
         },
         {
           id: 'more',
@@ -93,9 +94,8 @@ export function MobileBottomBar({ activeTab, onTabChange, onTriggerVoice }) {
   // Secondary items shown in the slide-up sheet
   const drawerLinks = isSuperAdmin
     ? [
-        { id: 'teachers', label: 'Faculty Directory', icon: Users, href: '/admin#teachers' },
+        { id: 'voice', label: 'Voice Control', icon: Mic, href: '/voice' },
         { id: 'devices', label: 'IoT Infrastructure', icon: Cpu, href: '/admin#devices' },
-        { id: 'ai-system', label: 'AI Voice & LLM Config', icon: Sparkles, href: '/admin#ai-system' },
         { id: 'settings', label: 'System Preferences', icon: Settings, href: '/admin#settings' },
       ]
     : [
@@ -112,8 +112,11 @@ export function MobileBottomBar({ activeTab, onTabChange, onTriggerVoice }) {
       return
     }
 
-    if (onTabChange) {
-      onTabChange(tab.id)
+    if (tab.href && tab.href.includes('#')) {
+      const hashPart = tab.href.split('#')[1]
+      if (onTabChange) {
+        onTabChange(hashPart)
+      }
     }
   }
 
@@ -273,7 +276,10 @@ export function MobileBottomBar({ activeTab, onTabChange, onTriggerVoice }) {
                     onClick={() => {
                       triggerHaptic('light')
                       setIsDrawerOpen(false)
-                      onTabChange?.(link.id)
+                      if (link.href && link.href.includes('#')) {
+                        const hashPart = link.href.split('#')[1]
+                        onTabChange?.(hashPart)
+                      }
                     }}
                     className="flex items-center justify-between px-3.5 py-3 rounded-2xl bg-slate-50 hover:bg-slate-100 text-slate-800 font-medium text-xs transition-colors active:scale-98"
                   >

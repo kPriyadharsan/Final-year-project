@@ -57,52 +57,17 @@ export function Sidebar({
         },
         {
           id: 'device-control',
-          label: 'Hardware Control',
+          label: 'Device Control',
           href: '/admin/device-control',
           icon: <Zap className="w-4 h-4" />,
           tag: 'Live IoT',
         },
         {
           id: 'voice-control',
-          label: 'AI Voice Assistant',
+          label: 'Voice Control',
           href: '/voice',
           icon: <Mic className="w-4 h-4" />,
           tag: 'Real-Time',
-        },
-        {
-          id: 'teachers',
-          label: 'Teachers',
-          href: '/admin#teachers',
-          icon: <Users className="w-4 h-4" />,
-          tag: 'Faculty',
-        },
-        {
-          id: 'classes',
-          label: 'Classes',
-          href: '/admin#classes',
-          icon: <School className="w-4 h-4" />,
-          tag: '8 Rooms',
-        },
-        {
-          id: 'devices',
-          label: 'Devices',
-          href: '/admin#devices',
-          icon: <Cpu className="w-4 h-4" />,
-          tag: '24 IoT',
-        },
-        {
-          id: 'teacher-view',
-          label: 'Teacher Portal',
-          href: '/teacher',
-          icon: <School className="w-4 h-4" />,
-          tag: 'Full Access',
-        },
-        {
-          id: 'student-view',
-          label: 'Student Portal',
-          href: '/student',
-          icon: <GraduationCap className="w-4 h-4" />,
-          tag: 'Full Access',
         },
         {
           id: 'demo-login',
@@ -112,11 +77,18 @@ export function Sidebar({
           tag: 'QR Access',
         },
         {
-          id: 'ai-system',
-          label: 'AI / System',
-          href: '/admin#ai-system',
-          icon: <Sparkles className="w-4 h-4" />,
-          tag: 'Gemini',
+          id: 'devices',
+          label: 'IoT Devices',
+          href: '/admin#devices',
+          icon: <Cpu className="w-4 h-4" />,
+          tag: 'Hardware',
+        },
+        {
+          id: 'teacher-view',
+          label: 'Teacher Portal',
+          href: '/teacher',
+          icon: <School className="w-4 h-4" />,
+          tag: 'Portal',
         },
         {
           id: 'settings',
@@ -165,8 +137,11 @@ export function Sidebar({
       ]
 
   const handleNavClick = (item) => {
-    if (onTabChange) {
-      onTabChange(item.id)
+    if (item.href && item.href.includes('#')) {
+      const hashPart = item.href.split('#')[1]
+      if (onTabChange) {
+        onTabChange(hashPart)
+      }
     }
     setIsMobileOpen(false)
   }

@@ -22,7 +22,7 @@ import audioProcessorUrl from './geminiLiveAudioProcessor.js?url'
 /**
  * Feature Flag: Enable Gemini Live real-time bidirectional audio session
  */
-export const LIVE_VOICE_ENABLED = true
+export const LIVE_VOICE_ENABLED = false
 
 /**
  * Gemini Live Configuration

@@ -366,14 +366,7 @@ async function handleLiveRgbCommand(req, res) {
 
     console.log(`[GeminiLive] 🎨 Received set_classroom_rgb call for device "${inputDevice}" in "${classroom}" (User: ${userName})`)
 
-    const device = String(inputDevice || '').trim().toLowerCase()
-    if (!device) {
-      return res.status(400).json({
-        status: 'error',
-        code: 'DEVICE_REQUIRED',
-        message: 'The "device" field is required (e.g. "projector").',
-      })
-    }
+    const device = String(inputDevice || 'projector').trim().toLowerCase()
 
     // 1. Backend capability validation
     const validation = validateDeviceCapability(device, 'SET_COLOR', 'rgb')

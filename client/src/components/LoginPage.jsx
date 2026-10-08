@@ -8,9 +8,9 @@ const TEST_ACCOUNTS = {
   admin: {
     key: 'admin',
     role: 'SUPER_ADMIN',
-    label: 'Admin',
-    email: 'dharsan2763@gmail.com',
-    password: '1234567890',
+    label: 'Super Admin',
+    email: 'admin@smartclassroom.edu',
+    password: 'SuperAdminSecure2026!',
   },
   teacher: {
     key: 'teacher',
@@ -255,10 +255,10 @@ export function LoginPage() {
                   ? 'bg-blue-600 text-white border-blue-600 shadow-md shadow-blue-500/25 ring-2 ring-blue-500/30'
                   : 'bg-blue-50/80 hover:bg-blue-100/90 text-blue-700 border-blue-200/80'
               }`}
-              title="Autofill Admin (dharsan2763@gmail.com)"
+              title="Autofill Super Admin (admin@smartclassroom.edu)"
             >
               <ShieldCheck className="w-3.5 h-3.5 shrink-0" />
-              <span>Admin</span>
+              <span>Super Admin</span>
             </button>
 
             {/* Teacher Test Button */}
